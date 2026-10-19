@@ -435,6 +435,7 @@ WSL 内的 `docker` 有两条路，差别在**路径语义**：
 | **U-ε** | Docker Desktop 对 Ubuntu 开 **WSL integration** | ✅ **已生效**（实测 `/var/run/docker.sock` 存在、WSL 内 `docker version` 返 Server 29.8.0；设置里 `IntegratedWslDistros: ["Ubuntu"]`） | 回滚＝同页关闭；**关闭后 §4.7 的 A 面可达性须重测** |
 | **U-ζ** | 设 **`UV_CACHE_DIR`** 到 F: | ✅ **已执行**（Windows 用户级环境变量 → `F:\...\.uv-cache`；备份 `%USERPROFILE%\.env-backup-2026-10-19-before-uvcache.txt`） | 回滚＝删除该环境变量。WSL 侧 uv cache 本就在 Linux 文件系统内，无需改 |
 | **U-η** | Ubuntu 发行版 `ext4.vhdx` 是否迁出 C 盘 | **待定** | 体积**未测**；迁移＝`wsl --export/--import`，属动本机配置 |
+| **U-ν** | **Doris 镜像本地构建** | **路径已探明（P0 实测）** | 官方镜像**无**可直接拉取的 4.1.5（版本化标签全部 `denied`）；**但二进制包 URL 实测 HTTP 200、4.32 GB**：`apache-doris-releases.oss-accelerate.aliyuncs.com/apache-doris-4.1.5-bin-x64.tar.gz`（另有 `-noavx2` 变体同样 200）。⇒ 路径＝下载二进制 → 基于 `apache/doris:base-latest` 写 Dockerfile → 覆盖 `fe.conf` 的 `-Xmx8192m`→1536m 与 `be.conf` 的 `mem_limit` 90%→25%。**工作量：一次 4.3 GB 下载 + 镜像构建**，未执行 |
 | **U-θ** | `uv python install 3.12` | 已批 | 回滚＝`uv python uninstall 3.12` |
 | **U-ι** | 安装 **`basedpyright==1.40.2`**（`uv add --dev`） | **待批** | 回滚＝`uv remove --dev basedpyright` + 重生成 `uv.lock`；含写 `[tool.pyright]` 段的回滚（删除该段） |
 | **U-κ** | 若走包装器兜底，设 **`PYRIGHT_PYTHON_CACHE_DIR`** 到 F: | **待批** | 选 `basedpyright` 则基本不需要（node 由 wheel 提供）；保留以防兜底 |

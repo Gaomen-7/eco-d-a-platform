@@ -126,16 +126,20 @@ services:
   #    ★ BE mem_limit 出厂默认 90% ⇒ 必须显式下调
   # ─────────────────────────────────────────────────────────────
   doris-fe:
-    image: ${DORIS_IMAGE:-apache/doris:4.1.5-fe-x86_64}
+    # ★ 自建镜像（官方不发可直接拉取的 4.1.5；构建见 docker/doris/Dockerfile）
+    #   默认可用 DORIS_IMAGE 覆盖；未构建时该服务起不来（见 .env.example 与 gdd F15）。
+    image: ${DORIS_IMAGE:-eco/doris:4.1.5}
     container_name: eco-doris-fe
     hostname: doris-fe
     mem_limit: 2g
     memswap_limit: 2g
+    command: ["fe"]
     environment:
-      # 覆盖 fe.conf 的 JAVA_OPTS_FOR_JDK_17（出厂 8192m）。见 HLD §8-R1。
+      # ⚠️ 真正的 -Xmx 覆盖在**镜像构建期**完成（fe.conf 的 JAVA_OPTS_FOR_JDK_17）。
+      #    start_fe.sh 会先用 `-Xmx1024m` 再用 fe.conf 覆盖，故这里再设一层保险。
       JAVA_OPTS_FOR_JDK_17: "-Xmx1536m -Xms1536m -Dfile.encoding=UTF-8 -XX:+HeapDumpOnOutOfMemoryError"
       FE_SERVERS: fe@doris-fe:9010
-      FE_ID: 1
+      FE_ID: "1"
     ports:
       - "127.0.0.1:8030:8030"   # FE HTTP（/api/health）
       - "127.0.0.1:9030:9030"   # FE MySQL 协议（看板/客户端）
@@ -153,19 +157,19 @@ services:
     logging: *default-logging
 
   doris-be:
-    image: ${DORIS_IMAGE:-apache/doris:4.1.5-be-x86_64}
+    image: ${DORIS_IMAGE:-eco/doris:4.1.5}
     container_name: eco-doris-be
     hostname: doris-be
     mem_limit: 3g
     memswap_limit: 3g
+    command: ["be"]
     depends_on:
       doris-fe:
         condition: service_healthy
     environment:
       FE_SERVERS: fe@doris-fe:9010
       BE_ADDR: doris-be:9050
-      # 覆盖 BE 出厂默认 mem_limit=90%。见 HLD §8-R1。
-      mem_limit: "25%"
+      # ⚠️ BE 的 mem_limit 覆盖主要在**镜像构建期**（be.conf: 90% → 25%）。
     ports:
       - "127.0.0.1:8040:8040"   # BE webserver（/metrics 等）
       - "127.0.0.1:9060:9060"   # BE brpc
