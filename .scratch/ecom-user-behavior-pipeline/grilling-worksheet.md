@@ -232,6 +232,45 @@ Paimon `snapshot.num-retained.min` 官方默认是 **10**，非 5。要么表属
 - 出处：`SRS.md` §3.3 仅含事件字段表；`GLOSSARY` 的「用户池」是本次拷问补出的概念，SRS 原件没有。
 - **处置**：GDD 必须补出维表字段级定义（至少：`dim_item` 的 `item_id/category_id/price/上架状态`、`dim_channel` 与 `dim_region` 的枚举全集），并把 `REQ-F-LAKE-03` 的判据升级为 Q26 建议的「时序 join 出不同属性值」。
 
+### G. 通读 `research-notes.md` 后的新发现（本人直读全文，203 行）
+
+**G1 · D4/D5 是「同一套文档集内部自相矛盾」，不是新事实** ★★
+`research-notes.md` 第 138 行**自己就写明**：天池 UserBehavior「约 100 万用户在 **2017-11-25 至 12-03** 的行为…字段 5 列…Behavior type（`pv`/`buy`/`cart`/`fav`）…**100,150,807 条交互**」。
+而 `SRS.md` §3.3 质量规则①要求 `event_time` **不早于 2020-01-01**，五类枚举里也**没有 `fav`**。
+→ **同一作者在同一套文档里写下两条互斥的事**，且未被任何检查发现。这正是拷问要抓的东西：不是「外部事实变了」，而是**文档间未做一致性核对**。
+
+**G2 · Doris 没有官方 docker-compose，只有 `curl | bash` 启动脚本；且官方声明 Docker 仅限开发测试、容器销毁即丢数据** ★
+`research-notes.md` 第 90 行：官方 Quick Start 路径是 `curl -fsSL https://doris.apache.org/files/start-doris.sh | bash`；仓库内 `docker/` 只是**开发/编译环境**；官方明确「Docker 部署仅用于本地开发与测试，不要用于生产，容器销毁即丢数据」。
+→ 对 GDD 的直接后果：
+1. `REQ-F-ORCH-01`「一条命令拉起」在本项目里意味着**我们自己手写 compose**（不能照抄官方）。
+2. Doris 的**FE/BE 注册、root 密码、库创建**都得由我们的初始化脚本承担——这是 `REQ-F-ORCH-01` 的隐藏工作量，SRS 未列。
+3. `REQ-F-ORCH-05` 的 named volume **不是可选优化而是必需**（否则 `down` 即丢数据，与 `REQ-NF-REL-02` 直接冲突）。
+
+**G3 · Superset 官方仓库自带 `docker/`（compose + entrypoint + 初始化脚本）** ★
+`research-notes.md` 第 115 行：官方 Docker 支持形态是仓库内 `docker/` 目录（含 compose、entrypoint、初始化脚本）。
+→ GDD 应**复用官方 docker 骨架**而非从零写 Superset 服务；但要注意官方 compose 是为**演示**设计的（常带示例数据），需剥离。
+
+**G4 · Kafka 有原生镜像 `apache/kafka-native:4.3.1`（GraalVM）** ★（天花板相关的备选）
+`research-notes.md` 第 26 行：官方同时提供 `apache/kafka:4.3.1`（JVM）与 `apache/kafka-native:4.3.1`（GraalVM 原生），官方 downloads 页直接给出镜像 tag，单容器 `docker run -p 9092:9092 apache/kafka:4.3.1` 即可起单机 broker。
+又：Kafka 依赖 Java 17/21/25（第 28 行），与 **B6 的 JDK 17 基线**一致。
+→ 若 8 GB 预算吃紧，**原生镜像可作降级手段**（官方未给出两者内存数字，A2）。这是 R3 降级序列里 SRS 未列的一项。
+
+**G5 · 官方 Docker 镜像确认（供 compose 直接引用，不必自建）**
+| 组件 | 官方镜像/形态 | 出处（`research-notes.md` 行号 + 原始 URL） |
+| --- | --- | --- |
+| Kafka | `apache/kafka:4.3.1` / `apache/kafka-native:4.3.1` | L26 → [官方 downloads](https://kafka.apache.org/downloads) |
+| Flink | `flink`（Docker 审核构建，官方推荐）、`apache/flink` | L36 → [hub.docker.com/_/flink](https://hub.docker.com/_/flink) |
+| Doris | **无官方 compose**，仅 `start-doris.sh` | L90 → [quick-start.mdx](https://github.com/apache/doris-website/blob/master/docs/getting-started/quick-start.mdx) |
+| Superset | 仓库 `docker/`（compose+entrypoint+init） | L115 → [docker/](https://github.com/apache/superset/tree/master/docker) |
+| Paimon | 无独立镜像（Flink 库，走 jar） | L59-61 |
+
+**G6 · 官方内存数字确认「未给出」（支撑 A2 的合法性）**
+`research-notes.md` §6「官方未给出清单」明确列出：Kafka 单机最低资源、Flink 单机内存最低、**Doris 单机最低内存与 CPU**、**Superset 单机内存（官网对应页 404）**、WSL2 `memory` 数值上限。
+→ 故 `REQ-NF-CAP-01` 的「≤8 GB」是**设计目标**而非官方保证，写 GDD 时必须保留这个定性（`A2`）。
+
+**G7 · `research-notes.md` 自身的一处陈旧信息**（供 GDD 引用时纠正）
+第 33 行称 connector 5.0.0 覆盖 2.1.x/2.2.x —— 与本人直读的 connector README 一致（**B6** 补充了 2.3.x 也在表内）。第 155 行列出可比项目 `water8394/flink-recommandSystem-demo`（4,475★，**2024-02 后不活跃**）与 `IronmanJay/UserBehaviorAnalysis`（145★，2020 后停更），并注明「`wh-yxh/` 用户在 GitHub 上不存在（404）」——这些是后续调研 agent 未复现的条目，**保留为已验证事实**。
+
 ### E3. 已建但未推送的仓库改动
 
 | 项 | 现状 | 待办 |
