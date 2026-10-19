@@ -430,10 +430,10 @@ WSL 内的 `docker` 有两条路，差别在**路径语义**：
 | --- | --- | --- | --- |
 | **U-α** | 安装 **Ruff**（pin 精确版本） | 已批 | 回滚＝`uv tool uninstall ruff` |
 | **U-β** | 改 **PATH** 启用已装的 `uv 0.12.19` | 已批 | 回滚＝从 PATH 移除该目录 |
-| **U-γ** | WSL2 内装 **JDK 17 + Maven ≥3.8.6** | **待批** | P0 确定性阻塞项；宿主 JDK 18 / `JAVA_HOME` **一概不动** |
-| **U-δ** | WSL2 内 `apt install make` | **待批** | 编排执行面 |
-| **U-ε** | Docker Desktop 对 Ubuntu 开 **WSL integration** | **待批** | 回滚＝同页关闭 |
-| **U-ζ** | 设 **`UV_CACHE_DIR`** 到 F: | **待批** | 回滚＝删该环境变量 |
+| **U-γ** | WSL2 内装 **JDK 17 + Maven ≥3.8.6** | ✅ **已完成（无需 sudo）** | 走的是「`.deb` 用户级解包」路径，**未动宿主 Java 面未用 sudo**；回滚＝删 `~/p0-toolchain` + `~/.p0-toolchain-env.sh` |
+| **U-δ** | WSL2 内 `apt install make` | ✅ **已完成（无需 sudo）** | 同上，make 4.4.1 随同一批 .deb 解包；回滚同上 |
+| **U-ε** | Docker Desktop 对 Ubuntu 开 **WSL integration** | ✅ **已生效**（实测 `/var/run/docker.sock` 存在、WSL 内 `docker version` 返 Server 29.8.0；设置里 `IntegratedWslDistros: ["Ubuntu"]`） | 回滚＝同页关闭；**关闭后 §4.7 的 A 面可达性须重测** |
+| **U-ζ** | 设 **`UV_CACHE_DIR`** 到 F: | ✅ **已执行**（Windows 用户级环境变量 → `F:\...\.uv-cache`；备份 `%USERPROFILE%\.env-backup-2026-10-19-before-uvcache.txt`） | 回滚＝删除该环境变量。WSL 侧 uv cache 本就在 Linux 文件系统内，无需改 |
 | **U-η** | Ubuntu 发行版 `ext4.vhdx` 是否迁出 C 盘 | **待定** | 体积**未测**；迁移＝`wsl --export/--import`，属动本机配置 |
 | **U-θ** | `uv python install 3.12` | 已批 | 回滚＝`uv python uninstall 3.12` |
 | **U-ι** | 安装 **`basedpyright==1.40.2`**（`uv add --dev`） | **待批** | 回滚＝`uv remove --dev basedpyright` + 重生成 `uv.lock`；含写 `[tool.pyright]` 段的回滚（删除该段） |
@@ -458,11 +458,18 @@ WSL 内的 `docker` 有两条路，差别在**路径语义**：
 **检测信号**：`make verify` 的 Doris 断言执行位置。
 **判定条件**：断言**经 `client` 服务**执行并返回预期标量；在宿主直接跑即为**失败**。
 
-### R3 · ★ P0 环境阻塞：JDK 17 缺失 + Maven 低于官方要求
-**证据**：本机实测三处常见目录**无 JDK 17**；宿主 PATH 上是 **Oracle 18.0.2**、`JAVA_HOME=E:\space\09-tools\Jdk1.8`；WSL 是 **OpenJDK 11.0.32.1**；Maven **3.6.0**（官方要求 **≥3.8.6**）且运行在 **JDK 1.8** 上。而 Flink 2.2 要求 17、**Doris `start_fe.sh` 要求恰为 17**（非 17 `exit 1`）。
-**处置**：U-γ（WSL2 内装 JDK 17 + Maven），宿主 Java 面**一概不动**。
-**检测信号**：`java -version`（WSL 内）；`start_fe.sh` 的 `ERROR: The jdk_version is N, must be 17.` 直接 `exit 1`。
-**判定条件**：WSL 内 `java -version` 为 17 且 `mvn -version` ≥3.8.6 且指向该 JDK；Flink 作业 jar 构建成功。
+### R3 · ★ P0 环境阻塞：JDK 17 + Maven —— **已解除（且无需 sudo）**
+**原阻塞证据**：本机实测三处常见目录**无 JDK 17**；宿主 PATH 上是 **Oracle 18.0.2**、`JAVA_HOME=E:\space\09-tools\Jdk1.8`；WSL 是 **OpenJDK 11.0.32.1**；Maven **3.6.0**（官方要求 **≥3.8.6**）且运行在 **JDK 1.8** 上。而 Flink 2.2 要求 17、**Doris `start_fe.sh` 要求恰为 17**（非 17 `exit 1`）。
+**★ 处置（P0 实测，2026-10-19）——绕过 sudo 的路径**：WSL 侧 `sudo` 需**交互密码**（agent 不能代劳、也不该猜密码），但三项工具**无需 sudo** 即可用：
+```
+apt-get install --print-uris → 取 .deb URL → curl -4 下载 → dpkg-deb -x 解包到 ~/p0-toolchain
+```
+**实测结果**：**JDK 17.0.20.1** / **Maven 3.9.12** / **make 4.4.1**，全部可用。
+**踩到的坑（已修）**：`.deb` 的布局假设自己装在 `/`，故 `conf/security/java.security`、`maven bin/m2.conf`、`maven conf/` 全是**指向 `/etc` 的悬空绝对链接**；脚本逐个重指到前缀内实体文件后 `javac`、`mvn` 才正常（`scripts/p0-wsl-fix-symlinks.sh`）。
+**★ 端到端验证（不是只看版本号）**：Maven **成功解析并下载**了 `gdd §A.3` 冻结的完整坐标 `org.apache.flink:flink-connector-kafka:5.0.0-2.2`（`[INFO] BUILD SUCCESS`，jar 落到 `~/.m2/.../flink-connector-kafka-5.0.0-2.2.jar`）。同时**独立复核**了该坐标：Maven Central 上该版本 HTTP 200，`maven-metadata.xml` 的 `<release>` 就是 `5.0.0-2.2` ⇒ **§7.1 D-C 的坐标精确化得到第三方来源印证**。
+**残留**：宿主 Java 面**一概未动**（`JAVA_HOME=E:\space\09-tools\Jdk1.8`、PATH 上 Oracle 18 原样）；工具链只在 WSL 用户级，**回滚 = 删除 `~/p0-toolchain` 与 `~/.p0-toolchain-env.sh`**（以及 `~/.bashrc`/`~/.profile` 里那两行标记注释之间的引用）。
+**检测信号**：`javac -version` / `mvn -version` / `make --version`。
+**判定条件**：**三者齐备且 mvn 能解析 Flink 依赖**——**P0 已达成**。
 
 ### R4 · 执行面落点（**已由 P0 实测裁决，并推翻了一轮错误推论**）
 **证据**：P0 实测（2026-10-19 20:29）——**Docker 发布端口** `-p 127.0.0.1:18080/18081` 从 WSL2 内 `curl` **可达（200，3/3 次 + 双端口复现）**；**普通 Windows 监听** `:10724` 从 WSL2 **不可达**。此前「一律不可达」的结论源于用**等价监听做代理测试**，该代理**不成立**（详见 §4.7）。
