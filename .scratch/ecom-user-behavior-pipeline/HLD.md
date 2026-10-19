@@ -259,13 +259,28 @@ interface PyrightJsonDiagnostic { file; severity; message; range?; rule? }
 
 ### 4.2 资源上限（**硬化两条渗漏点**）
 
+**★ P0 实测回填（2026-10-19 21:30，`docker compose up` 骨架已拉起）**
+
+| 服务 | `mem_limit` | **实测常驻** | 占限额 |
+| --- | --- | --- | --- |
+| kafka | 1g | **532.6 MiB** | 52% |
+| flink-jm | 1g | **311.9 MiB** | 30% |
+| flink-tm | 2g | **403.5 MiB** | 20% |
+| superset | 1g | **387.8 MiB** | 38% |
+| **小计（实测）** | — | **≈1.60 GiB** | — |
+| `kafka-init` / `client` | 256m | 按需（不常驻） | — |
+| **配置契约声明的常驻合计** | — | **10.25 GiB**（含 Doris 的 2g+3g 预留） | 天花板 11.68 GiB ⇒ 余量 **1.43 GiB** |
+
+> **读法（重要）**：`mem_limit` 是**上限**不是占用。实测值远低于上限（Kafka 只用了一半、Flink 只用 1/5），说明当前**空载**骨架很轻；**真正的压力在 P1 有数据流之后**——Flink 的 managed memory 会随 RocksDB 状态增长、Doris 的 BE compaction 会吃内存。故「10.25 GiB 合计」是**已声明的上限契约**，「1.60 GiB」是**当前空载实测**，两者不可互相冒充。
+> **待回填项**：Doris（镜像须本地构建）与 P1 带载后的实测值。
+
 | 约束 | 定案 | 检查方式 |
 | --- | --- | --- |
-| 逐服务显式 `mem_limit` | **每个服务都写**，且**同时写 `memswap_limit` ＝ `mem_limit`** | ⚠️ `mem_limit` **管不到 swap**（官方：只设 `memory` 时容器可借**等量** swap；二者相等＝禁用）⇒ 不写 `memswap_limit` 则预算有渗漏点 |
+| 逐服务显式 `mem_limit` | **每个服务都写**，且**同时写 `memswap_limit` ＝ `mem_limit`** | ✅ **P0 已证**：`config-check` 断言全 PASS（8 服务逐条比对） |
 | 不与 `deploy.limits.memory` 并存 | **只写 `mem_limit`** | 官方：`deploy` 是**可选段**（未实现即忽略）；二者并存时官方要求**必须一致**，写错一个即自相矛盾 |
-| 「不允许有服务缺省」 | 由 `make verify` **脚本断言** | ⚠️ `docker compose config` 能**列出** `mem_limit` 但**不报缺** ⇒ 判据须脚本化 |
-| 冷启动/体量记账 | **用 `docker image inspect`**，不用 `docker images` | 本机 `UseContainerdSnapshotter=true`，官方警告此时 `docker images` 会**把压缩 blob 叠加进读数、显著虚高** |
-| 常驻预算 | **见 §7（偏离登记）**：`SRS.md` 的 ≤8 GB 是**设计值**，按官方出厂默认**不成立** | `docker stats --no-stream` 总值；P0 实测回填 |
+| 「不允许有服务缺省」 | 由 `make verify` / `config-check` **脚本断言** | ⚠️ **P0 实测确认**：`docker compose config` 能**列出** `mem_limit` 但**不报缺** ⇒ 判据必须脚本化。规则已写进 `Makefile` 的 `config-check` 目标 |
+| 冷启动/体量记账 | **用 `docker image inspect`**，不用 `docker images` | 本机 `UseContainerdSnapshotter=true`，官方警告此时 `docker images` 会**把压缩 blob 叠加进读数、显著虚高**。**P0 实测镜像体积**（`image inspect`）：Kafka 654.1 MiB / Flink 1491.4 MiB / **Superset 1207.8 MiB**（官方未给出，此处为实测取得）/ Doris base-latest 1.96 GB |
+| 常驻预算 | 见上表；`SRS.md` 的 ≤8 GB 是**设计值**，按官方出厂默认**不成立** | `docker stats --no-stream` 总值；P0 已实测空载 1.60 GiB |
 
 ### 4.3 端口与网络
 
@@ -475,6 +490,20 @@ WSL 内的 `docker` 有两条路，差别在**路径语义**：
 ⚠️ **必须照抄进文档的官方免责**：`docker-compose-non-dev.yml` 头部原话「**We don't support docker compose for production environments.**」
 **检测信号**：`docker stats` 单项与总值。
 **判定条件**：降级后链路仍满足 `REQ-F-BI-01..04`，且总值仍在天花板内——**未实测即未通过**。
+
+### R7 · ★ P0 实测新发现：三处「官方直觉」与实机不符（**均已踩到并修复**）
+**性质**：这三条都不是「可能出问题」，而是**实际跑起来才会暴露的硬事实**，且**上游文档与调研笔记都没抓到**。
+
+| # | 事实（P0 实测） | 后果 | 修复 |
+| --- | --- | --- | --- |
+| **R7-a** | **Flink 2.2 的配置是 `config.yaml`（YAML）**，不是 `flink-conf.yaml`，**也不吃 `FLINK_PROPERTIES` 那套点号键** | 按调研笔记的 `FLINK_PROPERTIES` 写法配置**完全不生效** | 改用 `docker/flink/conf/config.yaml`（只写差异项） |
+| **R7-b** | **不能把空目录 bind 进 `/opt/flink/conf`** —— 会遮住镜像自带的 `config.yaml` | 启动失败：`The Flink config file '/opt/flink/conf/config.yaml' does not exist`（**已踩到**，flink-jm 变 unhealthy） | 改为**挂单文件** `./docker/flink/conf/config.yaml:/opt/flink/conf/config.yaml:ro` |
+| **R7-c** | **`apache/superset:6.1.0` 镜像不含任何 DB 驱动**（`psycopg2`/`psycopg`/`mysqlclient`/`pymysql` 全部 MISSING） | ①元数据库**不能**直接用 Postgres（worker 启动即 `ModuleNotFoundError: No module named 'psycopg2'`，**已踩到**）；②`REQ-F-OLAP-01` 的 `ecom_ads`（Doris 走 MySQL 协议）**接不上** | ①元数据库改 **SQLite**（镜像自带 sqlite3 3.40.1，零驱动依赖）；②经**官方机制** `/app/docker/requirements-local.txt`（`docker-bootstrap.sh:35` 逐字确认）在引导时 pip 装 `PyMySQL` |
+| **R7-d** | **Kafka 4.3.1 的 `kafka-topics.sh` 不再支持 `--alter` 改配置** | 建 topic 时施加 retention **直接失败**（报错原文：「To alter topic configurations, the **kafka-configs** tool can be used.」，**已踩到**） | 改用 **`kafka-configs.sh --alter --entity-type topics`**；**已证**：两 topic 最终配置为 `retention.ms=604800000` + `retention.bytes=2147483648` + 6 分区 + RF=1，与 `gdd §A.2` 完全一致 |
+
+**检测信号**：`docker compose up` 后各服务 healthcheck；`kafka-topics.sh --describe` 的 `Configs:` 行；Superset 日志里的 `ModuleNotFoundError`。
+**判定条件**：骨架**四个服务全部 healthy** 且 `config-check` 全 PASS（**P0 已达成**：Kafka/JM/TM/Superset 均 healthy，断言全绿）。
+**教训（写进流程）**：**调研笔记给的是「官方文档说应该怎样」，P0 得到的是「实机实际怎样」**——两者在配置格式、镜像内容、CLI 版本行为上**已经三次不一致**。凡涉及「按某个格式写配置」「镜像里有什么」的结论，**必须实机验证一次**才能进施工路径。
 
 ---
 

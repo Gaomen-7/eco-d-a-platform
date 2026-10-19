@@ -197,6 +197,8 @@
 - 【**2026-10-19 按一手调研修订** G2】**Doris 有官方 compose 与官方 all-in-one 镜像**（`docker/runtime/all-in-one/4.1/compose/{multi-node,cloud}.yml`；镜像 `apache/doris:all-in-one-<ver>` ＝ 1 FE + 1 BE，<20 s healthy，自带 HEALTHCHECK，`replicas` 强制 1 故建表免 `replication_num`，持久化挂 `/opt/apache-doris/fe/doris-meta` + `/be/storage`）→ **自写量降为「裁剪 + 加 `mem_limit`/端口绑定」**，不再需要自行承担 FE/BE 注册。
   ⚠️ **未变的一条**：官方明确 Docker 部署**仅用于本地开发与测试、容器销毁即丢数据** ⇒ **named volume 仍是必需而非优化**。
   ★ **新增硬约束（SRS/FSR/GDD 原文均无）**：Docker Desktop 下**容器地址宿主不可路由**，而 Doris 的 Stream Load 是「FE 收标 → **重定向到某个 BE**」的**两跳**，第二跳是容器地址 ⇒ 官方原话「a stream load **from the host cannot follow FE's redirect to a BE; run it from the `client` service instead**, which is inside the network」。**冲击 `REQ-F-RT-06` 的验证落点与 `make verify`**：须在 compose 网内声明一个按需拉起的 `client` 服务（持 `mysql`/`curl`）承担导入与 Doris 断言。**Flink-Doris-Connector 的写入不受影响**（TaskManager 本就在网内）。
+  ★ **P0 实测补充（2026-10-19）——镜像可得性修正**：实测官方镜像站**没有可直接拉取的 Doris 4.1.5**（`apache/doris:4.1.5`、`all-in-one-4.1.5`、`base-4.1.5` 全部 `denied`），只有 **`apache/doris:base-latest`**（1.96 GB）可拉，而它是**构建基座**——实测 `/opt/apache-doris` 存在但 **`fe/bin` 为空、容器内无 `java`**，**不含可运行的 FE/BE**。⇒ 上面「all-in-one 镜像可直接用」只在**官方仓库存在**的意义上成立；**落到本机必须本地构建**（与官方 `docker/runtime` 用二进制包自建镜像的做法一致）。P0 骨架因此先以 Kafka+Flink+Superset 验证，Doris 延后到能下载二进制包时。
+  ★ **另一条 P0 实测**：`registry-1.docker.io` **不可达**（`docker manifest inspect` 报 `Client.Timeout`）⇒ 必须走中国镜像站；compose 已参数化 `${REGISTRY_MIRROR}`（默认 `docker.m.daocloud.io`），实测 Kafka/Flink/Superset **拉取成功**。
 - 【已确认 G3】Superset 复用官方 `docker/` 骨架（compose + entrypoint + 初始化脚本），但剥离其演示用示例数据。
   **初始化的确切顺序**（官方 `docker-init.sh` 实证）：① `superset db upgrade` → ② `superset fab create-admin` → ③ `superset init`（建默认角色与权限）→ ④ `superset load_examples`（**可选，本项目应关闭**）。密钥由环境变量 `SUPERSET_SECRET_KEY` 提供（官方变量名）。
   看板交付形式：`superset import-dashboards -p <.zip>`（产物由 `superset export-dashboards` 生成；zip 内含 `metadata.yaml`、`dashboards/*.yaml`、`charts/*.yaml`、`datasets/*.yaml` 等）。⚠️ 该 CLI 的官方原话**只在源码 docstring**（「Export dashboards to ZIP file」），官方文档页未见——故文档引用时注明「源码级证据」。
@@ -408,6 +410,13 @@ pending ──> running ──> published
 | F3 | 迟到超期事件 | 迟到计数表增长 | 只计数，绝不修正 | 按需重跑离线补数（见 `is_late` 标记列，不算**窗口修正**） | 迟到计数与 `--late-expired` 注入量对应 |
 | F4 | 脏数据持续涌入 | DLQ topic 增长；脏率面板上升 | 计数并留痕 | 查 DLQ 内容定位原因 | 三类原因可区分；**丢弃有痕迹** |
 | F5 | Schema 变更导致恢复失败 | 从 checkpoint 恢复时 `IllegalStateException`（同类项目实证的坑） | 无自动恢复 | 预留 `ext_field` 列；或从 ODS 重放 | **GDD 新增**：schema 演进演练可跑通 |
+| **F14** | **★ P0 实测新增** 配置格式与镜像内容不符预期 | ①flink-jm 变 `unhealthy`（日志 `The Flink config file '/opt/flink/conf/config.yaml' does not exist`）；②Superset worker 启动即 `ModuleNotFoundError: No module named 'psycopg2'`；③`kafka-init` 退出码 1（`--alter` 报「the kafka-configs tool can be used」） | 三条均已定位并修复（见下） | 无 | 骨架四服务全 healthy + topic 配置与 §A.2 一致 |
+| **F15** | **★ P0 实测新增** 镜像仓库不可达 | `docker manifest inspect` 报 `registry-1.docker.io` `Client.Timeout`；官方标签 `apache/doris:4.1.5` 拉取 `denied` | 走中国镜像站（compose 已参数化 `${REGISTRY_MIRROR}`） | 自建 Doris 镜像 | 四个锚点镜像可拉（Doris 需本地构建） |
+
+**★ F14 的三条修复（P0 实测，均已验证）**：
+1. **Flink 2.2 的配置是 `config.yaml`（YAML）**，不是 `flink-conf.yaml`，**也不吃 `FLINK_PROPERTIES` 那套点号键**；且**不能把空目录 bind 进 `/opt/flink/conf`**（会遮住镜像自带 `config.yaml`）⇒ 改为**挂单文件**。修复后 flink-jm `healthy`、TM 正常、Flink 2.2.1 报 `slots-total: 4`（`numberOfTaskSlots: 4` 生效）。
+2. **`apache/superset:6.1.0` 镜像不含任何 DB 驱动**（psycopg2/psycopg/mysqlclient/pymysql 全 MISSING）⇒ 元数据库改 **SQLite**；`ecom_ads` 所需 MySQL 驱动经官方机制 `/app/docker/requirements-local.txt`（`docker-bootstrap.sh:35`）装 **PyMySQL**。
+3. **Kafka 4.3.1 的 `kafka-topics.sh` 不再支持 `--alter` 改配置**（报错原文指向 `kafka-configs` 工具）⇒ 改用 **`kafka-configs.sh --alter --entity-type topics`**。修复后两 topic 配置为 `retention.ms=604800000,retention.bytes=2147483648`、6 分区、RF=1，与 §A.2 一致。
 | F6 | Kafka 分区空闲致**水印**停滞 | 窗口不关闭、指标不更新 | 空闲超时 `table.exec.source.idle-timeout=30s` 生效 | 手动制造流量 | 停掉部分分区后窗口仍按 60 s 关闭 |
 | F7 | offset 过期（retention 生效） | `auto.offset.reset` 触发；消费从头/从尾 | 依赖配置的下游行为 | **离线回放不得从 Kafka 重读**（D3：实际保留窗约 6 小时），应走 `dump` 文件 | 长回放不静默丢数据 |
 | F8 | Doris FE/BE 容器重启后数据丢失 | 查询空表 | named volume（**必需**） | 重建初始化 | `down` 再 `up` 数据仍在（`REQ-F-ORCH-05`） |
