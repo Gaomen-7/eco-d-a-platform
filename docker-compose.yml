@@ -49,6 +49,13 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       # RF=1（单机）；见 gdd §1.2
       KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      # ★★ 必须显式设 log.dirs（P0 实测踩到的 REQ-F-ORCH-05 缺陷）★★
+      #   官方镜像的默认是 `log.dirs=/tmp/kraft-combined-logs`（见
+      #   /opt/kafka/config/server.properties:73）。**/tmp 是容器内路径，
+      #   down/up 后清空 ⇒ 数据全丢**，named volume 形同虚设。
+      #   实测证据：down 前 partition 2/3 各有 1 条记录，down/up 后 offsets 全归 0。
+      #   故必须把 log.dirs 指到挂载卷内。
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
@@ -124,15 +131,18 @@ services:
   # ③ OLAP：Doris 4.1.5（FE + BE）
   #    ★ 出厂默认 -Xmx8192m ＝ 整个 8 GB 预算 ⇒ 必须显式下调
   #    ★ BE mem_limit 出厂默认 90% ⇒ 必须显式下调
+  #    ★ 镜像必须**本地构建**（官方无版本化镜像）；归入 profile "doris"
+  #      ⇒ 未构建时 `docker compose up` **不会**因此失败（P0 骨架先以
+  #        Kafka+Flink+Superset 验证，Doris 就绪后再 `--profile doris` 纳入）。
+  #      构建： docker build -f docker/doris/Dockerfile -t eco/doris:4.1.5 docker/doris
   # ─────────────────────────────────────────────────────────────
   doris-fe:
-    # ★ 自建镜像（官方不发可直接拉取的 4.1.5；构建见 docker/doris/Dockerfile）
-    #   默认可用 DORIS_IMAGE 覆盖；未构建时该服务起不来（见 .env.example 与 gdd F15）。
     image: ${DORIS_IMAGE:-eco/doris:4.1.5}
     container_name: eco-doris-fe
     hostname: doris-fe
     mem_limit: 2g
     memswap_limit: 2g
+    profiles: ["doris"]
     command: ["fe"]
     environment:
       # ⚠️ 真正的 -Xmx 覆盖在**镜像构建期**完成（fe.conf 的 JAVA_OPTS_FOR_JDK_17）。
@@ -162,6 +172,7 @@ services:
     hostname: doris-be
     mem_limit: 3g
     memswap_limit: 3g
+    profiles: ["doris"]
     command: ["be"]
     depends_on:
       doris-fe:
