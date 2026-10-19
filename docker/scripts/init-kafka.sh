@@ -11,6 +11,7 @@ RETENTION_MS="${RETENTION_MS:-604800000}"     # 7 天
 RETENTION_BYTES="${RETENTION_BYTES:-2147483648}"  # 2 GB（须显式设，默认 -1 无上限）
 
 KT="/opt/kafka/bin/kafka-topics.sh"
+KC="/opt/kafka/bin/kafka-configs.sh"
 
 echo "[init-kafka] bootstrap=$BOOTSTRAP partitions=$PARTITIONS"
 for i in $(seq 1 30); do
@@ -27,10 +28,13 @@ create_topic() {
       --topic "$name" --partitions "$PARTITIONS" --replication-factor 1
     echo "[init-kafka] created: $name"
   fi
-  # retention：官方语义「任一条件先满足即删」（gdd §A.2 / D3）
-  "$KT" --bootstrap-server "$BOOTSTRAP" --alter --topic "$name" \
-    --config "retention.ms=$RETENTION_MS" \
-    --config "retention.bytes=$RETENTION_BYTES" >/dev/null
+  # ★ P0 实测修正：Kafka 4.3.1 的 kafka-topics.sh **不再支持 --alter 改配置**
+  #   （报错原文：「Option combination "[[bootstrap-server], [config]]" can't be used
+  #   with option "[alter]" (To alter topic configurations, the kafka-configs tool
+  #   can be used.)」）⇒ 必须改用 **kafka-configs.sh --alter**。
+  #   retention：官方语义「任一条件先满足即删」（gdd §A.2 / D3）
+  "$KC" --bootstrap-server "$BOOTSTRAP" --alter --entity-type topics --entity-name "$name" \
+    --add-config "retention.ms=$RETENTION_MS,retention.bytes=$RETENTION_BYTES"
   echo "[init-kafka] retention applied: $name (ms=$RETENTION_MS bytes=$RETENTION_BYTES)"
 }
 
