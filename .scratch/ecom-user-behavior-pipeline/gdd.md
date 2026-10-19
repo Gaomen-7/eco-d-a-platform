@@ -57,6 +57,8 @@
 - 默认运行 60 s 产出 12,000 ±10%（`REQ-F-GEN-03`）——**原型已实测 201.6 ev/s**，见 §E。
 - 尖峰模式实测 ≥1000 events/s（`REQ-F-GEN-04`）——**原型已实测 1001.6 ev/s**。
 - 同 `--seed` 同参数跑两遍，输出文件哈希一致（`REQ-F-GEN-06`）。
+  - ⚠️ **2026-10-19 补前提**：Faker **必须 pin 到补丁号**。官方 seeding 文档原话：「results are **not guaranteed to be consistent across patch versions**. If you hardcode results in your test, make sure you pinned the version of Faker **down to the patch number**」⇒ 不 pin 补丁号则该判据**不成立**。
+  - ⚠️ 生成器运行时 pin **Python 3.12**（由 `uv python install` 托管），**不吃**宿主环境（Windows 3.13 / WSL 3.14）——否则违反 C3 锚点不漂移。
 - **GDD 新增判据**：注入器生效可证——`--late-correctable` 出去的事件必须有对应数量的窗口修正记录；`--late-expired` 出去的事件必须有对应数量的迟到计数。仅断言「配置可见」不算通过。
 - **GDD 新增判据**：会话连贯性可证——在 `--chaos-ratio 0` 下，产出的 `purchase` **100%** 有其前置步。
 
@@ -142,6 +144,7 @@
 - 查到 DWD 行数 > 0；`event_time_ms` 为毫秒整数（`REQ-F-LAKE-02`）。
 - 五层表均存在于同一 catalog（`REQ-F-LAKE-06`）；`make replay` 可跑完五层（`REQ-F-LAKE-07`）。
 - **GDD 升级判据（替代原「表属性配置可见、快照数受控」的空泛说法，`REQ-F-LAKE-08`）**：
+  - ⚠️ **2026-10-19 修订两处**：①`snapshot.num-retained.min` 是**下限**（快照数**不会低于** 5），实际数量由 `snapshot.time-retained`（1 h）与 `num-retained.max` 决定 ⇒ **「快照数 = 5」是错误预期**，判据须改为「下限 5 生效 + 实际数量受控」；②官方支持系统表的引擎列表（Flink/Spark/Trino/**StarRocks**）**不含 Doris** ⇒ 该查询**必须在 Flink SQL 侧执行**，不能写进 Doris。
   - 快照数由 Paimon 官方系统表**直接读出**，不靠人眼看配置：`SELECT count(*) FROM <table>$snapshots`（官方原话：「The `snapshots` table lists retained snapshots and their commit metadata」）。
   - 「有数据」也须用 `COUNT(*)` 判，**不得**用 `total_record_count` —— 官方明确后者是「unmerged counts calculated from data files, **not logical row counts**」（这是个容易算错数的坑）。
   - schema 演进可查：`SELECT * FROM <table>$schemas`（供 F5 演练用）。
@@ -191,11 +194,17 @@
 **触发条件**：`docker compose up`；Makefile 目标按需触发。
 
 **流程**
-- 【已确认 G2】**Doris 没有官方 docker-compose**（官方仅 `curl -fsSL .../start-doris.sh | bash`，且仓库内 `docker/` 是开发/编译环境；官方明确 Docker 部署**仅用于本地开发与测试、容器销毁即丢数据**）→ 本项目**自己手写 compose**，并自行承担 FE/BE 注册、root 密码、建库等初始化（**SRS 未列这块工作量**）。
+- 【**2026-10-19 按一手调研修订** G2】**Doris 有官方 compose 与官方 all-in-one 镜像**（`docker/runtime/all-in-one/4.1/compose/{multi-node,cloud}.yml`；镜像 `apache/doris:all-in-one-<ver>` ＝ 1 FE + 1 BE，<20 s healthy，自带 HEALTHCHECK，`replicas` 强制 1 故建表免 `replication_num`，持久化挂 `/opt/apache-doris/fe/doris-meta` + `/be/storage`）→ **自写量降为「裁剪 + 加 `mem_limit`/端口绑定」**，不再需要自行承担 FE/BE 注册。
+  ⚠️ **未变的一条**：官方明确 Docker 部署**仅用于本地开发与测试、容器销毁即丢数据** ⇒ **named volume 仍是必需而非优化**。
+  ★ **新增硬约束（SRS/FSR/GDD 原文均无）**：Docker Desktop 下**容器地址宿主不可路由**，而 Doris 的 Stream Load 是「FE 收标 → **重定向到某个 BE**」的**两跳**，第二跳是容器地址 ⇒ 官方原话「a stream load **from the host cannot follow FE's redirect to a BE; run it from the `client` service instead**, which is inside the network」。**冲击 `REQ-F-RT-06` 的验证落点与 `make verify`**：须在 compose 网内声明一个按需拉起的 `client` 服务（持 `mysql`/`curl`）承担导入与 Doris 断言。**Flink-Doris-Connector 的写入不受影响**（TaskManager 本就在网内）。
 - 【已确认 G3】Superset 复用官方 `docker/` 骨架（compose + entrypoint + 初始化脚本），但剥离其演示用示例数据。
   **初始化的确切顺序**（官方 `docker-init.sh` 实证）：① `superset db upgrade` → ② `superset fab create-admin` → ③ `superset init`（建默认角色与权限）→ ④ `superset load_examples`（**可选，本项目应关闭**）。密钥由环境变量 `SUPERSET_SECRET_KEY` 提供（官方变量名）。
   看板交付形式：`superset import-dashboards -p <.zip>`（产物由 `superset export-dashboards` 生成；zip 内含 `metadata.yaml`、`dashboards/*.yaml`、`charts/*.yaml`、`datasets/*.yaml` 等）。⚠️ 该 CLI 的官方原话**只在源码 docstring**（「Export dashboards to ZIP file」），官方文档页未见——故文档引用时注明「源码级证据」。
 - 逐服务显式 `mem_limit`；`restart: unless-stopped`；端口仅绑 `127.0.0.1`；日志轮转 10 MB × 3。
+  - ⚠️ **2026-10-19 补**：`mem_limit` **管不到 swap**（官方：只设 `memory` 不设 `memswap_limit` 时容器可借**等量** swap）⇒ **每个服务同时写 `memswap_limit` ＝ `mem_limit`**，否则 `REQ-F-ORCH-02` 有渗漏点。
+  - ⚠️ **不与** `deploy.resources.limits.memory` **并存**（官方：`deploy` 是可选段、未实现即忽略；并存时要求二者一致）。
+  - ⚠️ 「逐服务不允许缺省」须由 `make verify` **脚本断言**：`docker compose config` 能**列出** `mem_limit`（实测会把 `128m` 正常化为字节值）但**不报缺**。
+  - ⚠️ 体积/冷启动记账用 **`docker image inspect`**，**不用 `docker images`**（本机 `UseContainerdSnapshotter=true`，官方警告此时读数是**压缩 blob 叠加**、显著虚高）。
 - named volume 持久化 Kafka/Paimon/Doris/Superset 元数据——【已确认 G2】在 Doris 这一侧这是**必需而非优化**，否则 `down` 即丢数据、直接违反 `REQ-NF-REL-02`。
 - Makefile 目标：`up` / `down` / `init` / `replay` / `verify` / `spike` / `verify-fault` / `logs`。
 
@@ -282,7 +291,8 @@
 | 滚动 UV 窗口 | **1 小时** | Flink 侧精确去重 |
 | 看板刷新 | **10 s** | Superset 无硬下限（B7） |
 | 端到端延迟目标 | **≤60 s** | 设计目标 |
-| 快照保留（Paimon） | `snapshot.num-retained.min = **5**` | ⚠️ 官方默认 **10**，须显式设 5（D2） |
+| 快照保留（Paimon） | `snapshot.num-retained.min = **5**` | ⚠️ 官方默认 **10**，须显式设 5（D2）。**且这是下限不是目标值**——实际数量由 `snapshot.time-retained`(1 h) 决定 |
+| Flink JM/TM 内存 | `jobmanager.memory.process.size` / `taskmanager.memory.process.size` **必须显式配** | ⚠️ **官方这两个键无默认值**，原话「One of the three mentioned ways has to be used to configure Flink's memory …, or the **Flink startup will fail**」。分项默认（managed.fraction 0.4、network.fraction 0.1、metaspace 256m、jvm-overhead 0.1）为官方默认 |
 | `snapshot.time-retained` | 1 h（官方默认） | 保持默认 |
 | compaction | `compaction.min.file-num = 5`、`full-compaction.delta-commits = 1` | **保持官方默认**；不照抄其它为治小文件调成 10 的项目 |
 
@@ -303,17 +313,19 @@
 | externalized retention | `execution.checkpointing.externalized-checkpoint-retention=**RETAIN_ON_CANCELLATION`**（或 `RETAIN_ON_FAILURE`） | 官方默认 `NO_EXTERNALIZED_CHECKPOINTS` —— **默认值下 verify-fault 无法从指定点恢复**，须显式改。这是 `REQ-F-RT-05` + `REQ-F-VERIFY-03` 的前提 |
 | 用户池规模 | **10 万**（可配置） | UV 与漏斗状态量基数 |
 | 生成速率 | 默认 **200 ev/s**；尖峰 **≥1000 ev/s** | 原型已实测 201.6 / 1001.6 |
-| 容器常驻内存 | **≤8 GB**（逐服务 `mem_limit`） | **天花板** |
-| 磁盘占用 | **≤20 GB** | §D 已验算：合计 7–11 GB 成立 |
+| 容器常驻内存 | **≤8 GB**（逐服务 `mem_limit`） | **天花板**。（【2026-10-19 偏离登记】按官方**出厂默认**参数此预算**不成立**：Doris FE `fe.conf` 默认 `-Xmx8192m` ＝ 8.0 GiB ＝ 整个预算；BE `mem_limit` 默认 **90%** ⇒ 天花板下 ≈10.5 GB；官方 dev/test 口径 **FE 8 GB + BE 16 GB**。缺口 ≈5 GB 全部落在 Doris。**处置**：`-Xmx` 与 `mem_limit` **必须显式下调**（如 1536m / 25%），预算须 P0 实测回填。详见 `HLD.md` §8-R1 与 §7.1 D-B） |
+| 磁盘占用 | **≤20 GB** | §D 已验算：合计 7–11 GB 成立。（【2026-10-19 偏离登记】官方 dev/test 磁盘口径 **FE 10 GB+ / BE 50 GB+**，与本预算**正面冲突** ⇒ 20 GB 是**低于官方口径的设计值**；容器数据与镜像层**已在 F:**（实测 `CustomWslDistroDir=F:\Docker Desktop\DockerDesktopWSL`），但 `UV_CACHE_DIR` 未设 ⇒ **Python 依赖默认落 C 盘**（C: 仅剩 9.6 GB），须显式改向。详见 `HLD.md` §4.5 与 §8-R5） |
 
 ### A.3 运行时与版本
 
 | 参数 | 值 | 说明 |
 | --- | --- | --- |
-| **JDK 基线** | **17** | connector README 版本表：Flink 2.0–2.3 → JDK 17（2.1+ 的 JDK 21 为 experimental）；Flink 2.x artifact 以 `--release 17` 编译。**SRS/FSR 均未记载** |
+| **JDK 基线** | **17** | connector README 版本表：Flink 2.0–2.3 → JDK 17（2.1+ 的 JDK 21 为 experimental）；Flink 2.x artifact 以 `--release 17` 编译。**SRS/FSR 均未记载**。⚠️ **2026-10-19 补**：`start_fe.sh` 源码逐字要求 **恰为 17**（非 17 打印 `ERROR: The jdk_version is N, must be 17.` 后 `exit 1`）；而**本机实测无 JDK 17**（三处常见目录全无；宿主 PATH 是 Oracle **18.0.2**、`JAVA_HOME=E:\space\09-tools\Jdk1.8`；WSL 是 **11.0.32.1**）⇒ **P0 确定性阻塞项**，须在 WSL2 内装 JDK 17 |
 | Flink | 2.2.x | 不得用 2.3.0（Kafka connector 断链） |
 | 空闲超时配置项 | `table.exec.source.idle-timeout` | 见 A.1 注 |
 | 注入器 | `--late-correctable 0.03`、`--late-expired 0.02`、`--chaos-ratio 0`、`--seed` | 相对**水印**计算 |
+| **Kafka connector 完整坐标** | `org.apache.flink:flink-connector-kafka:**5.0.0-2.2`** | ⚠️ **2026-10-19 补**：Maven metadata 实测 `<release>5.0.0-2.2</release>`。FSR/SRS 记的裸「5.0.0」**不完整**——`-2.2` 是 Flink 线后缀，施工必须写全 |
+| 运行面锚点（工具链） | `uv`（已装 **0.12.19**，需加 PATH）｜Python **3.12**（uv 托管）｜`Ruff`（lint+format，pin）｜**`basedpyright` 1.40.2**（类型门禁，pin；自带 node）｜`confluent-kafka`｜`pydantic v2`｜**Faker pin 补丁号** | 2026-10-19 由 HLD §3 定案；`ty` 因诊断可任意版本间变更被否 |
 
 ---
 
@@ -401,7 +413,7 @@ pending ──> running ──> published
 | F8 | Doris FE/BE 容器重启后数据丢失 | 查询空表 | named volume（**必需**） | 重建初始化 | `down` 再 `up` 数据仍在（`REQ-F-ORCH-05`） |
 | F9 | 内存超限 OOM kill | `docker stats` 超预算；容器被杀 | `mem_limit` 硬限 | 按 R3 序列降级（MinIO→文件；Superset→Grafana；**新增：Kafka→原生镜像**） | `docker stats` 总值 ≤8 GB |
 | F10 | 磁盘击穿 20 GB | 卷使用率 | 保留策略生效 | 关注 `REQ-NF-CAP-07` 提示 | 分区保留**行为**可证（D1：须显式 `start=-30`） |
-| F11 | Paimon 小文件数膨胀 | 文件数/快照数 | compaction（保持官方默认） | 手动 compact | 快照数受控为 5（D2：须显式设 `num-retained.min=5`） |
+| F11 | Paimon 小文件数膨胀 | 文件数/快照数 | compaction（保持官方默认） | 手动 compact | ⚠️ **快照数不是「= 5」**：`snapshot.num-retained.min=5` 是**下限**，实际由 `snapshot.time-retained`(1 h) 与 `num-retained.max`(MAX) 决定（D2 修订）；系统表查询须走 **Flink SQL** |
 | F12 | 窗口规则①误判合法历史数据 | 拒绝表 100% 命中 | **相对下界**（按推荐） | 排查规则 | 公开数据集回放**不应** 100% 被判脏（D4） |
 | F13 | 漏斗状态无限增长 | 状态大小单调上升 | TTL 清理 32 分钟 | 调参 | 状态大小稳定 |
 
@@ -456,8 +468,9 @@ SRS 一边要「end-to-end exactly-once：source offset + checkpoint + sink 2PC 
 ### D7 · `REQ-F-LAKE-08` 快照数 5 与官方默认 10 不符
 Paimon `snapshot.num-retained.min` 官方默认 **10**。**处置**：表属性**显式设 5**（见 §A）。
 
-### D8 · `REQ-F-OLAP-03` 的「30 天保留」默认不生效
+### D8 · `REQ-F-OLAP-03` 的「30 天保留」默认不生效（**2026-10-19 补第三个前置条件**）
 官方 `dynamic_partition.start` 默认 **-2147483648** ＝「历史分区不删除」。**处置**：**显式设 `start=-30`**（见 §A）。照默认建表的结果与需求**恰好相反**。
+★ **补充（本轮新发现，原 D8 漏了）**：Doris 动态分区另有 **FE 级总开关 `dynamic_partition_enable`，默认 `false`** ⇒ **即使表上写了 `dynamic_partition.enable=true`，默认配置下分区创建/删除调度根本不跑**。故 §1.5 的判据「`SHOW PARTITIONS` 显示历史分区被**实际删除**」在默认配置下**必然不通过**。初始化脚本必须显式执行 `ADMIN SET FRONTEND CONFIG ("dynamic_partition_enable"="true")`，并补齐另三个必填/关键项：`time_unit`、`end`、`prefix`，以及不出历史分区就不生效的 `create_history_partition=true`。
 
 ### D9 · `REQ-F-RT-03` 的立论前提不成立（**近似算法**降级）
 SRS 称「全量去重状态会顶满天花板」故须近似。**算术核对**：去重基数是**用户池**（10 万）而非事件数（720k/h）；精确去重状态 **MB 级**，前提不成立。
@@ -503,8 +516,11 @@ Doris **无官方 docker-compose**（官方仅 `curl | bash` 启动脚本；仓�
 
 ## F. 本 GDD 的收敛状态
 
-**已确认**：Q1–Q23（用户逐条裁决）。
-**按推荐默认**：Q24–Q31（推荐已给出，用户未逐条答复）——**若你反对某条，指出条目号即可局部修订**。
-**仍待你一句话**：本地 4 个提交（`e7e6480`/`c3f31e2`/`e55da78`/`63e90c1`）是否推送 `origin/main`。
+**已确认**：Q1–Q23（用户逐条裁决）；**Q24–Q31 已于 2026-10-19 全部按推荐裁决**。
 
-**下一层文档**：`spec.md`（实施规格）由你另开会话产出；本 GDD 与 `SRS.md` / `FSR.md` 同址，便于一次性收口。
+**2026-10-19 的修订记录（本文就地修订处，逐条）**：本文以下条目在读一手调研后**已就地修订**（`SRS.md`/`FSR.md` 未动，等 `spec.md` 收口）——
+§1.7 G2/D15（Doris 有官方 compose + all-in-one 镜像；**新增 Stream Load 网内 `client` 硬约束**）、§1.7 的 `mem_limit`/`memswap_limit`/`config` 不报缺、§1.4 快照判据（下限 5 非「=5」；系统表查询须走 Flink SQL）、§C F11（同上）、§D D2 修订、§D D8 补 FE 级总开关 `dynamic_partition_enable`、§A.2 内存与磁盘的偏离登记、§A.3 JDK 17 补记本机缺口与 `start_fe.sh` 源码要求、§A.3 补 Kafka connector **完整坐标 `5.0.0-2.2`**、§A.3 补运行面工具链锚点、§1.1 `REQ-F-GEN-06` 补 Faker pin 补丁号前提。
+→ 完整依据与逐条出处见 **`HLD.md`**（同址，2026-10-19）§7.2 与 §9。
+
+**下一层文档**：`spec.md`（实施规格）由你另开会话产出；本 GDD 与 `SRS.md` / `FSR.md` / **`HLD.md`** 同址，便于一次性收口。
+**推送状态**：本地提交由 agent 完成；**推送由你执行**（2026-10-19 用户明确）。
