@@ -1,0 +1,488 @@
+# GDD — 电商用户行为数据全链路（离线 + 实时）
+
+> **性质**：游戏/产品设计文档（Game/General Design Document）体例的**功能设计文档**。本文回答「每个功能**怎么做**、触发条件与状态怎么变、怎么算做到了」。
+> **日期**：2026-10-19（Asia/Shanghai）
+> **上游**：`SRS.md`（需求权威）｜`FSR.md`（路线冻结）｜`research-notes.md`（一手调研证据）
+> **下游**：`spec.md`（实施规格，另行开会话产出）
+> **术语**：一律以仓库根 `GLOSSARY.md` 为准；本文出现的领域概念均在该表内定义。
+> **权威关系**：本文**不是** spec，也不声明需求。凡与 `SRS.md` 冲突处，本文在 §D 显式列出并说明，**不修改** `SRS.md`。
+
+## 0. 这份文档怎么用
+
+| 你要做的事 | 读哪节 |
+| --- | --- |
+| 看每个功能的触发/流程/状态/判据 | §1 功能设计（11 节） |
+| 查全文所有数值参数 | §A 参数总表 |
+| 看状态机 | §B 状态机图集 |
+| 排查失败与恢复 | §C 失败路径登记表 |
+| 知道哪些地方与 SRS 不一致 | §D 对 SRS 的偏离与缺陷 |
+| 看原型结论 | §E 原型索引 |
+
+**已确认 vs 按推荐默认**：本文内容分两类来源——
+- **【已确认】**：用户在拷问中逐条裁决过的（Q1–Q23、以及 D4/D5/D6 的处置）。
+- **【按推荐】**：拷问中已给出推荐、但用户尚未逐条答复的（Q24–Q31）。这些条目在文内以 `【按推荐】` 标注；若你反对，直接指出条目号，本文可局部修订。
+
+两条贯穿全文的锚定词（同 `FSR.md`/`SRS.md`）：**天花板**（容器群可用的内存预算顶格，≈8 GB）、**锚点**（组件精确 pin 版本）。
+
+一个必须说清的区分：**事件结构分布**（同窗口内各事件类型的计数比）**不是**转化率——用户的浏览与支付通常落在不同分钟的窗口里。本文的漏斗一律指**转化漏斗（步进式）**，其单位是 `user_id` 的步进推进，与 1 分钟窗口正交。
+
+---
+
+## 1. 功能设计
+
+### 1.1 模块① 数据生成器
+
+**触发条件**
+- 开发者显式调用：`live` 模式常驻启动；`dump` 模式一次性产出文件；`replay` 模式按原始时间戳回放。三者互斥。
+- 【已确认 Q20】生成器内部以**会话轨迹**为单位推进：每个会话沿 `view_item → add_to_cart → begin_checkout → purchase` 按步进概率前行，`purchase` 必有前置步。
+
+**流程**
+1. 载入配置：速率（默认 200 events/s）、`--seed`、注入器参数、用户池规模。
+2. `dump`/`replay` 模式：先产出维度数据（商品/品类/用户/地域/渠道），再产出事件；【已确认 Q26】维度**带变更流**（`--dim-change-ratio`），属性变更写入拉链区间。
+3. 事件生成：按会话轨迹推进；每条事件经三个独立注入器改写：
+   - `--late-correctable`（默认 **0.03**）：`event_time = 当前水印 − 随机(5 s, 115 s)` → 落 2 分钟**允许延迟内**，用于触发窗口修正。
+   - `--late-expired`（默认 **0.02**）：`event_time = 当前水印 − 随机(130 s, 300 s)` → **超期**，用于触发「只计数」通道。
+   - `--chaos-ratio`（默认 **0**）：按比例故意**跳过**漏斗中间步，用于测试补记逻辑。
+   偏移一律**相对水印**而非墙上时钟计算，故任何速率下迟到程度都是设计值；`--seed` 下可复现。
+4. 【已确认 Q21】三个注入器语义**互不混用**；旧的单参数 `--late-ratio` 拆为上列两项。
+5. `live` 模式按速率写 Kafka；大促尖峰模式短时速率 ≥1000 events/s。
+
+**状态与数据变化**
+- 生成器运行态：`idle → warmup → live → (spike ⇄ live) → draining → stopped`（见 §B.1）。
+- 产出物：事件 JSON（含 `schema_version`）、维度快照与维度变更流。
+- 用户池：默认 **10 万** 个不同 `user_id`（【已确认 Q18】），可配置。这是滚动 UV 与漏斗状态量的基数来源。
+
+**验收判据**
+- 两模式均可独立运行且退出码 0（`REQ-F-GEN-01`）。
+- 默认运行 60 s 产出 12,000 ±10%（`REQ-F-GEN-03`）——**原型已实测 201.6 ev/s**，见 §E。
+- 尖峰模式实测 ≥1000 events/s（`REQ-F-GEN-04`）——**原型已实测 1001.6 ev/s**。
+- 同 `--seed` 同参数跑两遍，输出文件哈希一致（`REQ-F-GEN-06`）。
+- **GDD 新增判据**：注入器生效可证——`--late-correctable` 出去的事件必须有对应数量的窗口修正记录；`--late-expired` 出去的事件必须有对应数量的迟到计数。仅断言「配置可见」不算通过。
+- **GDD 新增判据**：会话连贯性可证——在 `--chaos-ratio 0` 下，产出的 `purchase` **100%** 有其前置步。
+
+### 1.2 模块② 消息队列
+
+**触发条件**：`docker compose up` 拉起 Kafka；初始化脚本建 topic 并施加配置。
+
+**流程**
+1. KRaft 单容器 combined mode（broker + controller 同进程）。
+2. 建主 topic `ecom.behavior.event.v1` 与死信 topic `ecom.behavior.event.v1.dlq`。
+3. 施加 retention、分区数、副本因子。
+4. 【已确认 Q12】分区键取 **`user_id`**——保证**每用户有序**，这是步进漏斗与去重状态的前提。
+
+**状态与数据变化**
+- topic 状态：不存在 → 已创建 → 已配置（RF=1、固定分区数）。
+- 【已确认 D3】retention「7 天或 2 GB 取小」在本速率下**实际生效窗约 6 小时**（200 ev/s × ~500 B/条 ≈ 8.05 GB/天）。这是设计值而非缺陷，但**下游必须知情**（见模块④）。
+
+**验收判据**
+- 两 topic 均存在（`REQ-F-MQ-01`）。
+- topic 描述显示 RF=1 且分区数等于配置值（`REQ-F-MQ-02`）——默认 **6** 个分区（≥ 并行度上限 4 留余量）。
+- topic 配置的 retention 与 §A 参数表一致（`REQ-F-MQ-03`）。
+- 采样消息可解析、键名为 `snake_case`、含 `schema_version`（`REQ-F-MQ-04`）。
+- **GDD 新增判据**：**分区键可证**——同一 `user_id` 的事件必须全部落在同一分区（否则 Q9 的步进序不成立）。
+
+### 1.3 模块③ 实时作业
+
+**触发条件**：常驻运行；`docker compose up` 拉起 Flink JM/TM 后由脚本提交作业。作业生命周期见 §B.2。
+
+**流程（【已确认 Q16】混合路线）**
+1. **Flink SQL 段**：Kafka source → 窗口聚合 → Doris sink（经 Flink-Doris-Connector，Stream Load 2PC）。
+2. **DataStream 段**：**迟到侧输出**。这不是选型偏好而是**硬约束**——Flink SQL 官方**没有**迟到侧输出机制（[FLINK-10031](https://issues.apache.org/jira/browse/FLINK-10031) 与 [FLINK-20527](https://issues.apache.org/jira/browse/FLINK-20527) 均 **Open**，原话「The Table API & SQL **drop late events right now**」）；`sideOutputLateData` 只能挂在 DataStream 的窗口算子上，且侧输出的是**原始元素**。
+3. 事件处置流水线（**四关顺序冻结**，见 §B.4 与原型）：
+   - ① 结构与取值 → ② 时间范围 → ③ 唯一性 → ④ 迟到；**脏优先于迟到**。
+   - **脏**（①②违规）→ DLQ topic。**重复**（③）→ 独立重复通道计数，**不进 DLQ、不计脏率**。【已确认 Q11】
+   - **迟到**（④）：允许延迟内 → **覆盖写修正**已落定窗口；超期 → **只计数**。【已确认 Q10】
+4. 窗口：1 分钟滚动；【已确认 Q13】窗口内**提前发射**（窗口语义仍是 1 分钟，对未关闭窗口每 10 s 发射中间结果，Doris 以 `(window_start, 维度)` 作 unique key 覆盖写，窗口关闭时落定）。
+   - **⚠️ 机制约束（B4）**：`table.exec.emit.early-fire.*` 只对**旧式 Group Window Aggregation**（TUMBLE/HOP）生效；**Window TVF 不支持**（官方原话见 §D）。且该配置标 `@Experimental`、有移除跟踪 FLINK-29692。
+5. 【已确认 Q9/Q19】四步漏斗按**用户步进**推进（key = `user_id`），与 1 分钟窗口**正交**。记账用**双列并陈**：`funnel_cnt_observed`（真实到达）与 `funnel_cnt_inferred`（含**补记**）。补记值不冒充观测值。
+6. 【已确认 Q23】滚动 UV：由 **Flink 侧键控去重状态精确算出**（1 小时滚动，用户池 10 万 → 状态 MB 级），写入 Doris 的只是**已算好的整数**。近似算法**不作主路径**。
+7. 作业并行度 ≤ 4；checkpoint 开启，RocksDB 增量。
+
+**状态与数据变化**
+- 作业态：`created → running → (restarting ⇄ running) → suspended/finished`。
+- 单事件处置态：`received → validated → deduped → admitted / corrected / late_counted / duplicate / dirty_dlq`。
+- 窗口态：`累加中 → 已提前发射（暂定值） → 已落定 → (已修订)`。
+- 状态规模（【已确认 Q6/Q22】）：`event_id` 去重状态保 **1 小时**（约 68.7 MB）；漏斗键控状态会话 **30 分钟**、TTL 清理 **32 分钟**；UV 滚动去重状态约 MB 级。
+
+**验收判据**
+- 窗口触发周期实测 ≈60 s（`REQ-F-RT-01`）；Doris 指标表均有数据（`REQ-F-RT-02`）。
+- Flink UI 可见 checkpoint 成功记录（`REQ-F-RT-05`）；Doris 表持续增长，重启后无重复无丢失（`REQ-F-RT-06`）。
+- DLQ topic 有消息且内容可读（`REQ-F-RT-07`）；并行度 ≤4（`REQ-F-RT-08`）。
+- **GDD 新增判据（替代原「配置可见」）**：
+  - **迟到通道可证**：设 `--late-correctable 0.03` 后，Doris 侧出现 `revision > 0` 的窗口；设 `--late-expired 0.02` 后，迟到计数表出现对应条目。**不能**用「Flink UI 里能看到」当判据。
+  - **重复与脏可分可证**：故障恢复重放期间，**脏率不得上升**，重复计数上升（D2 见 §D）。原型已实测：若把重复计为脏，重放 5 条合法事件会把脏率从 0% 推到 50%（真脏 0 条）。
+  - **漏斗单调且诚实**：`funnel_cnt_observed` 允许非单调（真实跳步），`funnel_cnt_inferred` 必须单调不增。
+  - **UV 精确性**：实时滚动 UV 与离线精确 UV **逐窗口相等**（【已确认 Q23】使对账从「误差量化」升级为一致性校验）。
+
+### 1.4 模块④ 湖仓分层
+
+**触发条件**：离线分层由 **Makefile 触发**（无调度器）。`make replay` 跑完整五层。
+
+**流程**
+1. 【已确认 Q25】**ODS 只落原样字节**：`payload` 原文 + `kafka_partition` / `offset` / `timestamp` 元数据。**一切解析、类型归属、时间单位转换都在 DWD 完成**。
+   理由：`REQ-F-LAKE-01` 要求「不做有损加工」；秒→毫秒转换一旦在 ODS 发生便不可回滚，重放会拿到被改过的数据。且同类项目的坑正是「schema 变更炸历史分区」——把解析推迟到 DWD 可让 ODS 完全免疫 schema 演进。
+2. DWD：清洗 + 规范化 + 统一 UTC epoch 毫秒 + 超集 schema；**主键表**（`event_id`）。
+3. DIM：**时态维表**（商品/品类/用户/地域/渠道），主键表 + 拉链区间。【已确认 Q26】由生成器的维度变更流喂给。
+4. DWS：主题宽表聚合；ADS：应用层指标。
+5. 五层全部落 Paimon 单一 catalog（库名 `ecom_lake`）。
+6. 表维护：快照保留与 compaction（参数见 §A）。
+
+**状态与数据变化**
+- 分层作业态（per-layer）：`pending → running → failed/published`。
+- 【已确认 Q24】**离线三通道与实时严格同构**：
+
+| 通道 | 实时落点 | 离线落点 |
+| --- | --- | --- |
+| 脏（①②违规） | DLQ topic | `dwd_behavior_event_reject`（含 `reject_reason`、`raw_payload`、计数） |
+| 迟到（合法但错过窗口） | 允许延迟内→窗口修正；超期→计数 | **不单独分流**：落 DWD 主表并加 `is_late` + `late_lag_ms` 标记列，供对账区分「少算」与「本来没这条」 |
+| 重复 | 独立重复通道计数 | 靠 DWD `event_id` 主键表**天然吸收**（与 Q6(c) 同一机制） |
+
+**验收判据**
+- ODS 行数 ≥ 摄入事件数；`payload` 列非空（`REQ-F-LAKE-01`）。
+- 查到 DWD 行数 > 0；`event_time_ms` 为毫秒整数（`REQ-F-LAKE-02`）。
+- 五层表均存在于同一 catalog（`REQ-F-LAKE-06`）；`make replay` 可跑完五层（`REQ-F-LAKE-07`）；表属性配置可见、快照数受控（`REQ-F-LAKE-08`）。
+- **GDD 升级判据（原判据空表也能通过）**：
+  - DIM 判据从「可 join 出结果」升级为「**同一 `item_id` 在不同 `event_time` 下 join 出不同属性值，且拉链区间无重叠无空洞**」（`REQ-F-LAKE-03` 的强化）。
+  - 拒绝表判据为「违规样本被正确分流**且有计数**」，且**必须能区分三类原因**（结构/取值、时间范围、重复）。
+  - **GDD 新增判据**：**不变量断言**——`ODS 行数 = DWD 行数 + 拒绝表行数 + 迟到标记差异`（在给定输入下应可逐条对平）。
+
+### 1.5 模块⑤ OLAP
+
+**触发条件**：看板查询触发读；实时作业触发写。
+
+**流程**
+- 看板直连库 `ecom_ads`。
+- 【已确认 Q23】表模型**保留 UNIQUE KEY 模型**（Merge-on-Write），写入幂等；滚动 UV 由上游算好以整数写入。
+- 【已确认 Q27】分区保留**必须显式配置**：`dynamic_partition.start = -30`。**官方默认是 -2147483648，语义为「历史分区不删除」**——照默认建表的结果是**永不删除**，与需求**恰好相反**（详见 §D D1）。
+- 覆盖写修正依赖 same-key upsert；如需部分列更新，Doris 对 UNIQUE MoW 支持 `partial_columns=true`，但**默认 INSERT INTO 是整行 UPSERT**，必须显式开启。
+
+**状态与数据变化**：窗口行 `写入 → 暂定值 → 落定 → (被修正，revision+1)`。
+
+**验收判据**
+- Superset 中 `ecom_ads` 连接可用（`REQ-F-OLAP-01`）；同批数据写两遍结果一致（`REQ-F-OLAP-02`）。
+- **GDD 新增判据**：分区保留**行为**可证——建表后 `SHOW PARTITIONS` 显示历史分区被**实际删除**，而不是仅「配置项存在」。
+- 【已确认】`REQ-F-OLAP-04`（Paimon Catalog 直读）保持 COULD：同类项目那条路**不可验证**（其仓内唯一的 catalog 文件是 Flink 侧的 HMS catalog，不是 Doris 的 `CREATE CATALOG`；README 仅有截图），且官方依赖 Paimon 1.4.2 与锚定的 2.1.0 有落差。实验成败均不阻塞验收。
+
+### 1.6 模块⑥ 看板
+
+**触发条件**：评审者打开本机浏览器（**零账号**）；面板按 ≤10 s 自动刷新。
+
+**流程**
+- 面板：实时 PV / UV、4 步转化漏斗（**步进式**）、实时 GMV、品类分布、地域分布；【SHOULD】脏数据率。
+- 地域与品类**不依赖 GIS/底图**：省份排行横条 + 自绘省份方格地图 + 品类 treemap。
+- **实时感**：数值跳动 + 相对基线 delta + sparkline + 阈值带，再加 **as-of / 已修订指示**。
+- 【已确认 Q13】必须**视觉区分暂定值与落定值**（窗口关闭前是暂定），否则是「假实时」。
+- 【已确认】刷新下限：Superset **没有**「不得小于 10 秒」的硬下限（`SUPERSET_DASHBOARD_PERIODICAL_REFRESH_LIMIT = 0` 仅警告阈值，自定义下限 1 s），故 ≤10 s 可实现。
+
+**状态与数据变化**：面板值 `暂定 → 落定 → 已修订`；脏率分子只含**真脏**，重复不进分子。
+
+**验收判据**
+- 5 个面板均可渲染出数据（`REQ-F-BI-01`）；刷新间隔 ≤10 s 且**观察到数值变化**（`REQ-F-BI-02`，SRS §4.3 的 GIF 证据即此）。
+- 无任何外部平台账号即可打开并看到刷新（`REQ-F-BI-03`）。
+- **GDD 新增判据**：脏率面板在**故障演练期间不得飙升**（这是 Q11 的直接后果，原型已实证）。
+- **GDD 新增判据**：漏斗面板须同时可见/可切换**观测值与推断值**，且图例标明哪个是补记。
+
+### 1.7 模块⑦ 编排
+
+**触发条件**：`docker compose up`；Makefile 目标按需触发。
+
+**流程**
+- 【已确认 G2】**Doris 没有官方 docker-compose**（官方仅 `curl -fsSL .../start-doris.sh | bash`，且仓库内 `docker/` 是开发/编译环境；官方明确 Docker 部署**仅用于本地开发与测试、容器销毁即丢数据**）→ 本项目**自己手写 compose**，并自行承担 FE/BE 注册、root 密码、建库等初始化（**SRS 未列这块工作量**）。
+- 【已确认 G3】Superset 复用官方 `docker/` 骨架（compose + entrypoint + 初始化脚本），但剥离其演示用示例数据。
+- 逐服务显式 `mem_limit`；`restart: unless-stopped`；端口仅绑 `127.0.0.1`；日志轮转 10 MB × 3。
+- named volume 持久化 Kafka/Paimon/Doris/Superset 元数据——【已确认 G2】在 Doris 这一侧这是**必需而非优化**，否则 `down` 即丢数据、直接违反 `REQ-NF-REL-02`。
+- Makefile 目标：`up` / `down` / `init` / `replay` / `verify` / `spike` / `verify-fault` / `logs`。
+
+**状态与数据变化**：服务态 `created → running → (restarting) → exited`；卷在 `down` 后保留、在 `down -v` 后销毁。
+
+**验收判据**
+- 干净机器一条命令起链路（`REQ-F-ORCH-01`）；`docker stats` 总值 ≤8 GB（`REQ-F-ORCH-02`）；各 Makefile 目标可执行成功（`REQ-F-ORCH-03`）；重启后自动恢复（`REQ-F-ORCH-04`）；`down` 再 `up` 数据仍在（`REQ-F-ORCH-05`）；局域网不可访问（`REQ-F-ORCH-06`）；日志驱动配置可见（`REQ-F-ORCH-07`）。
+- **GDD 新增判据**：`docker compose config` 能列出**每个**服务的 `mem_limit`，且总和 ≤8 GB——「逐服务显式」意味着不允许有服务缺省。
+
+### 1.8 模块⑧ 可复现校验
+
+**触发条件**：`make verify`（烟测）、`make verify-fault`（故障注入）、lag 检查脚本。
+
+**流程**：见 §C 失败路径登记表的「检测信号」列。
+
+**状态与数据变化**：无自身状态；产出断言结果与退出码。
+
+**验收判据**
+- `make verify` 五项断言全通过、退出码 0（`REQ-F-VERIFY-01`）。
+- `REQ-F-VERIFY-02` 幂等：同 `--seed` 同批数据跑两遍，Doris 结果一致。
+- `REQ-F-VERIFY-03` 故障注入：kill TaskManager → 从 checkpoint 自动恢复 → 校验条数一致。
+- **GDD 新增判据（把「配置可见」升级为「行为可证」）**：
+  - `verify-fault` 期间**脏率不得上升**（重复与脏必须可分）。
+  - UV 对账断言为「实时 == 离线精确」，逐窗口比。
+  - **反例保护**：若 kill 后条数一致但**脏率飙升**，判为**不通过**——那说明重复被误当脏（D2）。
+
+### 1.9 加强项 A · 数据质量校验（SHOULD）
+
+**触发条件**：每条事件进入处置流水线时；离线在 DWD 清洗阶段。
+**流程**：按质量规则①②③④⑤校验；实时进 DLQ，离线进拒绝表并计数。
+**状态与数据变化**：违规样本从主流分流；计数累加。
+**验收判据**：违规样本被正确分流且有计数（`REQ-F-VERIFY-04`）；**GDD 新增**：三类原因可区分（结构/取值、时间范围、重复）。
+> ⚠️ **规则①的处置见 §D D4**（绝对年份下界使公开数据集回放 100% 被判脏）；【按推荐】改为**相对下界**。
+
+### 1.10 加强项 B · Kafka lag 检查（SHOULD）
+
+**触发条件**：脚本显式调用；或作为 `make verify` 的附带断言自动运行。
+**流程**
+1. 枚举主 topic 与 DLQ 的消费组。
+2. 对每组取各分区 `log-end-offset` 与 `current-offset`，差值即 lag。
+3. 输出每组、每分区的 lag 与总量；超阈值时退出码非 0。
+**状态与数据变化**：无自身状态；只读消费组元数据。lag 本身是一个随消费推进而变化的观测量——**它是「链路是否活着」的先行指标**（比看板更早暴露停滞）。
+**验收判据**：脚本可输出各消费组 lag（`REQ-F-VERIFY-05`）；**GDD 新增**：lag 超阈值时退出码非 0（否则脚本只能看、不能判，无法用于 CI 或烟测）。
+
+### 1.11 加强项 C · 可选 profile（SHOULD）
+
+**触发条件**：`docker compose --profile minio up`（S3 协议演示）；`--profile spark up`（离线对照，用完即停）。
+**流程**
+1. 不启用 profile 时，默认链路**完全不受影响**（湖存储走本地 `file://`）。
+2. 启用 `minio` 时额外拉起 MinIO（约 +0.4 GB），Paimon catalog 的 warehouse 由 `file://` 切到 `s3://`。
+3. 启用 `spark` 时额外拉起 Spark 作离线对照，**用完即停**（不常驻）。
+**状态与数据变化**：profile 开关改变**容器集合**与 **Paimon warehouse 指向**；同一份数据在两种 warehouse 下不自动迁移（切换 profile 后需重新写入或用 `dump` 重放）。
+**验收判据**：不启用 profile 时不影响默认链路（`REQ-F-ORCH-08`）；**GDD 新增**：启用 `minio` 后 `docker stats` 总值仍 ≤8 GB（即 profile 不得击穿**天花板**）。
+> 【已确认 G4】备选降级手段：Kafka 有 GraalVM 原生镜像 `apache/kafka-native:4.3.1`，8 GB 预算吃紧时可替换（R3 降级序列里 SRS 未列此项）。
+
+---
+
+## A. 参数总表
+
+> 全部为**设计目标**（`SRS.md` A2：官方未给出各组件单机最低内存，故**天花板**预算是设计值而非官方保证）。实现后须**实测更新**，不得当官方保证。
+
+### A.1 时间与窗口
+
+| 参数 | 值 | 说明 |
+| --- | --- | --- |
+| 主窗口 | **60 s 滚动** | 窗口语义 |
+| watermark 乱序容忍 | **5 s** | 窗口的 8% |
+| 允许延迟 | **120 s**（2 分钟） | 由 Q10 修正策略决定 |
+| 空闲分区超时 | **30 s** | ⚠️ 落 **`table.exec.source.idle-timeout`（全局）**——`scan.watermark.idle-timeout` 在 connector 5.0.0 **未暴露为 Kafka 表选项**（core planner 支持、connector 未实现） |
+| 窗口内提前发射周期 | **10 s** | 满足 `REQ-F-BI-02`；受 B4 约束 |
+| 会话时长 | **30 分钟** | 漏斗键控状态 |
+| 漏斗状态 TTL 清理 | **32 分钟** | 30 + 2 分钟允许延迟 |
+| `event_id` 去重状态保留 | **1 小时** | 约 68.7 MB @200 ev/s |
+| 滚动 UV 窗口 | **1 小时** | Flink 侧精确去重 |
+| 看板刷新 | **10 s** | Superset 无硬下限（B7） |
+| 端到端延迟目标 | **≤60 s** | 设计目标 |
+| 快照保留（Paimon） | `snapshot.num-retained.min = **5**` | ⚠️ 官方默认 **10**，须显式设 5（D2） |
+| `snapshot.time-retained` | 1 h（官方默认） | 保持默认 |
+| compaction | `compaction.min.file-num = 5`、`full-compaction.delta-commits = 1` | **保持官方默认**；不照抄其它为治小文件调成 10 的项目 |
+
+### A.2 容量与分区
+
+| 参数 | 值 | 说明 |
+| --- | --- | --- |
+| Kafka 分区数 | **6** | ≥ 并行度上限 4 留余量 |
+| Kafka 分区键 | **`user_id`** | 保每用户有序 |
+| DLQ 分区数 / 键 | 6 / `user_id` | 便于定位哪个用户的数据出问题 |
+| Kafka RF | **1** | 单机 KRaft |
+| Kafka retention | 7 天**或** 2 GB 取小 | ⚠️ 实测**约 6 小时**触发 2 GB（D3，≈8.05 GB/天） |
+| Flink 并行度 | **≤4** | |
+| checkpoint 间隔 / 最小间隔 / 超时 | **30 s / 10 s / 10 min** | 状态小，恢复点近 |
+| checkpoint 语义 | `EXACTLY_ONCE` + RocksDB **增量** + externalized retention on failure | 外部化保留是 verify-fault 的前提 |
+| 用户池规模 | **10 万**（可配置） | UV 与漏斗状态量基数 |
+| 生成速率 | 默认 **200 ev/s**；尖峰 **≥1000 ev/s** | 原型已实测 201.6 / 1001.6 |
+| 容器常驻内存 | **≤8 GB**（逐服务 `mem_limit`） | **天花板** |
+| 磁盘占用 | **≤20 GB** | §D 已验算：合计 7–11 GB 成立 |
+
+### A.3 运行时与版本
+
+| 参数 | 值 | 说明 |
+| --- | --- | --- |
+| **JDK 基线** | **17** | connector README 版本表：Flink 2.0–2.3 → JDK 17（2.1+ 的 JDK 21 为 experimental）；Flink 2.x artifact 以 `--release 17` 编译。**SRS/FSR 均未记载** |
+| Flink | 2.2.x | 不得用 2.3.0（Kafka connector 断链） |
+| 空闲超时配置项 | `table.exec.source.idle-timeout` | 见 A.1 注 |
+| 注入器 | `--late-correctable 0.03`、`--late-expired 0.02`、`--chaos-ratio 0`、`--seed` | 相对**水印**计算 |
+
+---
+
+## B. 状态机图集
+
+### B.1 生成器运行态
+```
+idle ──启动──> warmup ──首条写入──> live ⇄ spike（尖峰模式开关）
+                                      │
+                              Ctrl-C/结束 ──> draining ──flush 完成──> stopped
+```
+非法转移：`stopped → live`（须重新启动）；`warmup → spike`（须先 live）。
+
+### B.2 Flink 作业生命周期
+```
+created ──提交──> running ⇄ restarting（故障/TM 丢失）
+                    │                │
+                    │        超过重启上限
+                    │                ▼
+                    └──> finished   failing ──> suspended
+```
+**恢复判据**：从最近一次**成功的** checkpoint 恢复；externalized retention 保证恢复点可选。
+
+### B.3 checkpoint 与 2PC 事务态
+```
+事务：pre-committed ──commit──> committed
+              └──abort──> aborted
+checkpoint 失败后：pre-committed 事务进入 aborted，作业重启
+```
+**本项目依赖它保证什么**：**可见性/原子性**。
+**⚠️ 与 unique key 的分层**（见 §D D1 缺陷记录）：label 去重管**事务级重放**、unique key upsert 管**行级重放**。在 UNIQUE MoW 表上后者已把重放变成幂等 no-op，故 2PC 是**一层主防 + 一层兜底**里的兜底，**不是**与幂等并列的第二道独立防线。
+
+### B.4 单事件处置态（核心状态机）
+```
+事件到达
+   │
+   ├─① 结构与取值 ──违规──> dirty ──> DLQ topic（离线：拒绝表 + 计数）
+   │        │通过
+   ├─② 时间范围  ──违规──> dirty ──> 同上
+   │        │通过
+   ├─③ 唯一性    ──重复──> duplicate（独立计数，不进 DLQ、不计脏率）
+   │        │首次/超期
+   └─④ 迟到
+            ├─窗口未关闭 ──> admitted（进累加器）
+            ├─已关闭且在允许延迟内 ──> corrected（覆盖写修正，revision+1）
+            └─超出允许延迟 ──> late_counted（只计数，绝不修正）
+```
+**顺序冻结**：①②③④；**脏优先于迟到**（脏事件的值不可信，修正它只会污染指标）。
+**原型**：此状态机已实现并实跑验证 → [event-routing.prototype.html](prototypes/event-routing.prototype.html)。实跑结论：脏优先 ✅；允许延迟内→修正且 `revisions` 递增 ✅；超期→只计数不修正 ✅；**「重复计脏」时合法重放把脏率从 0% 推到 50%（真脏 0 条）** ✅。
+
+### B.5 步进漏斗状态机
+```
+用户首个事件 → step=1(浏览)
+   │步进
+   ├─正常顺序 ──> advance（记下一步）
+   ├─跳步/乱序 ──> autofill（补记中间步）| reject（拒绝）| asis（只记自身）
+   ├─重复步 ────> idempotent（只记首次）| countall（每次都记）
+   └─会话超时(30min) ──> 开新会话，漏斗重开
+```
+**冻结为 `autofill` + 双列并陈**（`observed` / `inferred`）。
+**原型**：三策略差异已实跑 → [funnel.prototype.html](prototypes/funnel.prototype.html)。实跑结论：`autofill` 永不倒挂但含**推断值**；`reject` **系统性低估**；`asis` **产生倒挂**（第 3 步 > 第 2 步 → 看板会出现 >100% 转化率）。
+**原型抓到的真 bug（已修）**：步进水位原先**无条件抬升**，导致 `reject` 策略下被拒步骤也抬高水位 → 该用户此后任何更低步都判「跳步」继续拒绝 → **永久锁死**。修复为「只在确实推进时抬升」。
+
+### B.6 离线分层作业态
+```
+pending ──> running ──> published
+              │
+          失败 ──> failed ──重跑──> running
+```
+每层独立；层间由 Makefile 依赖关系定序（**无调度器**）。
+
+---
+
+## C. 失败路径登记表
+
+| # | 失败模式 | 检测信号 | 自动恢复动作 | 人工兜底 | 验收判据 |
+| --- | --- | --- | --- | --- | --- |
+| F1 | TaskManager 被 kill / 丢失 | Flink UI 作业态 `RESTARTING`；REST `/jobs/overview` 的 `state` | 从最近**成功** checkpoint 恢复；2PC pre-committed 事务 abort | `make verify-fault` 手动触发 | 恢复后 Doris 条数与 kill 前一致（`REQ-F-VERIFY-03`）；**且脏率未上升** |
+| F2 | 重复事件涌入（故障重放） | 重复通道计数上升 | 去重状态 1 小时内识别；行级重复由 unique key 幂等吸收 | 无需 | 重复**不进 DLQ、不计脏率**；脏率面板不飙升（原型实证） |
+| F3 | 迟到超期事件 | 迟到计数表增长 | 只计数，绝不修正 | 按需重跑离线补数（见 `is_late` 标记列，不算**窗口修正**） | 迟到计数与 `--late-expired` 注入量对应 |
+| F4 | 脏数据持续涌入 | DLQ topic 增长；脏率面板上升 | 计数并留痕 | 查 DLQ 内容定位原因 | 三类原因可区分；**丢弃有痕迹** |
+| F5 | Schema 变更导致恢复失败 | 从 checkpoint 恢复时 `IllegalStateException`（同类项目实证的坑） | 无自动恢复 | 预留 `ext_field` 列；或从 ODS 重放 | **GDD 新增**：schema 演进演练可跑通 |
+| F6 | Kafka 分区空闲致**水印**停滞 | 窗口不关闭、指标不更新 | 空闲超时 `table.exec.source.idle-timeout=30s` 生效 | 手动制造流量 | 停掉部分分区后窗口仍按 60 s 关闭 |
+| F7 | offset 过期（retention 生效） | `auto.offset.reset` 触发；消费从头/从尾 | 依赖配置的下游行为 | **离线回放不得从 Kafka 重读**（D3：实际保留窗约 6 小时），应走 `dump` 文件 | 长回放不静默丢数据 |
+| F8 | Doris FE/BE 容器重启后数据丢失 | 查询空表 | named volume（**必需**） | 重建初始化 | `down` 再 `up` 数据仍在（`REQ-F-ORCH-05`） |
+| F9 | 内存超限 OOM kill | `docker stats` 超预算；容器被杀 | `mem_limit` 硬限 | 按 R3 序列降级（MinIO→文件；Superset→Grafana；**新增：Kafka→原生镜像**） | `docker stats` 总值 ≤8 GB |
+| F10 | 磁盘击穿 20 GB | 卷使用率 | 保留策略生效 | 关注 `REQ-NF-CAP-07` 提示 | 分区保留**行为**可证（D1：须显式 `start=-30`） |
+| F11 | Paimon 小文件数膨胀 | 文件数/快照数 | compaction（保持官方默认） | 手动 compact | 快照数受控为 5（D2：须显式设 `num-retained.min=5`） |
+| F12 | 窗口规则①误判合法历史数据 | 拒绝表 100% 命中 | **相对下界**（按推荐） | 排查规则 | 公开数据集回放**不应** 100% 被判脏（D4） |
+| F13 | 漏斗状态无限增长 | 状态大小单调上升 | TTL 清理 32 分钟 | 调参 | 状态大小稳定 |
+
+---
+
+## D. 对 SRS 的偏离与缺陷
+
+> 本节目的是**暴露**而非覆盖（按 Q8：不改 `SRS.md`，等 `spec.md` 会话统一收口）。不为「文档说错了」开票；只有需要真正施工动作时才开票。
+
+### D1 · `REQ-NF-REL-03` 与 `REQ-F-OLAP-02` 把一件事说成两道独立防线
+SRS 一边要「end-to-end exactly-once：source offset + checkpoint + sink 2PC 三处对齐」，一边要 unique key 幂等。
+**官方原话**：*Under the Unique model, you can also disable 2pc to achieve idempotent writes*（[FAQ](https://doris.apache.org/docs/dev/connection-integration/data-integration/flink-doris-connector/faq)）。
+**修正**：写成「一层主防 + 一层兜底」。label＝事务级重放，unique key＝行级重放；UNIQUE MoW 下后者已使重放成幂等 no-op。
+
+### D2 · `REQ-F-VERIFY-04` 把「重复」列为脏，与 `REQ-F-VERIFY-03` 的故障演练互斥
+`REQ-F-VERIFY-03` 的故障注入**本身就是合法重放**，重放事件**必然重复**。若重复＝脏，则每次演练都会把合法重放倒进 DLQ，并让「脏数据率」面板飙到假值。
+**修正**：重复**摘出为独立通道**（计数、不进 DLQ、不计脏率）；脏通道只保留结构与取值、时间范围两类。**原型已实证**该污染：0% → 50%（真脏 0 条）。
+
+### D3 · `REQ-F-MQ-03`「7 天或 2 GB 取小」的实际生效窗约 6 小时
+算术：200 ev/s × ~500 B ≈ **8.05 GB/天** → 2 GB 上限约 **6 小时**触发。
+**后果**：`REQ-F-GEN-07` 的「离线回放」**不得**从 Kafka 重读超 6 小时的历史（应走 `dump` 文件）；`verify-fault` 的恢复窗口若超 6 小时，offset 可能已过期。
+
+### D4 · ★致命★ `REQ-F-LAKE-09` 与质量规则①互斥，公开数据集回放会 100% 被判脏
+- `SRS.md` §3.3 规则①：`event_time` **不早于 2020-01-01**。
+- [天池 UserBehavior（dataId=649）](https://tianchi.aliyun.com/datalab/dataSet.html?dataId=649)：数据覆盖 **2017-11-25 至 2017-12-03**，100,150,807 条交互。
+- **后果**：回放时每一行都早于 2020-01-01 → 全部命中规则① → **100% 进拒绝表**。「抽样回放跑通」实际得到全量拒绝，`REQ-F-LAKE-09` 与 `REQ-F-VERIFY-04` 同时被击穿。
+- **性质**：这不是「外部事实变了」——`research-notes.md` 第 138 行**自己就写明**了该数据集的 2017 年区间。**同一套文档内部自相矛盾，且未被任何检查发现。**
+- 【按推荐 Q29】**处置**：规则①改为**相对下界**（「不早于回放批次的最早事件时间 − 允许乱序幅度」），使规则对生成器与公开数据集**同时成立**，无需为回放开特例。代价：规则①多一个输入（批次基准时间），须在 §A 写明来源。
+
+### D5 · 数据集行为类型含 `fav`，五类枚举里没有落点
+数据集行为为 `pv`/`buy`/`cart`/`fav`；`FSR.md` 称其为 schema 的「子集」——但 **`fav`（收藏）在五类枚举里没有对应**（既非 `add_to_cart` 也非 `view_item`）。
+【按推荐 Q30】**处置**：回放时**丢弃 `fav` 行并计数留痕**（符合「丢弃必须有痕迹」），**不扩枚举**（扩枚举会牵动 `REQ-F-GEN-02` 与全部看板面板）。
+
+### D6 · 维表无字段级定义，验收判据空表也能通过
+`REQ-F-GEN-08` 要「维度数据」、`REQ-F-LAKE-03` 要「时态维表」，但 §3.3 **只有事件字段表**，没有任何维度表字段定义；判据「可装载出非空维表」「可 join 出结果」**空维表也能通过**。
+**处置（GDD 补全）**：见 §D6.1 维表字段定义。
+
+#### D6.1 维表字段定义（GDD 补全；【按推荐 Q31】）
+| 表 | 主键 | 字段 | 拉链 |
+| --- | --- | --- | --- |
+| `dim_item` | `item_id` | `category_id`、`price`、`on_shelf`（上架状态）、`brand` | `start_date` / `end_date` |
+| `dim_category` | `category_id` | `category_name`、`parent_id`、`level` | `start_date` / `end_date` |
+| `dim_user` | `user_id` | `register_channel`、`province`、`level` | `start_date` / `end_date` |
+| `dim_region` | `province` | `region`（华东/华南…）、`city_tier` | 静态（无需拉链） |
+| `dim_channel` | `channel` | `channel_name`、`is_paid` | 静态 |
+**枚举开放性**：`province` / `channel` 取 **封闭但可扩展**——有默认全集、校验非空、允许新增并记录（理由是这两个维度「可枚举但会增长」）。
+**拉链判据**：同一 `item_id` 在不同 `event_time` 下 join 出**不同**属性值，且区间**无重叠无空洞**。
+
+### D7 · `REQ-F-LAKE-08` 快照数 5 与官方默认 10 不符
+Paimon `snapshot.num-retained.min` 官方默认 **10**。**处置**：表属性**显式设 5**（见 §A）。
+
+### D8 · `REQ-F-OLAP-03` 的「30 天保留」默认不生效
+官方 `dynamic_partition.start` 默认 **-2147483648** ＝「历史分区不删除」。**处置**：**显式设 `start=-30`**（见 §A）。照默认建表的结果与需求**恰好相反**。
+
+### D9 · `REQ-F-RT-03` 的立论前提不成立（**近似算法**降级）
+SRS 称「全量去重状态会顶满天花板」故须近似。**算术核对**：去重基数是**用户池**（10 万）而非事件数（720k/h）；精确去重状态 **MB 级**，前提不成立。
+**处置（【已确认 Q23】）**：UV 改 Flink 侧**精确**滚动去重；`REQ-F-RT-03` 的近似算法**降级为可选实验**，理由记为「前提不成立」而非「近似不够好」。**连带**：对账从「误差量化」升级为**一致性校验**。
+
+### D10 · `REQ-F-RT-04` 的迟到通道在 SRS 中无落点
+SRS 要求迟到走侧输出、判据是「侧输出确有迟到事件」，但**全篇未定义落点**（无 topic、无表、无标记列）。
+**处置**：落点补为「允许延迟内→窗口修正（Doris unique key 覆盖，`revision` 递增）＋超期→迟到计数表＋离线 DWD 加 `is_late` / `late_lag_ms` 标记列」。
+
+### D11 · 作业表达方式受官方能力强制
+Flink SQL **没有**迟到侧输出（FLINK-10031 / FLINK-20527 均 Open）。故「迟到走侧输出」这条 MUST **强制**至少一段必须是 DataStream。
+【已确认 Q16】**处置**：混合路线（SQL 做窗口聚合与 Doris sink；DataStream 做侧输出与修正段）。
+
+### D12 · 窗口内提前发射的机制约束
+`table.exec.emit.early-fire.*` 只对**旧式 Group Window Aggregation** 生效，**Window TVF 不支持**（官方原话：「window table function based aggregate doesn't support early-fire and late-fire configuration」）；且标 `@Experimental`、有移除跟踪 FLINK-29692。
+**处置**：若采纳窗口内提前发射（Q13），**必须用 Group Window Agg**，并在文档标注 Experimental 风险；若不可接受则降级为「分钟粒度 + as-of 指示」。
+
+### D13 · 全链路 JDK 基线未记载
+connector README 版本表：Flink 2.0–2.3 → **JDK 17**（2.1+ 的 JDK 21 experimental）；Flink 2.x artifact 以 `--release 17` 编译。**SRS 与 FSR 都没写。**
+**处置**：写入 §A.3 与 compose 环境变量。
+
+### D14 · R2 的表述可以更精确
+connector **支持** Flink 2.3.x——卡住 2.3 的不是 Doris 侧，只是 Kafka connector 5.0.0 那条线。应表述为**单点断链**而非「全栈不支持」。
+
+### D15 · Doris 部署路径与 SRS 假设不符
+Doris **无官方 docker-compose**（官方仅 `curl | bash` 启动脚本；仓库内 `docker/` 是开发环境；官方明确 Docker 仅限开发测试、容器销毁即丢数据）。故 `REQ-F-ORCH-01` 的「一条命令」要求**自写 compose**，并自担 FE/BE 注册、root 密码、建库（SRS 未列工作量）；`REQ-F-ORCH-05` 的 named volume 是**必需**。
+
+---
+
+## E. 原型索引
+
+三个原型均为**一次性**（throwaway）、**单文件可双击**、无框架无服务器；已作为证据提交入库；验证脚手架已删除。
+
+| 原型 | 类型 | 结论 | 状态 |
+| --- | --- | --- | --- |
+| [event-routing.prototype.html](prototypes/event-routing.prototype.html) | 逻辑 | 四关判定顺序、脏/迟到/重复三通道落点；**「重复计脏」会把脏率从 0% 污染到 50%（真脏 0 条）** | 18 条断言全绿 |
+| [dashboard.prototype.html](prototypes/dashboard.prototype.html) | UI（`?variant=A\|B\|C`） | 看板三结构范式：大屏镶边 / 左筛选网格 / 旅程时间轴；按用户步进漏斗；速率实测 201.6 与 1001.6 ev/s | 16 条断言全绿 |
+| [funnel.prototype.html](prototypes/funnel.prototype.html) | 逻辑 | 步进漏斗记账三策略差异；**抓到并修复「水位无条件抬升致用户永久锁死」的真 bug** | 33 条断言全绿 |
+
+**原型的处置**（按 /prototype 规则）：验证过的逻辑（`dispose` 判定流水线、步进漏斗记账、会话超时）**上提到实现**；HTML 外壳作为**一手证据**留在本分支，不进入实现。
+
+---
+
+## F. 本 GDD 的收敛状态
+
+**已确认**：Q1–Q23（用户逐条裁决）。
+**按推荐默认**：Q24–Q31（推荐已给出，用户未逐条答复）——**若你反对某条，指出条目号即可局部修订**。
+**仍待你一句话**：本地 4 个提交（`e7e6480`/`c3f31e2`/`e55da78`/`63e90c1`）是否推送 `origin/main`。
+
+**下一层文档**：`spec.md`（实施规格）由你另开会话产出；本 GDD 与 `SRS.md` / `FSR.md` 同址，便于一次性收口。
