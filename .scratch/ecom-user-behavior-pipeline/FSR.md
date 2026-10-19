@@ -208,7 +208,7 @@ Flink 2.2.x  ── Kafka connector 5.0.0 ── Kafka 4.3.1
 | --- | --- | --- | --- |
 | U1 | `%UserProfile%\.wslconfig` 的 `memory` 提到 12 GB | **已执行**（2026-10-19，用户授权） | 备份 → diff → `wsl --shutdown` → 验证 `MemTotal` 7.72 → **11.68 GB**；回滚 = 恢复 `.wslconfig.bak-2026-10-19-before-u1` + `wsl --shutdown` |
 | U2 | 仓库根 `.gitignore`（挡 `data/`、`*.zip`、`*.log` 等） | **已执行**（2026-10-19，用户授权） | 已创建并验证；回滚 = 删除该文件 |
-| U4 | 仓库尚无任何提交，已配远程 `origin` | **待授权** | 首次提交与推送需用户单独授权（推送属对外动作） |
+| U4 | 仓库尚无任何提交，已配远程 `origin` | **已执行**（2026-10-19，用户授权提交+推送） | 首次提交 `b39be03` 已推送 `main` → `origin` |
 
 > 依据（U1）：WSL2 `memory` 官方默认 = 宿主机 50% ≈ 8 GB，与常驻预算同量级；官方要求改后 `wsl --shutdown` 生效，取值必须带单位（如 `memory=12GB`）。
 > 备注：2026-10-18 会话因沙箱 ACL 故障与 `ops_bash` 缺 IPC 兼容凭据无法执行命令；**2026-10-19 会话改为 `danger-full-access` 后命令已可正常执行**，已核实该仓库 git 仓库已初始化（`main` 分支）、**尚无任何 commit**、远程 `origin` 指向 `github.com/Gaomen-7/eco-d-a-platform`。

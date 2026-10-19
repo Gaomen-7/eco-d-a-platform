@@ -386,7 +386,7 @@ Flink 2.2.x  ── Kafka connector 5.0.0 ── Kafka 4.3.1
 | **U1** | `.wslconfig` 的 `memory` 提至 12 GB | **已执行**（2026-10-19，用户授权） | 已备份原文件 → 逐行 diff → `wsl --shutdown` → 验证 WSL 内 `MemTotal` 由 **7.72 GB → 11.68 GB**。备份：`%UserProfile%\.wslconfig.bak-2026-10-19-before-u1`；**回滚 = 恢复备份后执行 `wsl --shutdown`**。依据：WSL2 默认内存 = 宿主机 50%（实测 7.72 GB < 8 GB 预算）。**冲突披露**：原配置注释含「不设 memory= 硬顶…（ADR-0005）」，而仓库内**不存在** ADR-0005 文件；判定为「放宽天花板而非收紧」，且不新增 C 盘占用（`swap=2GB` 未动） |
 | **U2** | 仓库根 `.gitignore`（挡 `data/`、`*.zip`、`*.log`） | **已执行**（2026-10-19，用户授权） | 已创建仓库根 `.gitignore` 并逐条 `git check-ignore` 验证；`REQ-F-LAKE-09` 依赖已满足。回滚 = 删除该文件 |
 | **U3** | 沙箱可执行性 | **已恢复**（2026-10-19） | 2026-10-18 时 `ops_bash` 报 `EXECUTOR_UNAVAILABLE`、`pwsh` 报 ACL 故障；2026-10-19 会话改为 `danger-full-access` 后命令可正常执行，无需修 ACL |
-| **U4** | 仓库**尚无任何提交**，已配远程 `origin → github.com/Gaomen-7/eco-d-a-platform` | **待授权** | `main` 分支零 commit；首次提交与推送需用户单独授权（推送属对外动作） |
+| **U4** | 仓库**尚无任何提交**，已配远程 `origin → github.com/Gaomen-7/eco-d-a-platform` | **已执行**（2026-10-19，用户授权提交+推送） | 首次提交 `b39be03`（9 文件 / 1244 行），已推送 `main` 至 `origin`。作者身份：`Gaomen-7 <323154867+Gaomen-7@users.noreply.github.com>`（本仓库 `--local` 配置，避免真实邮箱进公开历史）；`core.autocrlf=false` 消除行尾噪声 |
 
 ### 6.3 待实现期细化（P2/P3，本文只写目标级）
 
