@@ -59,7 +59,12 @@ services:
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1 || exit 1"]
+      # ★ P0 实测修正：原来的探针用 `kafka-broker-api-versions.sh`，它每次都要
+      #   起一个 **JVM**，实测耗时 **37.7s**，而 timeout 只有 10s ⇒ 永远超时、
+      #   容器长期显示 `unhealthy`（实测 FailingStreak=22），但**功能完全正常**
+      #   （topic / offsets / 生产消费都可用）。这是**探针太重**，不是服务坏了。
+      #   ⇒ 改用**轻量 TCP 连通性探针**（实测 4.6s，且不依赖 JVM）。
+      test: ["CMD-SHELL", "timeout 3 bash -c 'exec 3<>/dev/tcp/localhost/9092' || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 12

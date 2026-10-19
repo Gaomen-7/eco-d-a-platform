@@ -412,6 +412,10 @@ pending ──> running ──> published
 | F5 | Schema 变更导致恢复失败 | 从 checkpoint 恢复时 `IllegalStateException`（同类项目实证的坑） | 无自动恢复 | 预留 `ext_field` 列；或从 ODS 重放 | **GDD 新增**：schema 演进演练可跑通 |
 | **F14** | **★ P0 实测新增** 配置格式与镜像内容不符预期 | ①flink-jm 变 `unhealthy`（日志 `The Flink config file '/opt/flink/conf/config.yaml' does not exist`）；②Superset worker 启动即 `ModuleNotFoundError: No module named 'psycopg2'`；③`kafka-init` 退出码 1（`--alter` 报「the kafka-configs tool can be used」） | 三条均已定位并修复（见下） | 无 | 骨架四服务全 healthy + topic 配置与 §A.2 一致 |
 | **F15** | **★ P0 实测新增** 镜像仓库不可达 | `docker manifest inspect` 报 `registry-1.docker.io` `Client.Timeout`；官方标签 `apache/doris:4.1.5` 拉取 `denied` | 走中国镜像站（compose 已参数化 `${REGISTRY_MIRROR}`） | 自建 Doris 镜像 | 四个锚点镜像可拉（Doris 需本地构建） |
+| **F16** | **★ P0 实测新增** named volume 失效致 `REQ-F-ORCH-05` 不成立 | `docker compose down` 后再 `up`，Kafka offsets 由 1 **归 0**（数据丢失）；卷内容为空 | **显式设 `KAFKA_LOG_DIRS`** | — | `down`→`up` 后 offsets 不变（**已证：3→3**） |
+
+**★ F16 详情（P0 实测，2026-10-19）**：官方 `apache/kafka:4.3.1` 镜像的默认 `log.dirs` 是 **`/tmp/kraft-combined-logs`**（`/opt/kafka/config/server.properties:73` 逐字）——**`/tmp` 是容器内路径，`down/up` 后清空**。因此即使 compose 里挂了 named volume，**数据也从未落进去**（实测卷内容 `total 4.0K`）。修复＝显式 `KAFKA_LOG_DIRS=/var/lib/kafka/data`，复验两条：`restart` → offsets 3→3；**`down`+`up` → offsets 3→3**（后者是 `REQ-F-ORCH-05` 的原文判据），topic 与 retention 配置同样保住。
+**教训**：**named volume 挂上去不等于数据落在里面**——必须核对应用的**实际写入路径**与挂载点是否一致。与「`mem_limit` 管不到 swap」（F9 相关）同类：**约束写了 ≠ 约束生效**。
 
 **★ F14 的三条修复（P0 实测，均已验证）**：
 1. **Flink 2.2 的配置是 `config.yaml`（YAML）**，不是 `flink-conf.yaml`，**也不吃 `FLINK_PROPERTIES` 那套点号键**；且**不能把空目录 bind 进 `/opt/flink/conf`**（会遮住镜像自带 `config.yaml`）⇒ 改为**挂单文件**。修复后 flink-jm `healthy`、TM 正常、Flink 2.2.1 报 `slots-total: 4`（`numberOfTaskSlots: 4` 生效）。

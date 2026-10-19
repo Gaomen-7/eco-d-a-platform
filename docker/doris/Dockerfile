@@ -22,12 +22,14 @@
 
 FROM docker.m.daocloud.io/apache/doris:base-latest
 
-# 官方要求 JDK 恰为 17（`start_fe.sh` 非 17 直接 exit 1）。base 镜像内无 java，
-# 故显式装 JDK 17（Debian 系）。
-ARG DEBIAN_FRONTEND=noninteractive
-RUN apt-get update \
- && apt-get install -y --no-install-recommends openjdk-17-jre-headless curl tzdata \
- && rm -rf /var/lib/apt/lists/*
+# ★ 官方要求 JDK 恰为 17（`start_fe.sh` 非 17 直接 exit 1）。
+#   **P0 实测：base-latest 镜像内已自带 `/usr/lib/jvm/jdk-17`**
+#   （`java -version` = openjdk 17.0.2 实测可用）⇒ **无需 apt 装 JDK**，
+#   直接指过去即可。这既省构建时间，也避免 apt 源不可达的风险。
+#   （最初版本的 Dockerfile 里写了一条多余的 `apt-get install openjdk-17`，
+#     会让 4 GB 上下文的构建多花很久，已删除。）
+ENV JAVA_HOME=/usr/lib/jvm/jdk-17 \
+    PATH=/usr/lib/jvm/jdk-17/bin:$PATH
 
 # 二进制包由构建上下文提供（先下载到 .scratch/doris/）
 ARG DORIS_TARBALL=apache-doris-4.1.5-bin-x64.tar.gz
