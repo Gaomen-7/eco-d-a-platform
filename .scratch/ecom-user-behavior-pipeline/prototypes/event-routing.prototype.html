@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>原型 · 事件处置：一条事件到底落在哪</title>
+<style>
+  :root{--ink:#16181d;--mut:#6b7280;--line:#e5e7eb;--bg:#fbfbfc;--acc:#1f6feb;--accsoft:#eef4ff;
+        --dirty:#b42318;--dirtys:#fef3f2;--late:#b54708;--lates:#fffaeb;--dup:#5b21b6;--dups:#f5f3ff;
+        --ok:#046c4e;--oks:#ecfdf5;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.6 -apple-system,"Segoe UI",system-ui,"Microsoft YaHei",sans-serif}
+  .wrap{max-width:1120px;margin:0 auto;padding:32px 24px 96px}
+  h1{font-size:22px;margin:0 0 6px}
+  h2{font-size:15px;margin:32px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  .lead{color:var(--mut);margin:0 0 4px}
+  .qbox{background:var(--accsoft);border-left:3px solid var(--acc);padding:12px 14px;border-radius:6px;margin:16px 0 0}
+  .qbox b{color:var(--acc)}
+  .grid{display:grid;gap:12px}
+  .g2{grid-template-columns:1fr 1fr}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .g5{grid-template-columns:repeat(5,1fr)}
+  .card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+  .card h3{margin:0 0 8px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);font-weight:600}
+  .big{font-size:26px;font-weight:650;font-variant-numeric:tabular-nums}
+  .sub{font-size:12px;color:var(--mut)}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px dotted var(--line)}
+  .kv:last-child{border-bottom:0}
+  .kv span:last-child{font-variant-numeric:tabular-nums}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px}
+  button{font:inherit;cursor:pointer;border:1px solid var(--line);background:#fff;border-radius:6px;
+          padding:7px 11px;transition:.12s}
+  button:hover{border-color:var(--acc);background:var(--accsoft)}
+  button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+  .btnrow{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+  .gate{background:#fff;border:1px solid var(--line);border-left:3px solid var(--line);border-radius:6px;padding:8px 10px}
+  .gate.pass{border-left-color:var(--ok);background:var(--oks)}
+  .gate.stop{border-left-color:var(--dirty);background:var(--dirtys)}
+  .gate.skip{opacity:.45}
+  .gate .n{font-size:11px;color:var(--mut)}
+  .pill{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;font-weight:600}
+  .pill.dirty{background:var(--dirtys);color:var(--dirty)}
+  .pill.late{background:var(--lates);color:var(--late)}
+  .pill.dup{background:var(--dups);color:var(--dup)}
+  .pill.ok{background:var(--oks);color:var(--ok)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+  th{color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 10px}
+  .tab{padding:6px 10px;border:1px solid var(--line);border-radius:16px;background:#fff;font-size:13px;cursor:pointer}
+  .tab.sel{background:var(--ink);border-color:var(--ink);color:#fff}
+  .scen{background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px}
+  .scen p{margin:0 0 10px;color:var(--mut)}
+  .step{display:block;width:100%;text-align:left;margin:0 0 6px}
+  .step.done{opacity:.5}
+  .log{max-height:240px;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  .log div{padding:2px 0;border-bottom:1px dotted var(--line);font-size:12.5px}
+  .note{color:var(--mut);font-size:12.5px;margin-top:8px}
+  .warn{background:#fffbea;border-left:3px solid #d97706;padding:10px 12px;border-radius:6px;margin-top:12px;font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>原型 · 事件处置：一条事件到底落在哪</h1>
+  <p class="lead">一次性原型，只回答一个问题，答完即弃。</p>
+
+  <div class="qbox">
+    <b>被问的问题</b>：一条事件可能<b>同时</b>违规（脏）、迟到、重复——判定顺序决定它最终落在主指标、修正通道、迟到计数、重复计数，还是 DLQ；而这四个落点的下游对账口径完全不同。<br>
+    在纸上说不清的是：<b>重复到底算不算脏</b>、<b>故障恢复重放会不会污染「脏数据率」</b>、<b>既脏又迟到时谁优先</b>。下面可以按按钮，把状态推过去看。
+  </div>
+
+  <h2>0 · 策略开关（这两条是正在拷问中的决策，切换即可对比后果）</h2>
+  <div class="grid g2">
+    <div class="card">
+      <h3>③ 重复事件的落点 —— 待裁决 Q11</h3>
+      <div class="btnrow">
+        <button id="p-dup-sep" data-pol="dup" data-v="separate">重复独立通道（推荐）</button>
+        <button id="p-dup-dirty" data-pol="dup" data-v="dirty">重复＝脏 → 进 DLQ</button>
+      </div>
+      <p class="sub" id="dup-expl"></p>
+    </div>
+    <div class="card">
+      <h3>④ 迟到超出允许延迟的处置 —— 待裁决 Q10 的下半段</h3>
+      <div class="btnrow">
+        <button id="p-late-cc" data-pol="late" data-v="count">只计数、不修正</button>
+        <button id="p-late-ca" data-pol="late" data-v="correct">允许延迟内修正 + 超期只计数（推荐）</button>
+      </div>
+      <p class="sub" id="late-expl"></p>
+    </div>
+  </div>
+
+  <h2>1 · 判定流水线（看最后一条事件走到哪一关被拦）</h2>
+  <div class="grid g4" id="gates"></div>
+  <p class="note">顺序冻结为：结构与取值 → 时间范围 → 唯一性 → 迟到。脏优先于迟到，因为脏事件的值不可信，修正它只会污染指标。</p>
+
+  <h2>2 · 当前状态</h2>
+  <div class="grid g4">
+    <div class="card"><h3>虚拟时钟 now</h3><div class="big mono" id="s-now">—</div><div class="sub">推进时间会让已关闭窗口落定</div></div>
+    <div class="card"><h3>水位线 watermark</h3><div class="big mono" id="s-wm">—</div><div class="sub">= 已接受事件的最大事件时间 − 5s</div></div>
+    <div class="card"><h3>允许延迟边界</h3><div class="big mono" id="s-al">—</div><div class="sub">窗口关闭后 +2 分钟内到达 → 可修正</div></div>
+    <div class="card"><h3>去重状态窗口</h3><div class="big" id="s-dd">1 小时</div><div class="sub">跨 checkpoint 保留，约 70 MB 量级</div></div>
+  </div>
+
+  <h2>3 · 落点计数与看板口径</h2>
+  <div class="grid g5" id="counts"></div>
+  <div class="grid g2" style="margin-top:12px">
+    <div class="card">
+      <h3>看板「脏数据率」</h3>
+      <div class="kv"><span>分子（真脏）</span><span id="m-dirty">0</span></div>
+      <div class="kv"><span>分子（若重复计脏）</span><span id="m-dirtym">0</span></div>
+      <div class="kv"><span>分母（全部事件）</span><span id="m-total">0</span></div>
+      <div class="kv"><span>脏率（当前策略）</span><span id="m-rate">0.00%</span></div>
+      <p class="sub">分母定义待 Q11 定案后收紧（是否剔除重复），这是第 3 轮的问题。</p>
+    </div>
+    <div class="card">
+      <h3>四类漏斗事件计数</h3>
+      <div class="kv"><span>view_item</span><span id="f-1">0</span></div>
+      <div class="kv"><span>add_to_cart</span><span id="f-2">0</span></div>
+      <div class="kv"><span>begin_checkout</span><span id="f-3">0</span></div>
+      <div class="kv"><span>purchase</span><span id="f-4">0</span></div>
+      <p class="sub">注意：这里只是<b>同窗口计数</b>，即“事件结构比”，<b>不是转化率</b>——Q9 若改为按用户步进，这里换另一套状态。</p>
+    </div>
+  </div>
+
+  <h2>4 · 窗口（落定 / 修正）</h2>
+  <div class="card"><table id="wtab"><thead><tr><th>窗口</th><th>状态</th><th>PV</th><th>事件</th><th>GMV</th><th>修正次数</th></tr></thead><tbody></tbody></table></div>
+  <p class="note">「修正次数」就是迟到事件在允许延迟内到达后对已落定窗口的重写次数——真实链路里靠 Doris unique key 覆盖写实现，看板必须有 as-of / 已修订指示。</p>
+
+  <h2>5 · 自由按钮</h2>
+  <div class="btnrow" id="free"></div>
+  <div class="btnrow"><button id="advance">推进时间 +60 秒（让窗口落定）</button></div>
+
+  <h2>6 · 引导走查</h2>
+  <div class="tabs" id="wtabs"></div>
+  <div id="wscen"></div>
+
+  <h2>7 · 处置日志</h2>
+  <div class="log" id="log"></div>
+
+  <div class="warn">
+    <b>本页是原型</b>：状态只在内存里，刷新即重置；没有持久化、没有测试、没有错误处理。<br>
+    它<b>不</b>回答「怎么做才优雅」，只回答上面那一个问题。答完即弃。
+  </div>
+</div>
+
+<script>
+/* ==========================================================================
+   纯逻辑模块 —— 可整块搬进真实代码；不引用 DOM、不读全局。
+   ========================================================================== */
+const RULES = Object.freeze({
+  EVENT_TYPES: ['page_view', 'view_item', 'add_to_cart', 'begin_checkout', 'purchase'],
+  OOO_LAG_MS: 5000,              // watermark 乱序容忍
+  ALLOWED_LATENESS_MS: 120000,   // 允许延迟 2 分钟
+  DEDUP_RETENTION_MS: 3600000,   // 去重状态保留 1 小时
+  FUTURE_TOLERANCE_MS: 300000,   // 不晚于 now + 5 分钟
+  EPOCH_FLOOR_MS: Date.UTC(2020, 0, 1),
+  WINDOW_MS: 60000
+});
+
+const CH = Object.freeze({
+  ADMITTED: 'admitted',        // 进窗口累加器，等待落定
+  CORRECTED: 'corrected',      // 窗口已落定，允许延迟内到达 → 覆盖写修正
+  LATE_EXPIRED: 'late_expired',// 超出允许延迟 → 只计数，不修正
+  DUPLICATE: 'duplicate',      // 去重状态识别出的重复
+  DIRTY: 'dirty'               // 结构与取值 / 时间范围违规 → DLQ
+});
+
+function windowStartOf(t) { return Math.floor(t / RULES.WINDOW_MS) * RULES.WINDOW_MS; }
+function windowEndOf(t) { return windowStartOf(t) + RULES.WINDOW_MS; }
+
+function initialState(now) {
+  return {
+    now: now,
+    maxAcceptedEventTime: now,
+    seen: Object.create(null),   // event_id -> 上次到达时刻
+    counters: { total: 0, admitted: 0, corrected: 0, lateExpired: 0, duplicate: 0, dirty: 0 },
+    dirtyReasons: Object.create(null),
+    windows: Object.create(null),// windowStart -> 聚合记录
+    lastPath: null
+  };
+}
+
+function clone(s) {
+  return {
+    now: s.now,
+    maxAcceptedEventTime: s.maxAcceptedEventTime,
+    seen: Object.assign(Object.create(null), s.seen),
+    counters: Object.assign({}, s.counters),
+    dirtyReasons: Object.assign(Object.create(null), s.dirtyReasons),
+    windows: Object.keys(s.windows).reduce(function (acc, k) {
+      acc[k] = Object.assign({}, s.windows[k]); return acc;
+    }, Object.create(null)),
+    lastPath: s.lastPath
+  };
+}
+
+/* ① 结构与取值合法性 */
+function shapeError(ev) {
+  if (!ev.event_id) return 'event_id 空';
+  if (!ev.user_id) return 'user_id 空';
+  if (!ev.item_id) return 'item_id 空';
+  if (!ev.event_type) return 'event_type 空';
+  if (RULES.EVENT_TYPES.indexOf(ev.event_type) < 0) return 'event_type 不在枚举内（' + ev.event_type + '）';
+  if (ev.event_type === 'add_to_cart' && !(ev.quantity >= 1)) return 'add_to_cart 缺 quantity 或 quantity < 1';
+  if (ev.event_type === 'begin_checkout' && !ev.order_id) return 'begin_checkout 缺 order_id';
+  if (ev.event_type === 'purchase') {
+    if (!ev.order_id) return 'purchase 缺 order_id';
+    if (ev.amount == null || !ev.currency) return 'purchase 缺 amount / currency';
+  }
+  if (ev.amount != null && ev.amount < 0) return 'amount < 0（' + ev.amount + '）';
+  return null;
+}
+
+function watermarkOf(s) { return s.maxAcceptedEventTime - RULES.OOO_LAG_MS; }
+
+/* 为什么需要这两个助手：迟到事件的“迟到程度”= now − 它所属窗口的结束时间。
+   如果拍一个固定偏移（例如 now − 90s），事件可能落进**尚未关闭**的窗口，
+   演示结果就会与按钮标签不符——那会让原型给出误导性的答案。
+   所以这里只挑**已经落定**的窗口，让“迟到”名副其实。
+   注意：这两个助手读的是页面级的当前状态 ST，属于按钮工厂的辅助，不属于上面的纯逻辑模块。 */
+function newestClosedStart() {
+  const es = Object.keys(ST.windows)
+    .filter(function (k) { return ST.windows[k].emitted; })
+    .map(Number).sort(function (a, b) { return b - a; });
+  return es.length ? es[0] : null;
+}
+/* 在“已落定且仍在允许延迟内”的窗口里选最近的一个；没有就返回 null 让按钮提示先推进时间 */
+function lateWithinEventTime() {
+  const cands = Object.keys(ST.windows).map(Number)
+    .filter(function (k) { return ST.windows[k].emitted; })
+    .map(function (k) { return { start: k, delay: ST.now - (k + RULES.WINDOW_MS) }; })
+    .filter(function (w) { return w.delay >= 0 && w.delay <= RULES.ALLOWED_LATENESS_MS; })
+    .sort(function (a, b) { return a.delay - b.delay; });
+  return cands.length ? cands[0].start + 1000 : null;
+}
+/* 超期是确定性的：wm − 200s 所属窗口的结束时间必然 ≤ wm − 140s，
+   于是 delay ≥ 145s > 120s 允许延迟，无论时间推进了几次。 */
+function guaranteedExpiredEventTime() { return watermarkOf(ST) - 200000; }
+
+function applyContribution(w, ev) {
+  w.events += 1;
+  if (ev.event_type === 'page_view') w.pv += 1;
+  if (ev.event_type === 'purchase' && typeof ev.amount === 'number') w.gmv += ev.amount;
+  w.users[ev.user_id] = true;
+}
+
+/* 主入口：纯函数，(state, event, policy) -> {state, outcome} */
+function dispose(state, ev, policy) {
+  const s = clone(state);
+  const gates = [];
+  s.now = Math.max(s.now, ev.arrival != null ? ev.arrival : s.now);
+  s.counters.total += 1;
+
+  function reject(channel, reason, gateLabel) {
+    gates.push({ label: gateLabel, verdict: 'stop', detail: reason });
+    if (channel === CH.DIRTY) {
+      s.counters.dirty += 1;
+      s.dirtyReasons[reason] = (s.dirtyReasons[reason] || 0) + 1;
+    } else {
+      s.counters.duplicate += 1;
+    }
+    s.lastPath = { gates: gates, channel: channel, reason: reason, eventId: ev.event_id };
+    return { state: s, outcome: { channel: channel, reason: reason } };
+  }
+
+  /* ① 结构 / 取值 */
+  let err = shapeError(ev);
+  if (err) return reject(CH.DIRTY, err, '① 结构与取值');
+  gates.push({ label: '① 结构与取值', verdict: 'pass', detail: '必填齐、枚举内、amount ≥ 0' });
+
+  /* ② 时间范围 */
+  if (ev.event_time > s.now + RULES.FUTURE_TOLERANCE_MS) {
+    return reject(CH.DIRTY, 'event_time 晚于 now + 5 分钟', '② 时间范围');
+  }
+  if (ev.event_time < RULES.EPOCH_FLOOR_MS) {
+    return reject(CH.DIRTY, 'event_time 早于 2020-01-01', '② 时间范围');
+  }
+  gates.push({ label: '② 时间范围', verdict: 'pass', detail: '在 [2020-01-01, now+5min] 内' });
+
+  /* ③ 唯一性 */
+  const lastSeen = s.seen[ev.event_id];
+  if (lastSeen != null && (s.now - lastSeen) <= RULES.DEDUP_RETENTION_MS) {
+    if (policy.duplicate === 'dirty') {
+      /* 这里必须落到脏计数上，而不是重复计数——
+         否则 Q11 想让人看到的那一幕（合法重放把脏率污染成假值）根本不会发生。 */
+      return reject(CH.DIRTY, '重复事件（当前策略：重复计为脏）', '③ 唯一性');
+    }
+    gates.push({ label: '③ 唯一性', verdict: 'stop', detail: '重复 → 独立重复通道（不污染脏率）' });
+    s.counters.duplicate += 1;
+    s.lastPath = { gates: gates, channel: CH.DUPLICATE, reason: '重复，去重状态识别（1 小时窗口）', eventId: ev.event_id };
+    return { state: s, outcome: { channel: CH.DUPLICATE, reason: '重复 → 重复通道' } };
+  }
+  gates.push({ label: '③ 唯一性', verdict: 'pass', detail: '1 小时内未见（或首次出现）' });
+
+  /* 通过前三关才影响水位线 */
+  s.seen[ev.event_id] = s.now;
+  s.maxAcceptedEventTime = Math.max(s.maxAcceptedEventTime, ev.event_time);
+  const wm = watermarkOf(s);
+
+  /* ④ 迟到 */
+  const wStart = windowStartOf(ev.event_time);
+  const wEnd = windowEndOf(ev.event_time);
+  const closed = wEnd <= wm;
+  const delay = s.now - wEnd;
+
+  if (!closed) {
+    gates.push({ label: '④ 迟到', verdict: 'pass', detail: '窗口未关闭 → 进累加器' });
+    if (!s.windows[wStart]) s.windows[wStart] = { pv: 0, events: 0, gmv: 0, users: {}, emitted: false, revisions: 0, emittedAt: null };
+    applyContribution(s.windows[wStart], ev);
+    s.counters.admitted += 1;
+    s.lastPath = { gates: gates, channel: CH.ADMITTED, reason: '在窗口关闭前到达', eventId: ev.event_id };
+    return { state: s, outcome: { channel: CH.ADMITTED, reason: '进窗口累加器' } };
+  }
+
+  if (delay <= RULES.ALLOWED_LATENESS_MS) {
+    const w = s.windows[wStart] || { pv: 0, events: 0, gmv: 0, users: {}, emitted: false, revisions: 0, emittedAt: null };
+    applyContribution(w, ev);
+    if (policy.late === 'correct') {
+      w.revisions += 1;
+      if (w.emitted) w.revisedAfterEmit = true;
+      s.windows[wStart] = w;
+      gates.push({ label: '④ 迟到', verdict: 'stop', detail: '窗口已关闭，但在允许延迟内 → 覆盖写修正（第 ' + w.revisions + ' 次）' });
+      s.counters.corrected += 1;
+      s.lastPath = { gates: gates, channel: CH.CORRECTED, reason: '允许延迟内 → 修正已落定窗口', eventId: ev.event_id };
+      return { state: s, outcome: { channel: CH.CORRECTED, reason: '窗口修正' } };
+    }
+    s.windows[wStart] = w;
+    gates.push({ label: '④ 迟到', verdict: 'stop', detail: '窗口已关闭，但当前策略选择不修正 → 只计数' });
+    s.counters.lateExpired += 1;
+    s.lastPath = { gates: gates, channel: CH.LATE_EXPIRED, reason: '允许延迟内但策略不修正 → 只计数', eventId: ev.event_id };
+    return { state: s, outcome: { channel: CH.LATE_EXPIRED, reason: '只计数（策略）' } };
+  }
+
+  gates.push({ label: '④ 迟到', verdict: 'stop', detail: '窗口已关闭且超出允许延迟 ' + Math.round((delay - RULES.ALLOWED_LATENESS_MS) / 1000) + ' 秒 → 只计数' });
+  s.counters.lateExpired += 1;
+  s.lastPath = { gates: gates, channel: CH.LATE_EXPIRED, reason: '超出允许延迟 → 只计数，绝不修正', eventId: ev.event_id };
+  return { state: s, outcome: { channel: CH.LATE_EXPIRED, reason: '超出允许延迟' } };
+}
+
+/* 推进时间：让「窗口结束时间 ≤ 水位线」的窗口落定。
+   关键点：时间前进时生成器仍在产出，必须让一条“新鲜事件”把水位线推上去——
+   否则墙上时钟走了、水位线还停在原处，窗口永远不会落定，迟到也就无从演示。 */
+function advanceTime(state, ms) {
+  const s = clone(state);
+  s.now += ms;
+  s.maxAcceptedEventTime = Math.max(s.maxAcceptedEventTime, s.now);
+  const wm = watermarkOf(s);
+  Object.keys(s.windows).forEach(function (k) {
+    const w = s.windows[k];
+    if (!w.emitted && windowEndOf(Number(k)) <= wm) { w.emitted = true; w.emittedAt = s.now; }
+  });
+  return s;
+}
+
+/* 只读选择器：给页面看的展示模型 */
+function selectView(s, policy) {
+  const c = s.counters;
+  const dirtyIfDupCounted = c.dirty + c.duplicate;
+  const numerator = policy.duplicate === 'dirty' ? dirtyIfDupCounted : c.dirty;
+  const windows = Object.keys(s.windows).sort(function (a, b) { return Number(a) - Number(b); })
+    .map(function (k) { return Object.assign({ start: Number(k) }, s.windows[k]); });
+  return {
+    now: s.now, watermark: watermarkOf(s),
+    lastEmittedEnd: windows.filter(function (w) { return w.emitted; }).length
+      ? Math.max.apply(null, windows.filter(function (w) { return w.emitted; }).map(function (w) { return windowEndOf(w.start); })) : null,
+    counters: c, dirtyReasons: s.dirtyReasons,
+    dirtyNumerator: numerator, dirtyDenominator: c.total,
+    dirtyRate: c.total ? numerator / c.total : 0,
+    windows: windows, lastPath: s.lastPath
+  };
+}
+
+/* ==========================================================================
+   页面薄壳 —— 只做渲染与派发，不含判定逻辑
+   ========================================================================== */
+const BASE = Math.floor(Date.now() / 60000) * 60000 + 30000;
+let ST = initialState(BASE);
+let POLICY = { duplicate: 'separate', late: 'correct' };
+let LOG = [];
+let HISTORY = [];   // 已接受（非脏、非重复）的事件，用于“故障恢复重放”
+let idSeq = 0;
+
+function fmt(ms) {
+  const d = new Date(ms);
+  const p = function (n, w) { return String(n).padStart(w || 2, '0'); };
+  return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+}
+
+function mkev(o) {
+  const now = ST.now;
+  return Object.assign({
+    event_id: 'evt-' + (++idSeq),
+    event_time: now,
+    user_id: 'u-' + (1 + (idSeq % 5)),
+    item_id: 'it-' + (1 + (idSeq % 8)),
+    category_id: 'c-' + (1 + (idSeq % 3)),
+    event_type: 'view_item',
+    schema_version: '1.0',
+    channel: 'app',
+    province: '广东',
+    arrival: now
+  }, o);
+}
+
+const PRESETS = {
+  normal: function () { return { label: '正常事件（page_view，准时）', ev: mkev({ event_type: 'page_view' }) }; },
+  purchase: function () { return { label: '正常 purchase（含金额，准时）', ev: mkev({ event_type: 'purchase', amount: 199, currency: 'CNY', order_id: 'o-' + idSeq }) }; },
+  dirtyAmount: function () { return { label: '脏：amount < 0', ev: mkev({ event_type: 'purchase', amount: -1, currency: 'CNY', order_id: 'o-bad' }) }; },
+  dirtyEnum: function () { return { label: '脏：event_type 不在枚举', ev: mkev({ event_type: 'wishlist_add' }) }; },
+  dirtyMissing: function () { return { label: '脏：缺 item_id', ev: mkev({ event_type: 'add_to_cart', quantity: 2, item_id: null }) }; },
+  dirtyFuture: function () { return { label: '脏：event_time = now + 10 分钟', ev: mkev({ event_time: ST.now + 600000 }) }; },
+  dirtyAncient: function () { return { label: '脏：event_time = 2019-12-31', ev: mkev({ event_time: Date.UTC(2019, 11, 31, 23, 59) }) }; },
+  lateWithin: function () {
+    const t = lateWithinEventTime();
+    if (t === null) return { label: '迟到（窗口已关，但在允许延迟内）', ev: null,
+                            hint: '没有“已落定且仍在允许延迟内”的窗口 —— 请先「推进时间 +60 秒」让窗口落定。' };
+    return { label: '迟到（窗口已关，但在允许延迟内）', ev: mkev({ event_time: t, event_type: 'view_item' }) };
+  },
+  lateExpired: function () {
+    return { label: '迟到（超出允许延迟）', ev: mkev({ event_time: guaranteedExpiredEventTime(), event_type: 'view_item' }) };
+  },
+  dirtyAndLate: function () {
+    return { label: '既脏又迟到（脏优先？）', ev: mkev({ event_type: 'view_item', amount: -5,
+                                                       event_time: guaranteedExpiredEventTime() }) };
+  },
+  duplicate: function () {
+    const last = HISTORY[HISTORY.length - 1];
+    if (!last) return { label: '重复（先送一条正常事件）', ev: null };
+    return { label: '重复：重放上一条事件的同一 event_id', ev: Object.assign({}, last, { arrival: ST.now }) };
+  },
+  replay: function () {
+    const last = HISTORY.slice(-5);
+    if (!last.length) return { label: '故障恢复重放（先制造几条事件）', ev: null, batch: [] };
+    return { label: '故障恢复重放：kill TaskManager 后从 checkpoint 重放最近 5 条', ev: null, batch: last.map(function (e) { return Object.assign({}, e, { arrival: ST.now }); }) };
+  }
+};
+
+function run(presetKey) {
+  const p = PRESETS[presetKey]();
+  if (p.batch) { p.batch.forEach(ingest); return; }
+  if (!p.ev) {
+    LOG.unshift({ t: ST.now, txt: '⚠ ' + (p.hint || '（无事件可发）') });
+    if (LOG.length > 60) LOG.pop();
+    render();
+    return;
+  }
+  ingest(p.ev);
+}
+
+function ingest(ev) {
+  const r = dispose(ST, ev, POLICY);
+  ST = r.state;
+  const accepted = (r.outcome.channel === CH.ADMITTED || r.outcome.channel === CH.CORRECTED);
+  if (accepted) HISTORY.push(Object.assign({}, ev));
+  LOG.unshift({
+    t: ST.now,
+    txt: fmt(ev.event_time) + ' · ' + ev.event_type + ' · ' + ev.event_id +
+         ' → ' + chName(r.outcome.channel) + '（' + r.outcome.reason + '）'
+  });
+  if (LOG.length > 60) LOG.pop();
+}
+
+function chName(c) {
+  return { admitted: '窗口累加器', corrected: '窗口修正', late_expired: '迟到只计数',
+           duplicate: '重复通道', dirty: 'DLQ（脏）' }[c];
+}
+function chPill(c) {
+  const k = { admitted: 'ok', corrected: 'late', late_expired: 'late', duplicate: 'dup', dirty: 'dirty' }[c];
+  return '<span class="pill ' + k + '">' + chName(c) + '</span>';
+}
+
+/* ---- 渲染 ---- */
+function render() {
+  const v = selectView(ST, POLICY);
+  const c = v.counters;
+
+  document.getElementById('s-now').textContent = fmt(v.now);
+  document.getElementById('s-wm').textContent = fmt(v.watermark);
+  document.getElementById('s-al').textContent = v.lastEmittedEnd ? fmt(v.lastEmittedEnd + 120000) : '—';
+
+  // 策略按钮态
+  document.getElementById('p-dup-sep').className = POLICY.duplicate === 'separate' ? 'on' : '';
+  document.getElementById('p-dup-dirty').className = POLICY.duplicate === 'dirty' ? 'on' : '';
+  document.getElementById('p-late-cc').className = POLICY.late === 'count' ? 'on' : '';
+  document.getElementById('p-late-ca').className = POLICY.late === 'correct' ? 'on' : '';
+  document.getElementById('dup-expl').innerHTML = POLICY.duplicate === 'separate'
+    ? '重复由 1 小时去重状态识别 → 计入「重复」计数，不进 DLQ，不污染脏率；行级重复最终由 Doris unique key 幂等消化。'
+    : '重复被当作脏 → 进 DLQ 并计入脏率。<b>后果</b>：每次故障恢复重放都会让看板脏率飙到假值。';
+  document.getElementById('late-expl').innerHTML = POLICY.late === 'correct'
+    ? '允许延迟内到达 → 覆盖写修正已落定窗口（revision +1）；超出允许延迟 → 只计数、绝不修正。'
+    : '无论延迟多久都只计数、不修正；已落定窗口的数值永不回改（看板不再有暂定/已修订问题，但会系统性低估）。';
+
+  // 判定流水线
+  const gates = [
+    { label: '① 结构与取值', detail: '必填 / 枚举 / amount ≥ 0 / quantity ≥ 1' },
+    { label: '② 时间范围', detail: '≥ 2020-01-01 且 ≤ now + 5 分钟' },
+    { label: '③ 唯一性', detail: '1 小时内 event_id 未重复' },
+    { label: '④ 迟到', detail: '窗口关闭则按允许延迟分流' }
+  ];
+  const lp = v.lastPath;
+  document.getElementById('gates').innerHTML = gates.map(function (g, i) {
+    let cls = 'gate', verdict = '', detail = g.detail;
+    if (lp) {
+      const p = lp.gates[i];
+      if (p) { cls += p.verdict === 'pass' ? ' pass' : ' stop'; verdict = p.verdict === 'pass' ? '通过' : '拦截'; detail = p.detail; }
+      else { cls += ' skip'; verdict = '未走到'; }
+    }
+    return '<div class="' + cls + '"><div class="n">第 ' + (i + 1) + ' 关' + (verdict ? ' · ' + verdict : '') + '</div>' +
+           '<b>' + g.label + '</b><div class="sub">' + detail + '</div></div>';
+  }).join('');
+
+  // 计数
+  const boxes = [
+    ['窗口累加器（未落定）', c.admitted, ''],
+    ['窗口修正（允许延迟内）', c.corrected, '覆盖写，revision +1'],
+    ['迟到只计数（超期）', c.lateExpired, '绝不修正'],
+    ['重复通道', c.duplicate, '去重状态识别'],
+    ['DLQ（真脏）', c.dirty, '结构与取值 / 时间范围']
+  ];
+  document.getElementById('counts').innerHTML = boxes.map(function (b) {
+    return '<div class="card"><h3>' + b[0] + '</h3><div class="big">' + b[1] + '</div><div class="sub">' + b[2] + '</div></div>';
+  }).join('');
+
+  document.getElementById('m-dirty').textContent = c.dirty;
+  document.getElementById('m-dirtym').textContent = c.dirty + c.duplicate;
+  document.getElementById('m-total').textContent = c.total;
+  document.getElementById('m-rate').textContent = (v.dirtyRate * 100).toFixed(2) + '%';
+
+  // 漏斗事件计数（同窗口计数，不是转化率）
+  const f = { view_item: 0, add_to_cart: 0, begin_checkout: 0, purchase: 0 };
+  HISTORY.forEach(function (e) { if (f[e.event_type] != null) f[e.event_type] += 1; });
+  document.getElementById('f-1').textContent = f.view_item;
+  document.getElementById('f-2').textContent = f.add_to_cart;
+  document.getElementById('f-3').textContent = f.begin_checkout;
+  document.getElementById('f-4').textContent = f.purchase;
+
+  // 窗口表
+  const tb = document.querySelector('#wtab tbody');
+  tb.innerHTML = v.windows.length ? v.windows.map(function (w) {
+    return '<tr><td class="mono">' + fmt(w.start).slice(0, 5) + '–' + fmt(windowEndOf(w.start)).slice(0, 5) + '</td>' +
+           '<td>' + (w.emitted ? (w.revisedAfterEmit ? '已落定·<b>已修订</b>' : '已落定') : '累加中') + '</td>' +
+           '<td>' + w.pv + '</td><td>' + w.events + '</td><td>' + w.gmv.toFixed(2) + '</td>' +
+           '<td>' + w.revisions + '</td></tr>';
+  }).join('') : '<tr><td colspan="6" class="sub">还没有窗口</td></tr>';
+
+  // 日志
+  document.getElementById('log').innerHTML = LOG.length
+    ? LOG.map(function (l) { return '<div><span class="mono sub">' + fmt(l.t) + '</span> ' + l.txt + '</div>'; }).join('')
+    : '<div class="sub">还没有事件</div>';
+}
+
+/* ---- 自由按钮 ---- */
+const FREE = ['normal', 'purchase', 'dirtyAmount', 'dirtyEnum', 'dirtyMissing', 'dirtyFuture', 'dirtyAncient',
+              'lateWithin', 'lateExpired', 'dirtyAndLate', 'duplicate', 'replay'];
+document.getElementById('free').innerHTML = FREE.map(function (k) {
+  return '<button data-free="' + k + '">' + PRESETS[k]().label + '</button>';
+}).join('');
+document.getElementById('free').addEventListener('click', function (e) {
+  const k = e.target.getAttribute('data-free'); if (k) run(k);
+});
+document.getElementById('advance').addEventListener('click', function () {
+  ST = advanceTime(ST, 60000); LOG.unshift({ t: ST.now, txt: '推进时间 +60 秒 → 到期窗口落定' }); render();
+});
+
+/* ---- 策略开关 ---- */
+document.querySelectorAll('[data-pol]').forEach(function (b) {
+  b.addEventListener('click', function () {
+    POLICY[b.getAttribute('data-pol')] = b.getAttribute('data-v');
+    LOG.unshift({ t: ST.now, txt: '切换策略：重复=' + POLICY.duplicate + '，迟到=' + POLICY.late });
+    render();
+  });
+});
+
+/* ---- 引导走查 ---- */
+const SCENS = [
+  { key: 'happy', title: '① 正常路径', desc: '准时、合法的数据怎么走完全程，窗口如何落定。', steps: [
+    ['送出正常 page_view', 'normal'], ['再送一条 purchase（带金额）', 'purchase'],
+    ['推进时间 +60 秒 → 窗口落定', 'advance'], ['再送一条准时事件', 'normal'], ['再推进一次', 'advance'] ] },
+
+  { key: 'late', title: '② 允许延迟内的修正', desc: '窗口已落定，事件晚到但在 2 分钟允许延迟内 —— 看窗口被覆盖写、修订次数 +1。', steps: [
+    ['先送 2 条准时事件', 'normal'], ['推进时间 +60 秒（落定）', 'advance'],
+    ['送一条“迟到但在允许延迟内”', 'lateWithin'], ['看窗口表：状态变成“已落定·已修订”', null] ] },
+
+  { key: 'expired', title: '③ 超出允许延迟', desc: '晚到超过 2 分钟：只计数，绝不修正 —— 这是“丢弃必须有痕迹”。', steps: [
+    ['先送 2 条准时事件', 'normal'], ['推进时间 +60 秒', 'advance'],
+    ['送一条“超出允许延迟 5 分钟”', 'lateExpired'], ['看：迟到只计数 +1，窗口数值不变', null] ] },
+
+  { key: 'dirty', title: '④ 脏数据', desc: '四种违规各自被哪一关拦下，落到 DLQ。注意时间范围违规也算脏，不是迟到。', steps: [
+    ['脏：amount < 0', 'dirtyAmount'], ['脏：event_type 不在枚举', 'dirtyEnum'],
+    ['脏：缺 item_id', 'dirtyMissing'], ['脏：event_time = now + 10 分钟', 'dirtyFuture'],
+    ['脏：event_time = 2019-12-31', 'dirtyAncient'], ['看脏率分子跳到 5', null] ] },
+
+  { key: 'q11', title: '⑤ 故障恢复重放 —— Q11 的痛点', desc: '故障演练本身是合法重放。先把策略切到“重复＝脏”，再重放，看脏率被污染成假值；再切回独立通道，看它消失。', steps: [
+    ['先制造 5 条正常事件', 'normal'], ['切到「重复＝脏 → 进 DLQ」', null],
+    ['故障恢复重放：重放最近 5 条', 'replay'], ['看脏率——它其实全是合法重放', null],
+    ['切回「重复独立通道」并再重放一次', 'replay'], ['看：真脏仍为 0，重复进了独立计数', null] ] },
+
+  { key: 'both', title: '⑥ 既脏又迟到', desc: '同一条事件两个属性都有时谁优先 —— 冻结顺序是脏优先，因为脏的值不可信。', steps: [
+    ['送一条“既脏又迟到”（amount < 0 + 超期）', 'dirtyAndLate'],
+    ['看流水线：在第 ① 关就被拦，根本没走到第 ④ 关', null],
+    ['送一条“重复”让它命中第 ③ 关', 'duplicate'], ['对比两条事件的拦截关不同', null] ] }
+];
+
+document.getElementById('wtabs').innerHTML = SCENS.map(function (s, i) {
+  return '<div class="tab" data-scen="' + s.key + '">' + s.title + '</div>';
+}).join('');
+let curScen = 'happy';
+let doneSteps = {};
+
+function renderScen() {
+  const s = SCENS.filter(function (x) { return x.key === curScen; })[0];
+  document.querySelectorAll('[data-scen]').forEach(function (t) {
+    t.className = 'tab' + (t.getAttribute('data-scen') === curScen ? ' sel' : '');
+  });
+  document.getElementById('wscen').innerHTML =
+    '<div class="scen"><h3 style="margin:0 0 6px">' + s.title + '</h3><p>' + s.desc + '</p>' +
+    s.steps.map(function (st, i) {
+      const dis = st[1] === null ? 'disabled' : '';
+      return '<button class="step ' + (doneSteps[s.key + i] ? 'done' : '') + '" data-step="' + i + '" ' + dis + '>' +
+             (i + 1) + '. ' + st[0] + '</button>';
+    }).join('') +
+    '<div class="btnrow" style="margin-top:10px"><button data-reset="' + s.key + '">重置到已知初始状态后重跑本走查</button></div></div>';
+}
+
+document.getElementById('wtabs').addEventListener('click', function (e) {
+  const k = e.target.getAttribute('data-scen'); if (k) { curScen = k; renderScen(); }
+});
+document.getElementById('wscen').addEventListener('click', function (e) {
+  const reset = e.target.getAttribute('data-reset');
+  if (reset) {
+    ST = initialState(BASE); LOG = []; HISTORY = [];
+    POLICY = { duplicate: 'separate', late: 'correct' }; doneSteps = {};
+    LOG.unshift({ t: ST.now, txt: '已重置到已知初始状态' }); render(); renderScen(); return;
+  }
+  const idx = e.target.getAttribute('data-step');
+  if (idx == null) return;
+  const s = SCENS.filter(function (x) { return x.key === curScen; })[0];
+  const st = s.steps[Number(idx)];
+  if (!st || !st[1]) { renderScen(); return; }
+  if (curScen === 'q11' && Number(idx) === 1) { POLICY.duplicate = 'dirty'; LOG.unshift({ t: ST.now, txt: '切换策略：重复＝脏' }); }
+  if (curScen === 'q11' && Number(idx) === 4) { POLICY.duplicate = 'separate'; LOG.unshift({ t: ST.now, txt: '切换策略：重复独立通道' }); }
+  if (st[1] !== 'advance') run(st[1]); else { ST = advanceTime(ST, 60000); }
+  doneSteps[curScen + idx] = true;
+  render(); renderScen();
+});
+
+render(); renderScen();
+</script>
+</body>
+</html>

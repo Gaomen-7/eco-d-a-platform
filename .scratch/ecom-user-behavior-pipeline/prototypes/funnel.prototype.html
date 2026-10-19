@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>原型 · 步进漏斗：乱序/跳步/重复步到底怎么记</title>
+<style>
+  :root{--ink:#16181d;--mut:#6b7280;--line:#e5e7eb;--bg:#fbfbfc;--acc:#1f6feb;--accsoft:#eef4ff;
+        --warn:#b54708;--warns:#fffaeb;--bad:#b42318;--bads:#fef3f2;--ok:#046c4e;--oks:#ecfdf5;
+        --dup:#5b21b6;--dups:#f5f3ff;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.6 -apple-system,"Segoe UI",system-ui,"Microsoft YaHei",sans-serif}
+  .wrap{max-width:1140px;margin:0 auto;padding:32px 24px 96px}
+  h1{font-size:22px;margin:0 0 6px}
+  h2{font-size:15px;margin:30px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  .lead{color:var(--mut);margin:0 0 4px}
+  .qbox{background:var(--accsoft);border-left:3px solid var(--acc);padding:12px 14px;border-radius:6px;margin:16px 0 0}
+  .qbox b{color:var(--acc)}
+  .grid{display:grid;gap:12px}
+  .g2{grid-template-columns:1fr 1fr}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+  .card h3{margin:0 0 8px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);font-weight:600}
+  .big{font-size:24px;font-weight:650;font-variant-numeric:tabular-nums}
+  .sub{font-size:12px;color:var(--mut)}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px}
+  button{font:inherit;cursor:pointer;border:1px solid var(--line);background:#fff;border-radius:6px;
+         padding:7px 11px;transition:.12s}
+  button:hover{border-color:var(--acc);background:var(--accsoft)}
+  button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+  .btnrow{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+  .pill{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;font-weight:600}
+  .pill.adv{background:var(--oks);color:var(--ok)}
+  .pill.skip{background:var(--warns);color:var(--warn)}
+  .pill.dup{background:var(--dups);color:var(--dup)}
+  .pill.rej{background:var(--bads);color:var(--bad)}
+  .pill.new{background:#eef2f7;color:#475569}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+  th{color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 10px}
+  .tab{padding:6px 10px;border:1px solid var(--line);border-radius:16px;background:#fff;font-size:13px;cursor:pointer}
+  .tab.sel{background:var(--ink);border-color:var(--ink);color:#fff}
+  .scen{background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px}
+  .scen p{margin:0 0 10px;color:var(--mut)}
+  .step{display:block;width:100%;text-align:left;margin:0 0 6px}
+  .step.done{opacity:.5}
+  .log{max-height:250px;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  .log div{padding:2px 0;border-bottom:1px dotted var(--line);font-size:12.5px}
+  .note{color:var(--mut);font-size:12.5px;margin-top:8px}
+  .warn{background:#fffbea;border-left:3px solid #d97706;padding:10px 12px;border-radius:6px;margin-top:12px;font-size:13px}
+  .ladder{display:flex;gap:0;align-items:flex-end;height:150px;margin-top:10px}
+  .rung{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:6px}
+  .rung .bar{width:64%;background:var(--acc);border-radius:4px 4px 0 0;transition:height .3s}
+  .rung .lb{font-size:11.5px;color:var(--mut);text-align:center}
+  .rung .cv{font-size:14px;font-weight:650;font-variant-numeric:tabular-nums}
+  .anom{display:flex;flex-wrap:wrap;gap:8px}
+  .anom .a{background:#fff;border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:12.5px}
+  .anom .a b{font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>原型 · 步进漏斗：乱序/跳步/重复步到底怎么记</h1>
+  <p class="lead">一次性原型，只回答一个问题，答完即弃。</p>
+
+  <div class="qbox">
+    <b>被问的问题</b>：把「转化漏斗」从「同窗口事件计数」改成「<b>按 user_id 的步进推进</b>」之后，
+    真实数据里必然出现的三种畸形——<b>乱序步</b>（先支付后浏览）、<b>跳步</b>（没加购就结算）、<b>重复步</b>（同一步来了两次）——该怎么记账？
+    <br>它们决定：漏斗的分母怎么算、状态要存什么、以及下游看板会不会出现「>100% 的转化率」这种不可能值。
+  </div>
+
+  <h2>0 · 策略开关（正在拷问中的决策，切换即刻对比后果）</h2>
+  <div class="grid g2">
+    <div class="card">
+      <h3>乱序步 / 跳步的记账方式</h3>
+      <div class="btnrow">
+        <button data-pol="gap" data-v="autofill">补记中间步（推荐）</button>
+        <button data-pol="gap" data-v="reject">拒绝该步</button>
+        <button data-pol="gap" data-v="asis">只记它自己</button>
+      </div>
+      <p class="sub" id="gap-expl"></p>
+    </div>
+    <div class="card">
+      <h3>重复步的记账方式</h3>
+      <div class="btnrow">
+        <button data-pol="dup" data-v="idempotent">只记首次（推荐）</button>
+        <button data-pol="dup" data-v="countall">每次都记</button>
+      </div>
+      <p class="sub" id="dup-expl"></p>
+    </div>
+  </div>
+
+  <h2>1 · 当前会话（最近一条事件落在哪个用户身上）</h2>
+  <div class="grid g3" id="sess"></div>
+
+  <h2>2 · 漏斗（按用户步进 · 分母 = 第 1 步推进数）</h2>
+  <div class="card">
+    <div class="ladder" id="ladder"></div>
+    <div class="note" id="conv-note"></div>
+  </div>
+
+  <h2>3 · 畸形事件计数（这是你真正要判断的东西）</h2>
+  <div class="anom" id="anom"></div>
+  <p class="note">「补记」的步数会直接推高上游步骤的计数——这正是要观察的副作用。</p>
+
+  <h2>4 · 步进发射流（下游只看到这些）</h2>
+  <div class="card"><table id="emit"><thead><tr><th>#</th><th>user</th><th>推进到</th><th>来源</th><th>是否补记</th></tr></thead><tbody></tbody></table></div>
+  <p class="note">1 分钟窗口只决定「每分钟统计多少条步进」，<b>不决定</b>同不同窗口——这是 Q9(b) 与 1 分钟窗口正交的含义。</p>
+
+  <h2>5 · 自由按钮</h2>
+  <div class="btnrow" id="free"></div>
+  <div class="btnrow"><button id="advance">推进时间 +30 分钟（让会话超时）</button></div>
+
+  <h2>6 · 引导走查</h2>
+  <div class="tabs" id="wtabs"></div>
+  <div id="wscen"></div>
+
+  <h2>7 · 处置日志</h2>
+  <div class="log" id="log"></div>
+
+  <div class="warn">
+    <b>本页是原型</b>：状态只在内存里，刷新即重置；没有持久化、没有测试、没有错误处理。<br>
+    它<b>不</b>回答「哪种策略更优雅」，只把三种畸形推给你看，让你判断记账规则是否自洽。答完即弃。
+  </div>
+</div>
+
+<script>
+/* ==========================================================================
+   纯逻辑模块 —— 可整块搬进真实代码；不引用 DOM、不读全局。
+   ========================================================================== */
+const STEPS = ['view_item', 'add_to_cart', 'begin_checkout', 'purchase'];
+const LABEL = { view_item: '浏览商品', add_to_cart: '加入购物车', begin_checkout: '发起结算', purchase: '支付成功' };
+const idxOf = function (t) { return STEPS.indexOf(t) + 1; };   // 1..4
+
+const RULES = Object.freeze({
+  SESSION_TTL_MS: 30 * 60 * 1000     // 会话超时：30 分钟无事件即视为新会话
+});
+
+/* 处置结果分类 */
+const OUT = Object.freeze({
+  NEW: 'new',              // 该用户的第一步
+  ADVANCE: 'advance',      // 正常晋级到下一步
+  AUTOFILL: 'autofill',    // 跳步/乱序被补记的中间步
+  SKIP_REJECT: 'skipReject',// 跳步被拒绝
+  ASIS: 'asis',            // 只记它自己（不补记）
+  DUP_IGNORED: 'dupIgnored',// 重复步被忽略
+  DUP_COUNTED: 'dupCounted',// 重复步被重复计数
+  EXPIRED: 'expired'       // 会话已超时 → 开新会话
+});
+
+function newState(now) {
+  return {
+    now: now,
+    sessions: Object.create(null),     // user_id -> { seen:{step:ts}, highest:n, lastTs, sessionNo }
+    stepCount: { 1: 0, 2: 0, 3: 0, 4: 0 },  // 每个步骤的推进数（漏斗的分母/分子）
+    emits: [],                          // 步进发射流：下游唯一能看到的东西
+    anomalies: { autofilled: 0, skipRejected: 0, asis: 0, dupIgnored: 0, dupCounted: 0, expired: 0 },
+    lastUserId: null,
+    lastDetail: null
+  };
+}
+
+function clone(s) {
+  const sessions = Object.create(null);
+  Object.keys(s.sessions).forEach(function (k) {
+    const v = s.sessions[k];
+    sessions[k] = { seen: Object.assign({}, v.seen), highest: v.highest, lastTs: v.lastTs, sessionNo: v.sessionNo };
+  });
+  return {
+    now: s.now,
+    sessions: sessions,
+    stepCount: Object.assign({}, s.stepCount),
+    emits: s.emits.slice(),
+    anomalies: Object.assign({}, s.anomalies),
+    lastUserId: s.lastUserId,
+    lastDetail: s.lastDetail
+  };
+}
+
+/* 主入口：纯函数，(state, event, policy) -> {state, outcome}
+   event = { user_id, event_type, event_time } */
+function applyEvent(state, ev, policy) {
+  const s = clone(state);
+  const step = idxOf(ev.event_type);
+  const uid = ev.user_id;
+
+  if (step < 1) {
+    s.lastDetail = { step: 0, outs: ['未知事件类型'], emit: [] };
+    return { state: s, outcome: { step: 0, outs: ['未知事件类型'], emitted: [] } };
+  }
+
+  let sess = s.sessions[uid];
+  const outs = [];
+  const emitted = [];
+
+  /* 会话超时判定：无事件超过 TTL → 视为全新会话 */
+  if (sess && (s.now - sess.lastTs) > RULES.SESSION_TTL_MS) {
+    outs.push(OUT.EXPIRED);
+    s.anomalies.expired += 1;
+    sess = null;
+  }
+  if (!sess) {
+    sess = { seen: {}, highest: 0, lastTs: s.now, sessionNo: (sess ? sess.sessionNo + 1 : 1) };
+    s.sessions[uid] = sess;
+  }
+
+  function record(k) {
+    if (!sess.seen[k]) sess.seen[k] = ev.event_time;
+    s.stepCount[k] += 1;
+    emitted.push(k);
+  }
+
+  const already = !!sess.seen[step];
+
+  if (!already && step === sess.highest + 1) {
+    /* 正常晋级 */
+    outs.push(step === 1 ? OUT.NEW : OUT.ADVANCE);
+    record(step);
+  } else if (already) {
+    /* 重复步 */
+    if (policy.dup === 'idempotent') {
+      outs.push(OUT.DUP_IGNORED);
+      s.anomalies.dupIgnored += 1;
+    } else {
+      outs.push(OUT.DUP_COUNTED);
+      s.anomalies.dupCounted += 1;
+      record(step);
+    }
+  } else {
+    /* 跳步（step > highest+1）或乱序补步（step < highest 且未见）——两者共用 gap 策略 */
+    const isSkip = step > sess.highest + 1;
+    const gap = isSkip ? (sess.highest + 1) : step;
+    const holes = [];
+    for (let k = gap; k < step; k++) if (!sess.seen[k]) holes.push(k);
+
+    if (policy.gap === 'reject') {
+      outs.push(OUT.SKIP_REJECT);
+      s.anomalies.skipRejected += 1;
+    } else if (policy.gap === 'asis') {
+      outs.push(OUT.ASIS);
+      s.anomalies.asis += 1;
+      record(step);
+    } else {
+      /* autofill：先补记空洞，再记自身 */
+      holes.forEach(function (k) { record(k); s.anomalies.autofilled += 1; });
+      outs.push(OUT.AUTOFILL);
+      record(step);
+    }
+  }
+
+  /* 会话步进水位：只在**确实推进了**的情况下抬升。
+     原型抓到的真 bug：原先无条件抬升，导致 reject 策略下被拒的步骤也抬高水位，
+     于是该用户此后任何更低步都被判为「跳步」继续拒绝 —— 永久卡死，明明浏览了却永远进不了漏斗。 */
+  if (emitted.length > 0) sess.highest = Math.max(sess.highest, step);
+  sess.lastTs = s.now;
+  s.lastUserId = uid;
+
+  emitted.forEach(function (k) {
+    s.emits.push({ user: uid, step: k, outs: outs.slice(), autofilled: outs.indexOf(OUT.AUTOFILL) >= 0 });
+  });
+  if (s.emits.length > 400) s.emits = s.emits.slice(-400);
+
+  s.lastDetail = { step: step, outs: outs, emit: emitted };
+  return { state: s, outcome: { step: step, outs: outs, emitted: emitted } };
+}
+
+/* 推进时钟：会话超时靠它触发 */
+function advanceTime(state, ms) {
+  const s = clone(state);
+  s.now += ms;
+  return s;
+}
+
+/* 只读视图模型 */
+function selectView(s, policy) {
+  const c = s.stepCount;
+  const base = c[1] || 0;
+  const ratio = function (n) { return base ? n / base : 0; };
+  return {
+    now: s.now,
+    stepCount: c,
+    funnel: STEPS.map(function (t, i) {
+      const n = c[i + 1];
+      const prev = i === 0 ? n : c[i];
+      return { step: i + 1, type: t, label: LABEL[t], count: n,
+               fromBase: ratio(n), fromPrev: i === 0 ? 1 : (prev ? n / prev : 0) };
+    }),
+    overall: ratio(c[4]),
+    anomalies: s.anomalies,
+    emits: s.emits.slice(-14).reverse(),
+    sessions: Object.keys(s.sessions).map(function (k) {
+      const v = s.sessions[k];
+      return { user: k, highest: v.highest, seen: Object.keys(v.seen).map(Number).sort(function (a, b) { return a - b; }),
+               lastTs: v.lastTs, age: s.now - v.lastTs };
+    }).sort(function (a, b) { return b.highest - a.highest; }).slice(0, 6),
+    lastUserId: s.lastUserId,
+    lastDetail: s.lastDetail,
+    policy: policy
+  };
+}
+
+/* 「>100% 转化率」检测：autofill 策略下漏斗是否会倒挂 */
+function selfCheck(s) {
+  const c = s.stepCount;
+  const issues = [];
+  for (let k = 2; k <= 4; k++) if (c[k] > c[k - 1]) issues.push('第 ' + k + ' 步(' + c[k] + ') > 第 ' + (k - 1) + ' 步(' + c[k - 1] + ')');
+  return issues;
+}
+
+/* ==========================================================================
+   页面薄壳 —— 只做渲染与派发，不含判定逻辑
+   ========================================================================== */
+const BASE = Math.floor(Date.now() / 60000) * 60000 + 20000;
+let ST = newState(BASE);
+let POLICY = { gap: 'autofill', dup: 'idempotent' };
+let LOG = [];
+let idSeq = 0;
+
+function fmt(ms) {
+  const d = new Date(ms); const p = function (n) { return String(n).padStart(2, '0'); };
+  return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+function mkUid(n) { return 'u-' + (n || (1 + (idSeq % 3))); }
+function ev(user, type, timeOffsetMs) {
+  return { user_id: user, event_type: type, event_time: ST.now + (timeOffsetMs || 0) };
+}
+
+const PRESETS = {
+  order: function () { return { label: '正常顺序：浏览', ev: ev(mkUid(1), 'view_item') }; },
+  cart: function () { return { label: '正常顺序：加购', ev: ev(mkUid(1), 'add_to_cart') }; },
+  checkout: function () { return { label: '正常顺序：结算', ev: ev(mkUid(1), 'begin_checkout') }; },
+  pay: function () { return { label: '正常顺序：支付', ev: ev(mkUid(1), 'purchase') }; },
+  skip: function () {
+    const u = mkUid(2);
+    return { label: '跳步：无加购直接结算', ev: ev(u, 'begin_checkout') };
+  },
+  skipPay: function () {
+    const u = mkUid(3);
+    return { label: '跳步：直接支付（跳 2 步）', ev: ev(u, 'purchase') };
+  },
+  ooo: function () {
+    const u = mkUid(3);
+    /* 先支付、后浏览：模拟乱序到达 */
+    const r1 = applyEvent(ST, ev(u, 'purchase'), POLICY);
+    ST = r1.state;
+    LOG.unshift({ t: ST.now, txt: '（先发一条 payment 制造乱序）→ ' + outsName(r1.outcome.outs) });
+    return { label: '乱序：同一用户随后到达的浏览', ev: ev(u, 'view_item') };
+  },
+  dup: function () {
+    const u = mkUid(1);
+    return { label: '重复步：浏览再来一次', ev: ev(u, 'view_item') };
+  },
+  dupCart: function () {
+    const u = mkUid(1);
+    return { label: '重复步：加购再来一次', ev: ev(u, 'add_to_cart') };
+  },
+  newUser: function () { return { label: '全新用户的第一步：浏览', ev: ev('u-' + (100 + (++idSeq)), 'view_item') }; },
+  threeUsers: function () { return { label: '三个新用户各自浏览', ev: null, batch: ['a-' + idSeq, 'b-' + idSeq, 'c-' + idSeq].map(function (u) { return ev(u, 'view_item'); }) }; }
+};
+
+function outsName(outs) {
+  const m = {
+    new: '新会话首步', advance: '正常晋级', autofill: '跳步/乱序→补记', skipReject: '跳步被拒绝',
+    asis: '仅记自身', dupIgnored: '重复被忽略', dupCounted: '重复被计数', expired: '会话超时→开新会话'
+  };
+  return outs.map(function (o) { return m[o] || o; }).join(' + ');
+}
+function outsPill(outs) {
+  const cls = function (o) {
+    if (o === 'advance' || o === 'new') return 'adv';
+    if (o === 'autofill' || o === 'asis') return 'skip';
+    if (o === 'skipReject') return 'rej';
+    if (o === 'dupIgnored' || o === 'dupCounted') return 'dup';
+    return 'new';
+  };
+  return outs.map(function (o) { return '<span class="pill ' + cls(o) + '">' + outsName([o]) + '</span>'; }).join(' ');
+}
+
+function run(key) {
+  const p = PRESETS[key]();
+  if (p.batch) { p.batch.forEach(ingest); return; }
+  ingest(p.ev);
+}
+
+function ingest(e) {
+  const r = applyEvent(ST, e, POLICY);
+  ST = r.state;
+  LOG.unshift({ t: ST.now, txt: e.user_id + ' · ' + LABEL[e.event_type] + ' → ' +
+    outsName(r.outcome.outs) + (r.outcome.emitted.length ? '（发射 ' + r.outcome.emitted.length + ' 条步进）' : '') });
+  if (LOG.length > 70) LOG.pop();
+}
+
+/* ---- 渲染 ---- */
+function render() {
+  const v = selectView(ST, POLICY);
+
+  document.getElementById('gap-expl').innerHTML = {
+    autofill: '跳步/乱序时，把中间缺失的步一起补记。<b>后果</b>：上游步骤计数被推高，漏斗看起来更「完整」，但那是推断出来的不是观测到的。',
+    reject: '跳步事件直接拒绝，不记任何步。<b>后果</b>：漏斗更保守，但会系统性低估——用户真的支付了，却没进任何一步。',
+    asis: '只记它自己那一步。<b>后果</b>：会出现第 3 步 > 第 2 步的倒挂，漏斗不再单调。'
+  }[POLICY.gap];
+  document.getElementById('dup-expl').innerHTML = POLICY.dup === 'idempotent'
+    ? '同一步只记首次到达。<b>后果</b>：计数不虚高，但「用户反复浏览」这个信号丢失。'
+    : '同一步每次都记。<b>后果</b>：计数被高频行为者支配，漏斗可能倒挂（第 1 步被刷很高）。';
+
+  document.querySelectorAll('[data-pol]').forEach(function (b) {
+    const g = b.getAttribute('data-pol'), val = b.getAttribute('data-v');
+    b.className = POLICY[g] === val ? 'on' : '';
+  });
+
+  /* 会话面板 */
+  const ld = v.lastDetail;
+  document.getElementById('sess').innerHTML =
+    '<div class="card"><h3>最近事件</h3><div class="big">' + (ld && ld.step ? LABEL[STEPS[ld.step - 1]] : '—') +
+      '</div><div class="sub">' + (v.lastUserId || '') + (ld && ld.outs.length ? ' · ' + outsName(ld.outs) : '') + '</div></div>' +
+    '<div class="card"><h3>活跃会话数</h3><div class="big">' + Object.keys(ST.sessions).length + '</div>' +
+      '<div class="sub">超时阈值 ' + (RULES.SESSION_TTL_MS / 60000) + ' 分钟</div></div>' +
+    '<div class="card"><h3>自检：漏斗是否倒挂</h3><div class="big" style="color:' +
+      (selfCheck(ST).length ? '#b42318' : '#046c4e') + '">' + (selfCheck(ST).length ? '倒挂' : '正常') + '</div>' +
+      '<div class="sub">' + (selfCheck(ST).length ? selfCheck(ST).join('；') : '每级不超过上一级') + '</div></div>';
+
+  /* 漏斗阶梯 */
+  const maxC = Math.max.apply(null, v.funnel.map(function (f) { return f.count; }).concat([1]));
+  document.getElementById('ladder').innerHTML = v.funnel.map(function (f) {
+    const h = Math.max(4, (f.count / maxC) * 120);
+    return '<div class="rung"><div class="cv">' + f.count + '</div>' +
+      '<div class="bar" style="height:' + h + 'px;background:' + (f.step === 4 ? '#10b981' : '#1f6feb') + '"></div>' +
+      '<div class="lb">' + f.step + '. ' + f.label + '</div></div>';
+  }).join('');
+  document.getElementById('conv-note').innerHTML =
+    '逐步转化：' + v.funnel.map(function (f, i) {
+      return i === 0 ? '基准 ' + f.count : (f.fromPrev * 100).toFixed(1) + '%';
+    }).join(' → ') + ' ｜ 整体 ' + (v.overall * 100).toFixed(2) + '%（支付 ÷ 浏览）';
+
+  /* 畸形计数 */
+  const a = v.anomalies;
+  document.getElementById('anom').innerHTML = [
+    ['补记的中间步', a.autofilled, 'autofill 策略产生'],
+    ['跳步被拒绝', a.skipRejected, 'reject 策略产生'],
+    ['仅记自身', a.asis, 'asis 策略产生'],
+    ['重复被忽略', a.dupIgnored, 'idempotent 策略产生'],
+    ['重复被计数', a.dupCounted, 'countall 策略产生'],
+    ['会话超时', a.expired, 'TTL ' + (RULES.SESSION_TTL_MS / 60000) + ' 分钟']
+  ].map(function (x) {
+    return '<div class="a">' + x[0] + ' <b>' + x[1] + '</b><div class="sub">' + x[2] + '</div></div>';
+  }).join('');
+
+  /* 发射流 */
+  const tb = document.querySelector('#emit tbody');
+  tb.innerHTML = v.emits.length ? v.emits.map(function (e, i) {
+    return '<tr><td>' + (v.emits.length - i) + '</td><td class="mono">' + e.user + '</td>' +
+      '<td>' + LABEL[e.step] + '</td><td>' + outsPill(e.outs) + '</td>' +
+      '<td>' + (e.autofilled ? '是' : '—') + '</td></tr>';
+  }).join('') : '<tr><td colspan="5" class="sub">还没有步进发射</td></tr>';
+
+  /* 日志 */
+  document.getElementById('log').innerHTML = LOG.length
+    ? LOG.map(function (l) { return '<div><span class="mono sub">' + fmt(l.t) + '</span> ' + l.txt + '</div>'; }).join('')
+    : '<div class="sub">还没有事件</div>';
+}
+
+/* ---- 自由按钮 ---- */
+const FREE = ['order', 'cart', 'checkout', 'pay', 'skip', 'skipPay', 'ooo', 'dup', 'dupCart', 'newUser', 'threeUsers'];
+document.getElementById('free').innerHTML = FREE.map(function (k) {
+  return '<button data-free="' + k + '">' + PRESETS[k]().label + '</button>';
+}).join('');
+document.getElementById('free').addEventListener('click', function (e) {
+  const k = e.target.getAttribute('data-free'); if (k) run(k);
+});
+document.getElementById('advance').addEventListener('click', function () {
+  ST = advanceTime(ST, RULES.SESSION_TTL_MS + 60000);
+  LOG.unshift({ t: ST.now, txt: '推进时间 +31 分钟 → 所有会话超时' });
+  render();
+});
+document.querySelectorAll('[data-pol]').forEach(function (b) {
+  b.addEventListener('click', function () {
+    POLICY[b.getAttribute('data-pol')] = b.getAttribute('data-v');
+    LOG.unshift({ t: ST.now, txt: '切换策略：gap=' + POLICY.gap + '，dup=' + POLICY.dup });
+    render();
+  });
+});
+
+/* ---- 引导走查 ---- */
+const SCENS = [
+  { key: 'happy', title: '① 顺序完成', desc: '一个用户老老实实走完四步，漏斗是干净的 1:1:1:1 衰减（这里每个用户只走一次）。', steps: [
+    ['浏览商品', 'order'], ['加入购物车', 'cart'], ['发起结算', 'checkout'], ['支付成功', 'pay'],
+    ['看漏斗：4 步各 +1', null] ] },
+
+  { key: 'skip', title: '② 跳步 —— 三种策略的分水岭', desc: '新用户没有加购就直接结算。切换三种 gap 策略各做一次，对比漏斗的分子怎么变。', steps: [
+    ['（autofill）新用户直接结算', 'skip'], ['看：第 2 步也被补记 +1', null],
+    ['切到「拒绝该步」', null], ['再来一个新用户直接结算', 'skip'], ['看：第 3 步没涨，用户凭空消失', null],
+    ['切到「只记它自己」', null], ['再来一个新用户直接结算', 'skip'], ['看：自检报「倒挂」——第 3 步 > 第 2 步', null] ] },
+
+  { key: 'skip2', title: '③ 跳两步 —— autofill 的放大效应', desc: '新用户直接支付，跳过加购与结算两步。观察 autofill 一次补记多少。', steps: [
+    ['（若有需要先切回 autofill）', null],
+    ['新用户直接支付', 'skipPay'], ['看发射流：一次补记两条', null],
+    ['看畸形计数：补记 +2', null] ] },
+
+  { key: 'dup', title: '④ 重复步 —— 高频行为者的失真', desc: '同一用户反复浏览。idempotent 与 countall 的区别就在这里。', steps: [
+    ['用户 u-1 浏览', 'order'], ['同一用户再浏览一次', 'dup'], ['同一用户再浏览一次', 'dup'],
+    ['看：idempotent 下第 1 步仍是 1', null],
+    ['切到「每次都记」并再浏览两次', 'dup'], ['看：第 1 步被刷到 3，漏斗起点被夸大', null] ] },
+
+  { key: 'ooo', title: '⑤ 乱序步 —— 先支付后浏览', desc: '同一用户先来了支付、后来才到浏览（乱序到达）。这考验步进水位怎么退。', steps: [
+    ['／先制造一条乱序：直接支付一个新用户', 'skipPay'],
+    ['同一用户随后到达「浏览」', 'ooo'], ['看：highest 已经停在 4，退不回去 → 走 gap 策略', null],
+    ['对比三种 gap 策略的结果', null] ] },
+
+  { key: 'expire', title: '⑥ 会话超时 —— 同一用户隔了 31 分钟', desc: '跨会话的同一用户应当重开漏斗，否则老会话的步进水位会污染新会话。', steps: [
+    ['用户 u-1 浏览', 'order'], ['用户 u-1 加购', 'cart'],
+    ['推进时间 +31 分钟（会话超时）', 'advance'], ['同一用户再次浏览', 'order'],
+    ['看：会话数变为 2，新旧漏斗分开', null] ] }
+];
+
+document.getElementById('wtabs').innerHTML = SCENS.map(function (s) {
+  return '<div class="tab" data-scen="' + s.key + '">' + s.title + '</div>';
+}).join('');
+let curScen = 'happy';
+let doneSteps = {};
+
+function renderScen() {
+  const s = SCENS.filter(function (x) { return x.key === curScen; })[0];
+  document.querySelectorAll('[data-scen]').forEach(function (t) {
+    t.className = 'tab' + (t.getAttribute('data-scen') === curScen ? ' sel' : '');
+  });
+  document.getElementById('wscen').innerHTML =
+    '<div class="scen"><h3 style="margin:0 0 6px">' + s.title + '</h3><p>' + s.desc + '</p>' +
+    s.steps.map(function (st, i) {
+      return '<button class="step ' + (doneSteps[s.key + i] ? 'done' : '') + '" data-step="' + i + '"' +
+        (st[1] === null ? ' disabled' : '') + '>' + (i + 1) + '. ' + st[0] + '</button>';
+    }).join('') +
+    '<div class="btnrow" style="margin-top:10px"><button data-reset="1">重置到已知初始状态</button></div></div>';
+}
+
+document.getElementById('wtabs').addEventListener('click', function (e) {
+  const k = e.target.getAttribute('data-scen'); if (k) { curScen = k; renderScen(); }
+});
+document.getElementById('wscen').addEventListener('click', function (e) {
+  if (e.target.getAttribute('data-reset')) {
+    ST = newState(BASE); LOG = []; POLICY = { gap: 'autofill', dup: 'idempotent' }; doneSteps = {};
+    LOG.unshift({ t: ST.now, txt: '已重置到已知初始状态' }); render(); renderScen(); return;
+  }
+  const idx = e.target.getAttribute('data-step');
+  if (idx == null) return;
+  const s = SCENS.filter(function (x) { return x.key === curScen; })[0];
+  const st = s.steps[Number(idx)];
+  if (st && st[1]) {
+    if (st[1] === 'advance') { ST = advanceTime(ST, RULES.SESSION_TTL_MS + 60000); }
+    else run(st[1]);
+    doneSteps[curScen + idx] = true;
+    render(); renderScen();
+  }
+});
+
+render(); renderScen();
+</script>
+</body>
+</html>

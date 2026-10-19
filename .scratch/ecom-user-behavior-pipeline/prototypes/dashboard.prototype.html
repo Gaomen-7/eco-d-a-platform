@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>原型 · 电商实时看板三个变体</title>
+<style>
+/* ============ 公共外壳（不属于任何变体，是原型的脚手架） ============ */
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font:14px/1.55 -apple-system,"Segoe UI",system-ui,"Microsoft YaHei",sans-serif;background:#fff;color:#16181d}
+#app{min-height:100vh}
+
+/* 变体切换条：固定在底部中央，视觉上明显不属于被评估的设计 */
+#switcher{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:9999;
+  display:flex;align-items:center;gap:10px;background:#111827;color:#fff;border-radius:999px;
+  padding:8px 14px;box-shadow:0 8px 28px rgba(0,0,0,.35);font-size:13px;user-select:none}
+#switcher button{background:transparent;border:0;color:#fff;font:inherit;font-size:16px;cursor:pointer;padding:0 8px}
+#switcher button:hover{color:#7dd3fc}
+#switcher .lbl{font-variant-numeric:tabular-nums;min-width:210px;text-align:center}
+#switcher .hint{color:#9ca3af;font-size:11px;border-left:1px solid #374151;padding-left:10px}
+
+/* 演示控制（原型专用，虚线边框以示非设计的一部分） */
+#democtl{position:fixed;right:14px;top:14px;z-index:9999;background:#fffbeb;border:1px dashed #d97706;
+  border-radius:8px;padding:8px 10px;font-size:12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;
+  max-width:330px;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+#democtl .tag{font-weight:700;color:#b45309;letter-spacing:.05em}
+#democtl button{font:inherit;cursor:pointer;border:1px solid #d97706;background:#fff;border-radius:5px;padding:3px 7px}
+#democtl button.on{background:#d97706;color:#fff}
+#democtl button:hover{background:#fef3c7}
+#democtl .asof{width:100%;color:#6b7280;font-variant-numeric:tabular-nums}
+
+.spark{display:block}
+.sub{font-size:11.5px;opacity:.65}
+.num{font-variant-numeric:tabular-nums}
+.bar-track{background:rgba(127,127,127,.18);border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px;transition:width .35s ease}
+
+/* ============ 变体 A · 大屏镶边式（深色、绝对画布感、漏斗为唯一主视觉） ============ */
+#vA{background:#080c1a;color:#e8eeff;min-height:100vh;padding:22px 26px 90px;
+  display:grid;grid-template-rows:auto 1fr auto;gap:16px;
+  background-image:radial-gradient(circle at 50% 42%,#13224a 0%,#080c1a 62%)}
+#vA .band{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+#vA .kpi{border:1px solid #1e2a4a;background:linear-gradient(180deg,rgba(30,42,74,.55),rgba(12,18,36,.55));
+  border-radius:6px;padding:12px 14px;position:relative;overflow:hidden}
+#vA .kpi .t{font-size:11px;letter-spacing:.12em;color:#7f93c2;text-transform:uppercase}
+#vA .kpi .v{font-size:38px;font-weight:700;line-height:1.1;margin-top:2px;color:#fff;
+  text-shadow:0 0 18px rgba(56,189,248,.35)}
+#vA .kpi .d{font-size:12px;color:#5eead4}
+#vA .kpi .d.warn{color:#fca5a5}
+#vA .hero{border:1px solid #1e2a4a;border-radius:6px;background:rgba(10,16,32,.6);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px;position:relative}
+#vA .hero h2{margin:0;font-size:13px;letter-spacing:.16em;color:#7f93c2;text-transform:uppercase;font-weight:600}
+#vA .hero .ctx{position:absolute;top:10px;right:14px;font-size:11px;color:#7f93c2;text-align:right}
+#vA .foot{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:14px}
+#vA .panel{border:1px solid #1e2a4a;border-radius:6px;background:rgba(10,16,32,.6);padding:10px 12px}
+#vA .panel h3{margin:0 0 8px;font-size:11px;letter-spacing:.14em;color:#7f93c2;text-transform:uppercase;font-weight:600}
+#vA .row{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:12.5px}
+#vA .row .nm{width:52px;color:#a9b8dd}
+#vA .row .vt{width:56px;text-align:right;color:#fff;font-variant-numeric:tabular-nums}
+
+/* ============ 变体 B · 左窄筛选 + 右宽多列卡片网格（浅色、层级扁平） ============ */
+#vB{min-height:100vh;background:#f6f7f9;display:grid;grid-template-columns:224px 1fr;padding-bottom:88px}
+#vB .rail{background:#fff;border-right:1px solid #e5e7eb;padding:18px 16px;position:sticky;top:0;height:100vh}
+#vB .rail h2{margin:0 0 4px;font-size:15px}
+#vB .rail .f{margin:16px 0}
+#vB .rail label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin-bottom:5px}
+#vB .rail select,#vB .rail input{width:100%;font:inherit;font-size:13px;padding:5px 7px;border:1px solid #d1d5db;border-radius:5px;background:#fff}
+#vB .rail .chips{display:flex;flex-wrap:wrap;gap:5px}
+#vB .rail .chip{font-size:12px;border:1px solid #d1d5db;border-radius:999px;padding:2px 9px;background:#fff;cursor:pointer}
+#vB .rail .chip.on{background:#1f6feb;border-color:#1f6feb;color:#fff}
+#vB .rail .foot{position:absolute;bottom:18px;left:16px;right:16px;font-size:11px;color:#6b7280}
+#vB .main{padding:18px 22px}
+#vB .main h1{font-size:17px;margin:0 0 14px;display:flex;justify-content:space-between;align-items:baseline}
+#vB .cells{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+#vB .cell{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:13px 14px;min-height:132px;
+  display:flex;flex-direction:column}
+#vB .cell.wide{grid-column:span 2}
+#vB .cell.full{grid-column:span 4}
+#vB .cell h3{margin:0 0 6px;font-size:12px;color:#6b7280;font-weight:600}
+#vB .cell .v{font-size:27px;font-weight:650;line-height:1.15}
+#vB .cell .d{font-size:12px;color:#0f766e}
+#vB .cell .d.bad{color:#b42318}
+#vB .cell .grow{flex:1;display:flex;align-items:flex-end}
+
+/* ============ 变体 C · 旅程时间轴单列流 ============ */
+#vC{min-height:100vh;background:#fcfcfd;padding-bottom:88px}
+#vC .top{position:sticky;top:0;background:rgba(252,252,253,.94);backdrop-filter:blur(6px);
+  border-bottom:1px solid #e5e7eb;padding:14px 0;z-index:50}
+#vC .inner{max-width:940px;margin:0 auto;padding:0 22px}
+#vC .top .kv{display:flex;gap:30px;align-items:baseline}
+#vC .top .kv .u{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280}
+#vC .top .kv .n{font-size:24px;font-weight:650;font-variant-numeric:tabular-nums}
+#vC .sec{margin:26px 0}
+#vC .sec h2{font-size:14px;margin:0 0 4px}
+#vC .journey{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin-top:14px;position:relative}
+#vC .stage{position:relative;padding:0 10px}
+#vC .stage .node{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-weight:700;font-size:13px;background:#1f6feb;color:#fff;margin-bottom:10px;position:relative;z-index:2}
+#vC .stage .track{position:absolute;top:16px;left:0;right:0;height:2px;background:#e5e7eb;z-index:1}
+#vC .stage .nm{font-size:12px;color:#6b7280}
+#vC .stage .cv{font-size:21px;font-weight:650;font-variant-numeric:tabular-nums}
+#vC .stage .drop{font-size:12px;color:#b42318;margin-top:2px}
+#vC .ticker{background:#111827;color:#e5e7eb;border-radius:8px;padding:10px 12px;font-family:ui-monospace,Menlo,Consolas,monospace;
+  font-size:12px;height:210px;overflow:hidden}
+#vC .ticker div{padding:2px 0;border-bottom:1px solid #1f2937;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#vC .two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+#vC .rank div{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px}
+#vC .rank .nm{width:56px}
+#vC .rank .vt{width:52px;text-align:right;font-variant-numeric:tabular-nums}
+#vC .note{font-size:11.5px;color:#6b7280;margin-top:8px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<!-- 演示控制（原型专用） -->
+<div id="democtl">
+  <span class="tag">PROTOTYPE 演示</span>
+  <button id="d-pause">暂停</button>
+  <button id="d-spike">尖峰模式</button>
+  <button id="d-fault">故障重放</button>
+  <button id="d-reset">重置</button>
+  <span class="asof" id="d-asof"></span>
+</div>
+
+<!-- 变体切换条 -->
+<div id="switcher">
+  <button id="sw-prev" title="上一个变体（← 键）">◀</button>
+  <span class="lbl" id="sw-lbl">A</span>
+  <button id="sw-next" title="下一个变体（→ 键）">▶</button>
+  <span class="hint">← → 切换 · 地址栏 #variant= 可分享</span>
+</div>
+
+<script>
+/* ==========================================================================
+   纯数据模块 —— 一次性的假数据引擎。可整块搬走，不引用 DOM。
+   加速时钟：真实 1 秒 = 模拟 10 秒（演示用，界面已标注）。
+   ========================================================================== */
+const CFG = {
+  BASE_RATE: 200,          // events/s（SRS 默认）
+  SPIKE_MULT: 5,
+  SIM_SECONDS_PER_TICK: 10,
+  WINDOW_MS: 60000,
+  ALLOWED_LATENESS_MS: 120000,
+  DIRTY_BASE_RATE: 0.004
+};
+
+const CATEGORIES = [
+  { id: 'c-digital', name: '数码', w: 22 }, { id: 'c-apparel', name: '服饰', w: 20 },
+  { id: 'c-home', name: '家居', w: 16 }, { id: 'c-food', name: '食品', w: 14 },
+  { id: 'c-beauty', name: '美妆', w: 12 }, { id: 'c-sports', name: '运动', w: 9 },
+  { id: 'c-books', name: '图书', w: 7 }
+];
+
+const PROVINCES = [
+  { name: '广东', w: 14 }, { name: '江苏', w: 9 }, { name: '浙江', w: 9 }, { name: '山东', w: 8 },
+  { name: '河南', w: 7 }, { name: '四川', w: 7 }, { name: '上海', w: 6 }, { name: '北京', w: 6 },
+  { name: '河北', w: 5 }, { name: '湖北', w: 5 }, { name: '湖南', w: 5 }, { name: '福建', w: 5 },
+  { name: '安徽', w: 4 }, { name: '陕西', w: 4 }, { name: '辽宁', w: 4 }, { name: '江西', w: 3 },
+  { name: '重庆', w: 3 }, { name: '广西', w: 3 }, { name: '云南', w: 3 }, { name: '山西', w: 3 },
+  { name: '贵州', w: 2 }, { name: '黑龙江', w: 2 }, { name: '吉林', w: 2 }, { name: '天津', w: 2 },
+  { name: '内蒙古', w: 2 }, { name: '新疆', w: 2 }, { name: '甘肃', w: 1.5 }, { name: '海南', w: 1.5 },
+  { name: '宁夏', w: 1 }, { name: '青海', w: 1 }, { name: '西藏', w: .6 }
+];
+
+/* 中部省份方格地图的近似排布（列, 行）——纯自绘，无底图/无 GIS */
+const TILE_POS = {
+  '黑龙江': [6, 0], '吉林': [7, 1], '辽宁': [7, 2], '内蒙古': [4, 1], '新疆': [0, 1],
+  '甘肃': [1, 2], '宁夏': [3, 2], '北京': [6, 2], '天津': [7, 3], '河北': [5, 3],
+  '山西': [4, 3], '陕西': [3, 3], '青海': [1, 3], '西藏': [1, 4], '四川': [2, 4],
+  '重庆': [3, 4], '河南': [4, 4], '山东': [6, 4], '湖北': [4, 5], '安徽': [5, 5],
+  '江苏': [6, 5], '上海': [7, 5], '浙江': [7, 6], '江西': [5, 6], '湖南': [4, 6],
+  '贵州': [3, 6], '云南': [2, 6], '广西': [3, 7], '广东': [4, 7], '福建': [6, 7], '海南': [4, 8]
+};
+
+function pickWeighted(list) {
+  const tot = list.reduce(function (a, b) { return a + b.w; }, 0);
+  let r = Math.random() * tot;
+  for (let i = 0; i < list.length; i++) { r -= list[i].w; if (r <= 0) return list[i]; }
+  return list[list.length - 1];
+}
+
+function emptyWindow(start) {
+  return { start: start, end: start + CFG.WINDOW_MS, pv: 0, uvSet: {}, gmv: 0,
+           funnel: { view_item: 0, add_to_cart: 0, begin_checkout: 0, purchase: 0 },
+           categories: {}, provinces: {}, events: 0, dirty: 0, lateFixes: 0,
+           emitted: false, revisions: 0, revisedAfterEmit: false };
+}
+
+/* 会话状态：按用户推进漏斗 —— 这正是 Q9(b) 的“步进漏斗”，不是同窗口计数 */
+function newSessionState() {
+  return { sessions: {}, recent: [], history: [] , usersSeen: {} };
+}
+
+const STEPS = ['view_item', 'add_to_cart', 'begin_checkout', 'purchase'];
+
+function tick(sim, opts) {
+  const rate = CFG.BASE_RATE * (opts.spike ? CFG.SPIKE_MULT : 1);
+  const seconds = CFG.SIM_SECONDS_PER_TICK;
+  const total = Math.max(1, Math.round(rate * seconds));
+  const now = sim.now;
+
+  let winStart = Math.floor(now / CFG.WINDOW_MS) * CFG.WINDOW_MS;
+  if (!sim.windows[winStart]) sim.windows[winStart] = emptyWindow(winStart);
+  const w = sim.windows[winStart];
+
+  /* 每个 tick 创建一批新会话，并让已有会话沿漏斗推进。
+     重要：产出的**事件数**必须由速率直接决定——早先的写法用会话池大小代替事件数，
+     结果尖峰模式（REQ-F-GEN-04）完全不生效，演示会说谎。 */
+  const target = Math.max(1, Math.round(rate * seconds));
+  const RETIRE_P = 1 - 1 / 1.64;   // 非购买会话按概率退休，让会话池自稳
+  let emitted = 0, cursor = 0;
+  const keys = Object.keys(sim.sessions);
+
+  while (emitted < target) {
+    let uid;
+    if (cursor < keys.length) {
+      uid = keys[cursor++];
+      if (!sim.sessions[uid]) continue;          // 已退休
+    } else {
+      uid = 'u-' + (sim.uidSeq++);               // 池耗尽：现场补一个新会话
+      sim.sessions[uid] = { step: 0, ts: now, category: pickWeighted(CATEGORIES), province: pickWeighted(PROVINCES) };
+    }
+    const s = sim.sessions[uid];
+
+    /* 先记当前所处的那一步，再决定要不要往下一步推进——
+       顺序反了的话，新会话第一步就被推走，view_item 永远是 0，漏斗会失真。 */
+    const et = STEPS[s.step];
+    w.funnel[et] += 1;
+    w.events += 1;
+    emitted++;
+    if (et === 'view_item') { w.pv += 1; w.categories[s.category.name] = (w.categories[s.category.name] || 0) + 1; }
+    w.provinces[s.province.name] = (w.provinces[s.province.name] || 0) + 1;
+    w.uvSet[uid] = true;
+    if (et === 'purchase') { w.gmv += 120 + Math.random() * 380; sim.gmvTotal += 1; }
+
+    if (emitted % 41 === 0 && sim.recent.length < 24) {
+      sim.recent.unshift({ t: now, uid: uid, type: et, cat: s.category.name, prov: s.province.name, dirty: false });
+    }
+
+    /* 步进概率：浏览→加购最难，之后逐级更容易，整体呈漏斗衰减 */
+    if (et === 'purchase') { delete sim.sessions[uid]; }
+    else {
+      const advanceP = [0.34, 0.55, 0.62][s.step];
+      if (s.step < STEPS.length - 1 && Math.random() < advanceP) s.step += 1;
+      if (Math.random() < RETIRE_P || (now - s.ts) > 30 * 60 * 1000) delete sim.sessions[uid];
+    }
+  }
+  sim.recent = sim.recent.slice(0, 24);
+
+  /* 迟到修正：允许延迟内到达的事件回改已落定窗口 */
+  if (opts.lateFix && sim.windows[winStart - CFG.WINDOW_MS] && sim.windows[winStart - CFG.WINDOW_MS].emitted) {
+    const prev = sim.windows[winStart - CFG.WINDOW_MS];
+    prev.pv += 3; prev.events += 3;
+    prev.funnel.view_item += 3;
+    prev.revisions += 1; prev.revisedAfterEmit = true;
+    opts.lateFix = false;
+  }
+
+  /* 窗口关闭：结束时间 ≤ 水位线的窗口落定 */
+  Object.keys(sim.windows).forEach(function (k) {
+    const ww = sim.windows[k];
+    if (!ww.emitted && ww.end <= now) { ww.emitted = true; ww.emittedAt = now; }
+  });
+
+  sim.history.push({ t: now, pv: w.pv, uv: Object.keys(w.uvSet).length, gmv: w.gmv, dirty: w.dirty, rev: w.revisions });
+  if (sim.history.length > 80) sim.history.shift();
+  sim.now += CFG.SIM_SECONDS_PER_TICK * 1000;
+  return sim;
+}
+
+function newSim() {
+  const base = Math.floor(Date.now() / 60000) * 60000 - 4 * 60000;
+  const s = { now: base, windows: {}, sessions: {}, recent: [], history: [],
+              uidSeq: 1, gmvTotal: 0, spike: false, paused: false, fault: false, lateFix: true };
+  for (let i = 0; i < 3; i++) { s.windows[base - (i + 1) * CFG.WINDOW_MS] = emptyWindow(base - (i + 1) * CFG.WINDOW_MS); }
+  // 预热：让已关闭窗口有数据，落定状态可见
+  for (let i = 0; i < 3; i++) {
+    const wStart = base - (3 - i) * CFG.WINDOW_MS;
+    const w = emptyWindow(wStart);
+    for (let j = 0; j < 40; j++) {
+      const cat = pickWeighted(CATEGORIES), prov = pickWeighted(PROVINCES);
+      for (let st = 0; st <= (j % 4); st++) { w.funnel[STEPS[st]] += 1; }
+      w.events += 4; w.pv += 3; w.uvSet['h-' + i + '-' + j] = true;
+      w.categories[cat.name] = (w.categories[cat.name] || 0) + 1;
+      w.provinces[prov.name] = (w.provinces[prov.name] || 0) + 1;
+      w.gmv += 180 + Math.random() * 300;
+    }
+    w.emitted = true; w.revisions = i === 1 ? 2 : 0; w.revisedAfterEmit = i === 1;
+    s.windows[wStart] = w;
+  }
+  return s;
+}
+
+let SIM = newSim();
+
+/* 只读视图模型：三个变体都只从这个对象渲染。
+   显式接参（而不是闭包读全局 SIM）——这样它才是可搬走的纯函数。 */
+function view(sim) {
+  const S = sim || SIM;
+  const now = S.now;
+  const curStart = Math.floor(now / CFG.WINDOW_MS) * CFG.WINDOW_MS;
+  const cur = S.windows[curStart] || emptyWindow(curStart);
+  const closed = Object.keys(S.windows).map(function (k) { return S.windows[k]; })
+    .filter(function (w) { return w.emitted && w.end <= now; })
+    .sort(function (a, b) { return b.start - a.start; });
+
+  const lastN = closed.slice(0, 5).reverse();
+  const totalEvents = closed.reduce(function (a, w) { return a + w.events; }, 0) + cur.events;
+  const totalDirty = closed.reduce(function (a, w) { return a + w.dirty; }, 0) + cur.dirty;
+  const revisions = closed.reduce(function (a, w) { return a + w.revisions; }, 0);
+
+  const f = { view_item: 0, add_to_cart: 0, begin_checkout: 0, purchase: 0 };
+  closed.slice(0, 5).forEach(function (w) { STEPS.forEach(function (s) { f[s] += w.funnel[s]; }); });
+  STEPS.forEach(function (s) { f[s] += cur.funnel[s]; });
+
+  const cats = {}; const provs = {};
+  closed.slice(0, 5).concat([cur]).forEach(function (w) {
+    Object.keys(w.categories).forEach(function (k) { cats[k] = (cats[k] || 0) + w.categories[k]; });
+    Object.keys(w.provinces).forEach(function (k) { provs[k] = (provs[k] || 0) + w.provinces[k]; });
+  });
+
+  const toRank = function (o) {
+    return Object.keys(o).map(function (k) { return { name: k, v: o[k] }; })
+      .sort(function (a, b) { return b.v - a.v; });
+  };
+
+  return {
+    now: now,
+    windowLabel: fmtClock(curStart) + ' – ' + fmtClock(cur.end),
+    secondsToClose: Math.max(0, Math.round((cur.end - now) / 1000)),
+    emittedWindows: closed.length,
+    revisions: revisions,
+    isStale: revisions > 0,
+    current: {
+      pv: cur.pv, uv: Object.keys(cur.uvSet).length, gmv: cur.gmv, events: cur.events,
+      dirty: cur.dirty, dirtyRate: cur.events ? cur.dirty / cur.events : 0, emitted: cur.emitted
+    },
+    rolling: {
+      pv: lastN.concat([cur]).reduce(function (a, w) { return a + w.pv; }, 0),
+      uv: (function () { const set = {}; lastN.concat([cur]).forEach(function (w) { Object.keys(w.uvSet).forEach(function (k) { set[k] = 1; }); }); return Object.keys(set).length; })(),
+      gmv: lastN.concat([cur]).reduce(function (a, w) { return a + w.gmv; }, 0)
+    },
+    funnel: f,
+    funnelConvert: {
+      v2c: f.view_item ? f.add_to_cart / f.view_item : 0,
+      c2b: f.add_to_cart ? f.begin_checkout / f.add_to_cart : 0,
+      b2p: f.begin_checkout ? f.purchase / f.begin_checkout : 0,
+      all: f.view_item ? f.purchase / f.view_item : 0
+    },
+    categories: toRank(cats).slice(0, 7),
+    provinces: toRank(provs).slice(0, 12),
+    provincesAll: toRank(provs),
+    dirtyRate: totalEvents ? totalDirty / totalEvents : 0,
+    dirtyRateDisplay: (totalEvents ? totalDirty / totalEvents : 0) * 100,
+    history: S.history,
+    recent: S.recent,
+    spike: S.spike, fault: S.fault, paused: S.paused
+  };
+}
+
+function fmtClock(ms) {
+  const d = new Date(ms); const p = function (n) { return String(n).padStart(2, '0'); };
+  return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+const nf = function (n) { return Number(n).toLocaleString('en-US'); };
+
+/* 小型 SVG 图表助手（无第三方库） */
+function sparkline(vals, color, w, h) {
+  w = w || 180; h = h || 30;
+  if (!vals.length) return '<svg class="spark" width="' + w + '" height="' + h + '"></svg>';
+  const mx = Math.max.apply(null, vals) || 1, mn = Math.min.apply(null, vals);
+  const span = (mx - mn) || 1;
+  const pts = vals.map(function (v, i) {
+    return (i / (vals.length - 1 || 1) * w).toFixed(1) + ',' + (h - 2 - (v - mn) / span * (h - 6)).toFixed(1);
+  }).join(' ');
+  return '<svg class="spark" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+    '<polyline points="' + pts + '" fill="none" stroke="' + color + '" stroke-width="1.6"/></svg>';
+}
+function barsHTML(items, max, color, showName) {
+  return items.map(function (it) {
+    const pct = max ? Math.max(2, it.v / max * 100) : 0;
+    return '<div class="row"><span class="nm">' + (showName === false ? '' : it.name) + '</span>' +
+      '<span class="bar-track" style="flex:1;height:9px"><span class="bar-fill" style="width:' + pct.toFixed(1) + '%;background:' + color + '"></span></span>' +
+      '<span class="vt">' + nf(it.v) + '</span></div>';
+  }).join('');
+}
+/* 漏斗：堆叠梯形（面积即值，靠等宽高度体现递减） */
+function funnelSVG(f, w, h) {
+  const steps = [
+    { k: 'view_item', label: '浏览商品' }, { k: 'add_to_cart', label: '加入购物车' },
+    { k: 'begin_checkout', label: '发起结算' }, { k: 'purchase', label: '支付成功' }
+  ];
+  const top = f.view_item || 1;
+  const rowH = h / steps.length;
+  let out = '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">';
+  steps.forEach(function (s, i) {
+    const v = f[s.k];
+    const halfTop = (v / top) * (w * 0.42);
+    const nextV = i < steps.length - 1 ? Math.max(f[steps[i + 1].k], 1) : v;
+    const halfBot = i < steps.length - 1 ? (nextV / top) * (w * 0.42) : (v / top) * (w * 0.42);
+    const y0 = i * rowH, y1 = y0 + rowH - 3;
+    const cx = w / 2;
+    out += '<polygon points="' +
+      (cx - halfTop) + ',' + y0 + ' ' + (cx + halfTop) + ',' + y0 + ' ' +
+      (cx + halfBot) + ',' + y1 + ' ' + (cx - halfBot) + ',' + y1 + '" fill="' + (i === 3 ? '#22c55e' : '#38bdf8') + '" opacity="' + (0.85 - i * 0.1) + '"/>';
+    out += '<text x="' + (cx - halfTop - 10) + '" y="' + ((y0 + y1) / 2 + 4) + '" text-anchor="end" font-size="12" fill="#c7d2fe">' + s.label + '</text>';
+    out += '<text x="' + (cx + halfTop + 10) + '" y="' + ((y0 + y1) / 2 + 4) + '" font-size="13" font-weight="700" fill="#fff">' + nf(v) + '</text>';
+    out += '<text x="' + (cx + halfTop + 10) + '" y="' + ((y0 + y1) / 2 + 19) + '" font-size="11" fill="#7dd3fc">' +
+      (i === 0 ? '基准' : ((v / top) * 100).toFixed(1) + '% of 浏览') + '</text>';
+  });
+  out += '</svg>';
+  return out;
+}
+
+/* ==========================================================================
+   变体 A · 大屏镶边式
+   ========================================================================== */
+function VariantA(d) {
+  const items = d.provinces;
+  const mx = items.length ? items[0].v : 1;
+  return '<div id="vA">' +
+    '<div class="band">' +
+      kpiA('实时 PV（本分钟）', nf(d.current.pv), '滚动 5 分钟 ' + nf(d.rolling.pv), d.history.map(function (x) { return x.pv; }), '#38bdf8') +
+      kpiA('实时 UV（本分钟）', nf(d.current.uv), '滚动近 1 小时去重 ' + nf(d.rolling.uv), d.history.map(function (x) { return x.uv; }), '#a78bfa') +
+      kpiA('实时 GMV（本分钟）', '¥' + nf(Math.round(d.current.gmv)), '滚动 5 分钟 ¥' + nf(Math.round(d.rolling.gmv)), d.history.map(function (x) { return x.gmv; }), '#34d399') +
+      kpiA('整体转化率', (d.funnelConvert.all * 100).toFixed(2) + '%', '支付 / 浏览', [], '#fbbf24') +
+      kpiA('脏数据率', d.dirtyRateDisplay.toFixed(2) + '%', d.revisions ? '含 ' + d.revisions + ' 次窗口修订' : '无修订', [], '#f87171') +
+    '</div>' +
+    '<div class="hero">' +
+      '<div class="ctx">当前窗口 ' + d.windowLabel + '<br>距窗口关闭 ' + d.secondsToClose + ' s · 已落定 ' + d.emittedWindows + ' 个窗口' +
+      (d.revisions ? '<br><span style="color:#fbbf24">⚠ 已修订 ' + d.revisions + ' 次</span>' : '') + '</div>' +
+      '<h2>四步转化漏斗（按用户步进）</h2>' +
+      funnelSVG(d.funnel, 720, 300) +
+      '<div class="sub">逐步转化 ' + (d.funnelConvert.v2c * 100).toFixed(1) + '% → ' +
+        (d.funnelConvert.c2b * 100).toFixed(1) + '% → ' + (d.funnelConvert.b2p * 100).toFixed(1) + '%</div>' +
+    '</div>' +
+    '<div class="foot">' +
+      '<div class="panel"><h3>地域分布 · 省级排行（top 12）</h3>' +
+        barsHTML(items.slice(0, 12), mx, '#60a5fa') + '</div>' +
+      '<div class="panel"><h3>品类分布</h3>' +
+        barsHTML(d.categories, d.categories.length ? d.categories[0].v : 1, '#c084fc') + '</div>' +
+      '<div class="panel"><h3>窗口落定流水</h3>' +
+        d.history.slice(-8).reverse().map(function (h) {
+          return '<div class="row"><span class="nm">' + fmtClock(h.t).slice(0, 5) + '</span>' +
+            '<span class="bar-track" style="flex:1;height:8px"><span class="bar-fill" style="width:' +
+            Math.min(100, h.pv / (Math.max.apply(null, d.history.map(function (x) { return x.pv; })) || 1) * 100).toFixed(1) +
+            '%;background:#38bdf8"></span></span><span class="vt">' + nf(h.pv) + '</span></div>';
+        }).join('') + '</div>' +
+    '</div>' +
+  '</div>';
+}
+function kpiA(t, v, sub, hist, color) {
+  return '<div class="kpi"><div class="t">' + t + '</div><div class="v">' + v + '</div>' +
+    '<div class="d">' + sub + '</div>' + (hist.length ? sparkline(hist, color, 200, 26) : '') + '</div>';
+}
+
+/* ==========================================================================
+   变体 B · 左窄筛选 + 右宽多列卡片网格
+   ========================================================================== */
+function VariantB(d) {
+  const provMax = d.provincesAll.length ? d.provincesAll[0].v : 1;
+  const tileMax = provMax;
+  const tiles = Object.keys(TILE_POS).map(function (name) {
+    const pos = TILE_POS[name];
+    const item = d.provincesAll.filter(function (p) { return p.name === name; })[0];
+    const v = item ? item.v : 0;
+    const t = tileMax ? v / tileMax : 0;
+    const bg = 'rgba(31,111,235,' + (0.12 + t * 0.78).toFixed(2) + ')';
+    const fg = t > 0.45 ? '#fff' : '#1e293b';
+    return '<div style="grid-column:' + (pos[0] + 1) + ';grid-row:' + (pos[1] + 1) +
+      ';background:' + bg + ';color:' + fg + ';border-radius:4px;display:flex;flex-direction:column;' +
+      'align-items:center;justify-content:center;font-size:10px;line-height:1.15;padding:2px;min-height:30px">' +
+      '<span>' + name + '</span><b style="font-size:11px">' + nf(v) + '</b></div>';
+  }).join('');
+
+  const cats = d.categories;
+  const catTotal = cats.reduce(function (a, c) { return a + c.v; }, 0) || 1;
+  let x = 0, y = 0, rowH = 1, tree = '';
+  const colors = ['#1f6feb', '#0ea5e9', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#64748b'];
+  cats.forEach(function (c, i) {
+    const share = c.v / catTotal;
+    tree += '<div style="background:' + colors[i % colors.length] + ';color:#fff;border-radius:4px;' +
+      'display:flex;flex-direction:column;justify-content:center;padding:6px 8px;height:100%;width:' +
+      (share * 100).toFixed(1) + '%"><b style="font-size:12px">' + c.name + '</b>' +
+      '<span style="font-size:11px;opacity:.85">' + nf(c.v) + ' · ' + (share * 100).toFixed(1) + '%</span></div>';
+  });
+
+  return '<div id="vB">' +
+    '<aside class="rail">' +
+      '<h2>筛选</h2><div class="sub">原型为只读，控件不接线</div>' +
+      '<div class="f"><label>时间范围</label><select><option>最近 5 分钟</option><option selected>本分钟（累计）</option><option>最近 1 小时</option></select></div>' +
+      '<div class="f"><label>品类</label><div class="chips">' + CATEGORIES.map(function (c, i) {
+        return '<span class="chip' + (i === 0 ? ' on' : '') + '">' + c.name + '</span>'; }).join('') + '</div></div>' +
+      '<div class="f"><label>地域</label><select><option selected>全部省份</option><option>一线城市</option><option>华东</option><option>华南</option></select></div>' +
+      '<div class="f"><label>渠道</label><select><option selected>全部</option><option>App</option><option>小程序</option><option>Web</option></select></div>' +
+      '<div class="f"><label>自动刷新</label><select><option selected>10 秒</option><option>30 秒</option><option>关闭</option></select></div>' +
+      '<div class="foot">当前窗口<br>' + d.windowLabel + '<br>距关闭 ' + d.secondsToClose + ' s' +
+        (d.revisions ? '<br><b style="color:#b45309">已修订 ' + d.revisions + ' 次</b>' : '') + '</div>' +
+    '</aside>' +
+    '<main class="main">' +
+      '<h1><span>电商实时看板</span><span class="sub">数据截至 ' + fmtClock(d.now) + ' · 刷新间隔 10 s</span></h1>' +
+      '<div class="cells">' +
+        cellB('实时 PV', nf(d.current.pv), '滚动 5 分钟 ' + nf(d.rolling.pv), false, d.history.map(function (x) { return x.pv; }), '#1f6feb') +
+        cellB('实时 UV', nf(d.current.uv), '滚动 1 小时去重 ' + nf(d.rolling.uv), false, d.history.map(function (x) { return x.uv; }), '#8b5cf6') +
+        cellB('实时 GMV', '¥' + nf(Math.round(d.current.gmv)), '滚动 5 分钟 ¥' + nf(Math.round(d.rolling.gmv)), false, d.history.map(function (x) { return x.gmv; }), '#10b981') +
+        cellB('脏数据率', d.dirtyRateDisplay.toFixed(2) + '%', d.revisions ? '含 ' + d.revisions + ' 次修订' : '无修订', d.revisions > 0, [], '#ef4444') +
+        cellB('四步转化漏斗（按用户步进 · 点击步骤看流失）', '', '', false, [], '', true, funnelStepsB(d)) +
+        cellB('地域分布 · 省份方格地图', '', '零 GIS 依赖，自绘行列布局', false, [], '', false,
+          '<div style="display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(9,1fr);' +
+          'gap:3px;width:100%;height:100%;min-height:200px">' + tiles + '</div>', true) +
+        cellB('品类分布 · Treemap', '', '面积＝份额', false, [], '', false,
+          '<div style="display:flex;gap:3px;height:100%;min-height:96px;width:100%">' + tree + '</div>') +
+        cellB('窗口落定流水', '', '', false, [], '', false,
+          '<div style="width:100%">' + d.history.slice(-10).reverse().map(function (h) {
+            return '<div style="display:flex;gap:6px;align-items:center;margin:4px 0;font-size:11.5px">' +
+              '<span style="width:42px;color:#6b7280">' + fmtClock(h.t).slice(0, 5) + '</span>' +
+              '<span class="bar-track" style="flex:1;height:7px"><span class="bar-fill" style="width:' +
+              Math.min(100, h.pv / (Math.max.apply(null, d.history.map(function (z) { return z.pv; })) || 1) * 100).toFixed(1) +
+              '%;background:#1f6feb"></span></span><span style="width:44px;text-align:right">' + nf(h.pv) + '</span></div>';
+          }).join('') + '</div>') +
+      '</div>' +
+    '</main>' +
+  '</div>';
+}
+function cellB(title, v, delta, bad, hist, color, wide, inner, full) {
+  return '<div class="cell' + (wide ? ' wide' : '') + (full ? ' full' : '') + '">' +
+    '<h3>' + title + '</h3>' +
+    (v ? '<div class="v">' + v + '</div>' : '') +
+    (delta ? '<div class="d' + (bad ? ' bad' : '') + '">' + delta + '</div>' : '') +
+    (hist && hist.length ? sparkline(hist, color, 240, 34) : '') +
+    (inner ? '<div class="grow">' + inner + '</div>' : '') +
+  '</div>';
+}
+function funnelStepsB(d) {
+  const steps = [
+    { k: 'view_item', label: '浏览商品' }, { k: 'add_to_cart', label: '加入购物车' },
+    { k: 'begin_checkout', label: '发起结算' }, { k: 'purchase', label: '支付成功' }
+  ];
+  const top = d.funnel.view_item || 1;
+  const max = top;
+  return '<div style="width:100%">' + steps.map(function (s, i) {
+    const v = d.funnel[s.k];
+    const pct = v / max * 100;
+    const conv = i === 0 ? null : (v / (d.funnel[steps[i - 1].k] || 1));
+    return '<div style="margin:6px 0">' +
+      '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">' +
+        '<span><b>' + (i + 1) + '. ' + s.label + '</b></span>' +
+        '<span class="num">' + nf(v) + (conv !== null ? ' <span style="opacity:.6">（' + (conv * 100).toFixed(1) + '%）</span>' : '') + '</span>' +
+      '</div>' +
+      '<div class="bar-track" style="height:16px"><div class="bar-fill" style="width:' + Math.max(1, pct).toFixed(1) +
+        '%;background:' + (i === 3 ? '#10b981' : '#1f6feb') + '"></div></div>' +
+      (i < steps.length - 1 ? '<div style="font-size:11px;color:#b42318;margin-top:2px">流失 ' +
+        nf(v - d.funnel[steps[i + 1].k]) + '（' + ((1 - d.funnel[steps[i + 1].k] / (v || 1)) * 100).toFixed(1) + '%）</div>' : '') +
+    '</div>';
+  }).join('') + '<div class="sub" style="margin-top:6px">整体 ' + (d.funnelConvert.all * 100).toFixed(2) +
+    '% → 支付。漏斗按<b>用户步进</b>计数，与 1 分钟窗口正交。</div></div>';
+}
+
+/* ==========================================================================
+   变体 C · 旅程时间轴单列流
+   ========================================================================== */
+function VariantC(d) {
+  const steps = [
+    { k: 'view_item', label: '浏览商品', node: '1' }, { k: 'add_to_cart', label: '加入购物车', node: '2' },
+    { k: 'begin_checkout', label: '发起结算', node: '3' }, { k: 'purchase', label: '支付成功', node: '4' }
+  ];
+  const top = d.funnel.view_item || 1;
+  const journey = steps.map(function (s, i) {
+    const v = d.funnel[s.k];
+    const prev = i === 0 ? null : d.funnel[steps[i - 1].k];
+    const drop = prev ? prev - v : 0;
+    return '<div class="stage">' + (i < 3 ? '<div class="track"></div>' : '') +
+      '<div class="node">' + s.node + '</div>' +
+      '<div class="nm">' + s.label + '</div><div class="cv num">' + nf(v) + '</div>' +
+      (prev ? '<div class="drop">−' + nf(drop) + '（' + ((1 - v / (prev || 1)) * 100).toFixed(0) + '%）</div>' : '<div class="sub">起点 100%</div>') +
+    '</div>';
+  }).join('');
+
+  return '<div id="vC"><div class="top"><div class="inner"><div class="kv">' +
+    '<div><div class="u">实时 PV</div><div class="n num">' + nf(d.current.pv) + '</div></div>' +
+    '<div><div class="u">实时 UV</div><div class="n num">' + nf(d.current.uv) + '</div></div>' +
+    '<div><div class="u">实时 GMV</div><div class="n num">¥' + nf(Math.round(d.current.gmv)) + '</div></div>' +
+    '<div><div class="u">整体转化</div><div class="n num">' + (d.funnelConvert.all * 100).toFixed(2) + '%</div></div>' +
+    '<div><div class="u">脏数据率</div><div class="n num"' + (d.revisions ? ' style="color:#b45309"' : '') + '>' + d.dirtyRateDisplay.toFixed(2) + '%</div></div>' +
+    '<div style="margin-left:auto;text-align:right"><div class="u">数据截至</div><div class="num" style="font-size:14px">' +
+      fmtClock(d.now) + '</div><div class="sub">窗口 ' + d.windowLabel + ' · 距关闭 ' + d.secondsToClose + ' s' +
+      (d.revisions ? '<br><b style="color:#b45309">已修订 ' + d.revisions + ' 次</b>' : '') + '</div></div>' +
+  '</div></div></div>' +
+
+  '<div class="inner">' +
+    '<div class="sec"><h2>下单旅程</h2><div class="sub">沿轴排列，标注每步流失；主视觉是一条时间线</div>' +
+      '<div class="journey"><div style="position:absolute;top:16px;left:2px;right:2px;height:2px;background:#e5e7eb"></div>' + journey + '</div></div>' +
+
+    '<div class="sec"><h2>实时事件流</h2><div class="sub">最新 24 条（下方持续滚动，这是“实时感”的主要来源）</div>' +
+      '<div class="ticker">' + (d.recent.length ? d.recent.map(function (e) {
+        return '<div>' + fmtClock(e.t) + '  ' + e.uid + '  ' + e.type + '  ' + e.cat + ' · ' + e.prov + '</div>';
+      }).join('') : '<div class="sub">等待事件……</div>') + '</div></div>' +
+
+    '<div class="sec two">' +
+      '<div><h2>地域分布</h2><div class="sub">省级排行</div><div class="rank">' +
+        barsHTML(d.provinces.slice(0, 8), d.provinces.length ? d.provinces[0].v : 1, '#1f6feb') + '</div></div>' +
+      '<div><h2>品类分布</h2><div class="sub">按浏览事件</div><div class="rank">' +
+        barsHTML(d.categories, d.categories.length ? d.categories[0].v : 1, '#8b5cf6') + '</div></div>' +
+    '</div>' +
+
+    '<div class="sec"><h2>窗口落定</h2><div class="sub">每分钟定格一次；已修订的窗口标黄</div>' +
+      '<div>' + d.history.slice(-14).map(function (h, i, arr) {
+        const mx = Math.max.apply(null, arr.map(function (z) { return z.pv; })) || 1;
+        return '<div style="display:flex;gap:8px;align-items:center;margin:4px 0;font-size:12px">' +
+          '<span style="width:44px;color:#6b7280">' + fmtClock(h.t).slice(0, 5) + '</span>' +
+          '<span class="bar-track" style="flex:1;height:10px"><span class="bar-fill" style="width:' +
+          (h.pv / mx * 100).toFixed(1) + '%;background:' + (h.rev ? '#f59e0b' : '#1f6feb') + '"></span></span>' +
+          '<span class="num" style="width:52px;text-align:right">' + nf(h.pv) + '</span>' +
+          '<span class="sub" style="width:60px">' + (h.rev ? '修订 ' + h.rev + ' 次' : '') + '</span></div>';
+      }).join('') + '</div></div>' +
+    '<div class="note">原型说明：三变体共用同一份假数据与同一个 1 分钟窗口模型；时钟 10× 加速。</div>' +
+  '</div></div>';
+}
+
+/* ==========================================================================
+   切换器与演示控制
+   ========================================================================== */
+const VARIANTS = [
+  { key: 'A', name: '大屏镶边式', render: VariantA },
+  { key: 'B', name: '左筛选 + 卡片网格', render: VariantB },
+  { key: 'C', name: '旅程时间轴单列流', render: VariantC }
+];
+
+function currentVariant() {
+  const q = new URLSearchParams(location.search).get('variant');
+  const h = (location.hash.match(/variant=([ABC])/) || [])[1];
+  const k = (q || h || 'A').toUpperCase();
+  return VARIANTS.filter(function (v) { return v.key === k; })[0] || VARIANTS[0];
+}
+
+let lastKey = null;
+function render(force) {
+  const v = currentVariant();
+  const d = view(SIM);
+  if (force || v.key !== lastKey) {
+    document.getElementById('app').innerHTML = v.render(d);
+    lastKey = v.key;
+  } else {
+    // 只换数字最稳，但原型不值得优化；直接整体重绘
+    document.getElementById('app').innerHTML = v.render(d);
+  }
+  document.getElementById('sw-lbl').textContent = v.key + ' · ' + v.name;
+  try { history.replaceState(null, '', location.pathname + location.search + '#variant=' + v.key); }
+  catch (e) { location.hash = 'variant=' + v.key; }
+}
+
+function cycle(dir) {
+  const v = currentVariant();
+  let i = VARIANTS.indexOf(v) + dir;
+  if (i < 0) i = VARIANTS.length - 1;
+  if (i >= VARIANTS.length) i = 0;
+  location.hash = 'variant=' + VARIANTS[i].key;
+  render(true);
+}
+
+document.getElementById('sw-prev').addEventListener('click', function () { cycle(-1); });
+document.getElementById('sw-next').addEventListener('click', function () { cycle(1); });
+document.addEventListener('keydown', function (e) {
+  const t = document.activeElement;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  if (e.key === 'ArrowLeft') { cycle(-1); }
+  if (e.key === 'ArrowRight') { cycle(1); }
+});
+window.addEventListener('hashchange', function () { render(true); });
+
+/* 演示控制 */
+document.getElementById('d-pause').addEventListener('click', function () {
+  SIM.paused = !SIM.paused;
+  this.textContent = SIM.paused ? '继续' : '暂停';
+  this.className = SIM.paused ? 'on' : '';
+});
+document.getElementById('d-spike').addEventListener('click', function () {
+  SIM.spike = !SIM.spike;
+  this.className = SIM.spike ? 'on' : '';
+});
+document.getElementById('d-fault').addEventListener('click', function () {
+  // 触发一次“故障重放”：重放事件涌入（对应 Q11：重复若计脏，脏率会飙到假值）
+  for (let i = 0; i < 3; i++) {
+    const curStart = Math.floor(SIM.now / CFG.WINDOW_MS) * CFG.WINDOW_MS;
+    const w = SIM.windows[curStart] || (SIM.windows[curStart] = emptyWindow(curStart));
+    w.dirty += 40; w.events += 40;
+    for (let j = 0; j < 40; j++) SIM.recent.unshift({ t: SIM.now, uid: 'replay-' + i + '-' + j, type: 'view_item', cat: '数码', prov: '广东', dirty: true });
+  }
+  this.className = 'on';
+  setTimeout(function () { document.getElementById('d-fault').className = ''; }, 2500);
+});
+document.getElementById('d-reset').addEventListener('click', function () {
+  SIM = newSim(); document.getElementById('d-pause').textContent = '暂停';
+  document.getElementById('d-pause').className = ''; document.getElementById('d-spike').className = '';
+  render(true);
+});
+
+/* 时钟：真实 1 秒推进模拟 10 秒 */
+setInterval(function () {
+  if (!SIM.paused) { tick(SIM, { spike: SIM.spike, fault: false }); }
+  const ws = Math.floor(SIM.now / CFG.WINDOW_MS) * CFG.WINDOW_MS;
+  document.getElementById('d-asof').textContent =
+    '模拟时钟 ' + fmtClock(SIM.now) + ' · 当前窗口起于 ' + fmtClock(ws) + ' · 10× 加速';
+}, 1000);
+render(true);
+</script>
+</body>
+</html>
