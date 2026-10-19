@@ -214,6 +214,24 @@ Paimon `snapshot.num-retained.min` 官方默认是 **10**，非 5。要么表属
 
 → 「20 GB」这个门槛**成立**，但**不是自明的**：若采纳亿级回放（`REQ-NF-CAP-06`，官方口径约 1 亿事件 / ~3.4 GB 解压、约 37 GB 原始 JSON 级）则**必然击穿** 20 GB——故 `REQ-NF-CAP-06` 的 COULD 定级是对的，且 GDD 必须写明「亿级回放与 20 GB 门槛互斥，二选一」。
 
+**D4 · 致命：`REQ-F-LAKE-09` 与质量规则①**直接冲突**，公开数据集回放会 100% 被判脏** ★★
+- SRS §3.3 质量规则①：「`event_time` 不晚于当前 +5 分钟、**不早于 2020-01-01**」。
+- [天池 UserBehavior 数据集（dataId=649）](https://tianchi.aliyun.com/datalab/dataSet.html?dataId=649) 原文：data 覆盖「**November 25 to December 03, 2017**」，# of interactions **100,150,807**，# of users **987,994**，# of items **4,162,024**，# of categories **9,439**。
+- **后果**：照 `REQ-F-LAKE-09` 回放该数据集，**每一行都早于 2020-01-01** → 全部命中规则① → 100% 进 `dwd_behavior_event_reject`。所谓「抽样回放跑通」实际得到的是**全量拒绝**，`REQ-F-LAKE-09` 与 `REQ-VERIFY-04` 同时被击穿。
+- **三种处置（需用户选）**：(a) 质量规则①改为**相对下界**（如「不早于回放批次的最早事件时间」或「不早于 2017-01-01」）；(b) 回放时**放宽规则①**（引入 `--replay-mode`，明确记录该偏离）；(c) 放弃 `REQ-F-LAKE-09`（COULD 级，可裁）。
+- **注意**：这条不在「同类项目的坑」清单里，也不在 FSR 的 R1–R8 里——是我们自己扫出来的。
+
+**D5 · `fav` 行为在超集 schema 里无对应事件类型** ★
+- 数据集行为类型为 **`pv` / `buy` / `cart` / `fav`**（同上出处），而超集 schema 的五类枚举是 `page_view` / `view_item` / `add_to_cart` / `begin_checkout` / `purchase`。
+- `FSR.md` §5 称「UserBehavior 的 `pv` / `cart` / `fav` / `buy` 是这套 schema 的**子集**」——但 **`fav`（收藏）在五类枚举里没有落点**：它既不是 `add_to_cart`，也不是 `view_item`。
+- **处置**：要么回放时**丢弃 `fav` 行**（须计数留痕，符合「丢弃必须有痕迹」），要么扩枚举加一类（但这会牵动 `REQ-F-GEN-02` 的五类定义与看板）。→ 建议**丢弃并计数**，不改枚举。
+
+**D6 · `REQ-F-GEN-08` / `REQ-F-LAKE-03` 的维度数据无字段级定义** ★
+- `REQ-F-GEN-08` 要「产出并维护维度数据（商品/品类/地域/渠道）」，`REQ-F-LAKE-03` 要「时态维表」——但 §3.3 **只定义了事件字段，没有任何维度表的字段表**（维表主键？拉链列？渠道枚举？省份枚举？都没写）。
+- 验收判据分别是「DIM 层可装载出非空维表」与「DIM 各表可 join 出结果」——**空维表也能通过**。
+- 出处：`SRS.md` §3.3 仅含事件字段表；`GLOSSARY` 的「用户池」是本次拷问补出的概念，SRS 原件没有。
+- **处置**：GDD 必须补出维表字段级定义（至少：`dim_item` 的 `item_id/category_id/price/上架状态`、`dim_channel` 与 `dim_region` 的枚举全集），并把 `REQ-F-LAKE-03` 的判据升级为 Q26 建议的「时序 join 出不同属性值」。
+
 ### E3. 已建但未推送的仓库改动
 
 | 项 | 现状 | 待办 |
