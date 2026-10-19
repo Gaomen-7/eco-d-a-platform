@@ -34,6 +34,10 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+# uv 缓存与锁文件的中间产物（2026-10-19：UV_CACHE_DIR 已改向仓库外 F:，
+# 此处兜底防止有人把 cache 落在仓库内时被提交）
+.uv-cache/
+.basedpyright.json
 
 # ── 4. JVM 构建产物（Flink 作业若以 Java JAR 形态出现）──────────
 target/
