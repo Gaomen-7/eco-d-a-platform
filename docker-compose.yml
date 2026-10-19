@@ -1,0 +1,250 @@
+# Docker Compose — eco-a-d-platform P0 骨架
+#
+# 约束来源（逐条对应 HLD §4 与 gdd §1.7）：
+#   - 逐服务显式 mem_limit **且** memswap_limit（等值）——只设 memory 时容器可借等量 swap（官方明文），
+#     不写 memswap_limit 则 8 GB 判据有渗漏点。见 HLD §4.2。
+#   - **不写** deploy.resources.limits.*（deploy 是可选段，且与 mem_limit 并存时官方要求二者一致，
+#     写错一个即自相矛盾）。
+#   - 端口一律 `127.0.0.1:H:C`；不写 host IP 会绑 0.0.0.0 并绕过宿主防火墙（官方明文）。
+#   - 日志轮转 10 MB × 3。
+#   - named volume 持久化；Doris 侧是**必需**（官方 Docker 部署容器销毁即丢数据）。
+#   - Doris FE `-Xmx` 与 BE `mem_limit` **必须显式下调**：出厂默认分别是 8192m 与 90%，
+#     按默认必然击穿天花板。见 HLD §8-R1、gdd §A.2。
+#
+# ⚠️ 镜像来源：本机 registry-1.docker.io **不可达**，官方镜像经中国镜像站拉取（P0 实测可用）。
+#    生产/他机复现时可通过 ${REGISTRY_MIRROR:-docker.m.daocloud.io} 覆盖。
+
+name: eco-a-d-platform
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # ─────────────────────────────────────────────────────────────
+  # ① 消息队列：Kafka 4.3.1（KRaft combined，无 ZooKeeper）
+  # ─────────────────────────────────────────────────────────────
+  kafka:
+    image: ${REGISTRY_MIRROR:-docker.m.daocloud.io}/apache/kafka:4.3.1
+    container_name: eco-kafka
+    hostname: kafka
+    mem_limit: 1g
+    memswap_limit: 1g
+    ports:
+      - "127.0.0.1:9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      # RF=1（单机）；见 gdd §1.2
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 45s
+    restart: unless-stopped
+    logging: *default-logging
+
+  # 初始化一次性服务：建 topic、施加 retention/分区数（REQ-F-MQ-01..04）
+  kafka-init:
+    image: ${REGISTRY_MIRROR:-docker.m.daocloud.io}/apache/kafka:4.3.1
+    container_name: eco-kafka-init
+    mem_limit: 256m
+    memswap_limit: 256m
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "/scripts/init-kafka.sh"]
+    volumes:
+      - ./docker/scripts:/scripts:ro
+    restart: "no"
+    logging: *default-logging
+
+  # ─────────────────────────────────────────────────────────────
+  # ② 流处理：Flink 2.2（JM + TM）
+  #    ⚠️ process.size 官方**无默认值**，不配则启动失败（官方明文）
+  # ─────────────────────────────────────────────────────────────
+  flink-jm:
+    image: ${REGISTRY_MIRROR:-docker.m.daocloud.io}/apache/flink:2.2-java17
+    container_name: eco-flink-jm
+    hostname: flink-jm
+    mem_limit: 1g
+    memswap_limit: 1g
+    command: ["jobmanager"]
+    ports:
+      - "127.0.0.1:8081:8081"
+    # ★ P0 实测修正：Flink 2.2 的配置文件是 **config.yaml（YAML 格式）**，不是 flink-conf.yaml，
+    #   也不吃 FLINK_PROPERTIES 那套点号键。镜像自带 config.yaml 且已含
+    #   jobmanager.memory.process.size: 1600m ⇒ 官方「不配则启动失败」的前提由镜像默认满足。
+    #   这里改用 config.yaml 覆盖（只写差异项）。
+    #   ⚠️ **不能把空目录 bind 进 /opt/flink/conf**：那会遮住镜像自带的 config.yaml，
+    #      导致 "The Flink config file ... does not exist" 启动失败（P0 实测踩到）。
+    volumes:
+      - ./docker/flink/conf/config.yaml:/opt/flink/conf/config.yaml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/overview >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 45s
+    restart: unless-stopped
+    logging: *default-logging
+
+  flink-tm:
+    image: ${REGISTRY_MIRROR:-docker.m.daocloud.io}/apache/flink:2.2-java17
+    container_name: eco-flink-tm
+    hostname: flink-tm
+    mem_limit: 2g
+    memswap_limit: 2g
+    command: ["taskmanager"]
+    depends_on:
+      flink-jm:
+        condition: service_healthy
+    volumes:
+      - ./docker/flink/conf/config.yaml:/opt/flink/conf/config.yaml:ro
+    restart: unless-stopped
+    logging: *default-logging
+
+  # ─────────────────────────────────────────────────────────────
+  # ③ OLAP：Doris 4.1.5（FE + BE）
+  #    ★ 出厂默认 -Xmx8192m ＝ 整个 8 GB 预算 ⇒ 必须显式下调
+  #    ★ BE mem_limit 出厂默认 90% ⇒ 必须显式下调
+  # ─────────────────────────────────────────────────────────────
+  doris-fe:
+    image: ${DORIS_IMAGE:-apache/doris:4.1.5-fe-x86_64}
+    container_name: eco-doris-fe
+    hostname: doris-fe
+    mem_limit: 2g
+    memswap_limit: 2g
+    environment:
+      # 覆盖 fe.conf 的 JAVA_OPTS_FOR_JDK_17（出厂 8192m）。见 HLD §8-R1。
+      JAVA_OPTS_FOR_JDK_17: "-Xmx1536m -Xms1536m -Dfile.encoding=UTF-8 -XX:+HeapDumpOnOutOfMemoryError"
+      FE_SERVERS: fe@doris-fe:9010
+      FE_ID: 1
+    ports:
+      - "127.0.0.1:8030:8030"   # FE HTTP（/api/health）
+      - "127.0.0.1:9030:9030"   # FE MySQL 协议（看板/客户端）
+      - "127.0.0.1:9010:9010"   # edit_log
+    volumes:
+      - doris-fe-meta:/opt/apache-doris/fe/doris-meta
+      - doris-fe-log:/opt/apache-doris/fe/log
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8030/api/health >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 90s
+    restart: unless-stopped
+    logging: *default-logging
+
+  doris-be:
+    image: ${DORIS_IMAGE:-apache/doris:4.1.5-be-x86_64}
+    container_name: eco-doris-be
+    hostname: doris-be
+    mem_limit: 3g
+    memswap_limit: 3g
+    depends_on:
+      doris-fe:
+        condition: service_healthy
+    environment:
+      FE_SERVERS: fe@doris-fe:9010
+      BE_ADDR: doris-be:9050
+      # 覆盖 BE 出厂默认 mem_limit=90%。见 HLD §8-R1。
+      mem_limit: "25%"
+    ports:
+      - "127.0.0.1:8040:8040"   # BE webserver（/metrics 等）
+      - "127.0.0.1:9060:9060"   # BE brpc
+    volumes:
+      - doris-be-storage:/opt/apache-doris/be/storage
+      - doris-be-log:/opt/apache-doris/be/log
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8040/api/health >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+    restart: unless-stopped
+    logging: *default-logging
+
+  # ─────────────────────────────────────────────────────────────
+  # ④ 看板：Superset 6.1.0（按 R3 降配 A 裁掉 worker/beat）
+  #    ⚠️ 默认**非零账号**，REQ-F-BI-03 须显式配置 AUTH_ROLE_PUBLIC
+  #    ★ P0 实测发现：官方 superset:6.1.0 镜像**不含任何 DB 驱动**
+  #      （psycopg2 / psycopg / mysqlclient / pymysql 全部 MISSING）
+  #      ⇒ 元数据库不能直接用 Postgres；两条处置见下。
+  #    ★ 处置：元数据库用 **SQLite**（镜像自带 sqlite3，零驱动依赖）；
+  #      `ecom_ads` 连接所需的 MySQL 驱动经官方机制
+  #      `/app/docker/requirements-local.txt` 在引导时自动 pip 安装
+  #      （docker-bootstrap.sh:35 逐字确认该路径）。
+  # ─────────────────────────────────────────────────────────────
+  superset:
+    image: ${REGISTRY_MIRROR:-docker.m.daocloud.io}/apache/superset:6.1.0
+    container_name: eco-superset
+    mem_limit: 1g
+    memswap_limit: 1g
+    ports:
+      - "127.0.0.1:8088:8088"
+    environment:
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:?须在 .env 设置，勿入库}
+      # R3 降配 A：CELERY_CONFIG=None 关闭全部 celery 配置 ⇒ worker/beat 可整段不写
+      SUPERSET_LOAD_EXAMPLES: "no"
+      # 元数据库：SQLite（避开镜像无 psycopg2 的缺口）
+      SUPERSET_DB_URI: "sqlite:////app/superset_home/superset.db"
+      PYTHONPATH: /app/pythonpath
+    volumes:
+      - ./docker/superset/superset_config.py:/app/pythonpath/superset_config.py:ro
+      - ./docker/superset/requirements-local.txt:/app/docker/requirements-local.txt:ro
+      - superset-home:/app/superset_home
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8088/health | grep -q OK || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    restart: unless-stopped
+    logging: *default-logging
+
+  # ─────────────────────────────────────────────────────────────
+  # ⑤ client：按需拉起（docker compose run --rm client）
+  #    ★ 存在的唯一理由：Doris Stream Load 的 FE→BE 第二跳是**容器地址**，
+  #      宿主/Docker Desktop 都 follow 不到 ⇒ 导入必须从 compose 网内发起。
+  #      见 HLD §4.4（官方原话）。
+  #    ⚠️ 不常驻：不占常驻预算（profile 隔离，或在 Makefile 里用 run --rm）
+  # ─────────────────────────────────────────────────────────────
+  client:
+    image: ${REGISTRY_MIRROR:-docker.m.daocloud.io}/mysql:8.0
+    container_name: eco-client
+    mem_limit: 256m
+    memswap_limit: 256m
+    profiles: ["client"]
+    entrypoint: ["/bin/bash", "-c", "sleep infinity"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./docker/scripts:/scripts:ro
+    restart: "no"
+    logging: *default-logging
+
+volumes:
+  kafka-data:
+  doris-fe-meta:
+  doris-fe-log:
+  doris-be-storage:
+  doris-be-log:
+  superset-home:

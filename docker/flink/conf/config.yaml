@@ -1,0 +1,64 @@
+# Flink 2.2 配置（**YAML 格式**，对应 /opt/flink/conf/config.yaml）
+#
+# ★ P0 实测修正：Flink 2.2 用 config.yaml，不是 flink-conf.yaml；也不吃
+#   FLINK_PROPERTIES 那套点号键。镜像自带 config.yaml（含 jobmanager 1600m /
+#   taskmanager 1728m / slots 1），此处只写本项目的差异项。
+#
+# 依据：
+#  - jobmanager.memory.process.size / taskmanager.memory.process.size：官方这两个键
+#    **无默认值**（源码 release-2.2 确认），「不配则 startup will fail」——但镜像
+#    自带的 config.yaml 已经配了，故本文件显式重述以固定锚点。
+#  - 并行度 ≤4（REQ-F-RT-08）；slots 默认 1，这里对齐为 4。
+#  - checkpoint 相关键：gdd §A.2（间隔 30s / min-pause 10s / timeout 10min；
+#    externalized retention 默认 NO_EXTERNALIZED_CHECKPOINTS ⇒ **必须显式设**，
+#    否则 verify-fault 无法从指定点恢复）。
+#  - state backend 合法取值只有 hashmap/rocksdb/**forst**（无 embedded）；
+#    增量 checkpoint 的确切键名是 execution.checkpointing.incremental。
+#  - table.exec.source.idle-timeout：connector 5.0.0 **未暴露** scan.watermark.idle-timeout，
+#    故用全局键（gdd §A.1）。
+
+jobmanager:
+  rpc:
+    address: flink-jm
+    port: 6123
+  bind-host: 0.0.0.0
+  memory:
+    process:
+      size: 1024m
+    jvm-overhead:
+      fraction: 0.1
+
+taskmanager:
+  bind-host: 0.0.0.0
+  numberOfTaskSlots: 4
+  memory:
+    process:
+      size: 2048m
+    # 分项保持官方默认：managed 0.4 / network 0.1 / framework.heap 128m /
+    # framework.off-heap 128m / jvm-metaspace 256m / jvm-overhead 0.1
+
+parallelism:
+  default: 4
+
+rest:
+  address: 0.0.0.0
+  port: 8081
+
+execution:
+  checkpointing:
+    mode: EXACTLY_ONCE
+    interval: 30s
+    min-pause: 10s
+    timeout: 10min
+    # 官方默认 NO_EXTERNALIZED_CHECKPOINTS ⇒ verify-fault 无法从指定点恢复（gdd §A.2）
+    externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
+    incremental: true
+
+state:
+  backend:
+    type: rocksdb
+
+table:
+  exec:
+    source:
+      idle-timeout: 30s

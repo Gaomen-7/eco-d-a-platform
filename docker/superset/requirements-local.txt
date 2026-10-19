@@ -1,0 +1,12 @@
+# Superset 额外依赖 —— 由官方 docker-bootstrap.sh:35
+#   REQUIREMENTS_LOCAL="/app/docker/requirements-local.txt"
+# 在容器引导时自动 pip 安装。
+#
+# 为什么需要这个文件（P0 实测）：
+#   apache/superset:6.1.0 官方镜像**不含任何数据库驱动** —— psycopg2 / psycopg /
+#   mysqlclient / pymysql 全部 MISSING。而 `REQ-F-OLAP-01` 要求看板直连 `ecom_ads`，
+#   Doris 前端走 MySQL 协议 ⇒ 必须提供一个 MySQL 驱动。
+#
+# 选 PyMySQL 而非 mysqlclient：纯 Python，不需要编译 mysql 客户端库，
+# 在 127.0.0.1 单机场景够用，且安装失败面小。
+PyMySQL==1.1.2

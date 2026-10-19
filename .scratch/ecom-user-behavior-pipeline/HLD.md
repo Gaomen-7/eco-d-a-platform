@@ -306,35 +306,33 @@ interface PyrightJsonDiagnostic { file; severity; message; range?; rule? }
 - **`ops_bash` 缺 IPC 凭据的失败不可修**——它是 **named-pipe 设计边界**（受限进程内 `spawn(stdio:'pipe')` 以 EPERM 失败），**ACL 修复脚本对它无效**。绕法只有 `stdio:'inherit'/'ignore'` 或改用 PowerShell 原生管道。这与 ACL 故障是**不同因**。
 - **一条被证伪的因果**：「放宽沙箱才能跑 docker」是**错的**——容器与卷数据由 Docker Desktop 自己的 VMM 写入，**不经 agent 令牌**。
 
-### 4.7 ★ 执行面落点（**实证决定，非偏好决定**）
+### 4.7 ★ 执行面落点（**已由 P0 实测裁决；此前一轮的「推论」被推翻**）
 
-**结论**：**单一执行面 = WSL2**，但**凡触碰已发布端口的步骤，一律由 Windows 二进制发起**。
+**结论（P0 实测，2026-10-19 20:29，daemon 已起）**：**单一执行面 = WSL2**，端口探测**不需要**特殊处理——WSL 内直接用 `curl`/`python3` 访问 `127.0.0.1:<published>` **即可达**。
 
-**为什么不是「随便选一个」——三条实证**（本机实测，2026-10-19）：
+**★ 为什么推翻前一轮结论（留痕，避免再犯）**：此前（daemon 未运行时）用**等价 Windows 监听**做代理测试，得到「WSL 连 `127.0.0.1` 一律 FAIL」；P0 用**真的** Docker 发布端口复测，结论**相反**：
 
-| 事实 | 证据 | 后果 |
+| 监听类型 | Windows 宿主 | WSL2 → `127.0.0.1` |
 | --- | --- | --- |
-| `-p 127.0.0.1:H:C` 由 `com.docker.backend.exe` **在 Windows 侧 listen** | 官方：「the backend process **listens on the specified host port**」 | 该监听属「环回专用」类 ⇒ 见下表 |
-| WSL-native **Linux** 进程连 Windows `127.0.0.1` → **FAIL**；连网关 `172.17.32.1` → **FAIL**（立即 **refused**，非 timeout） | 实测：`127.0.0.1` 绑定监听（DSH GUI `:10724`）→ Windows `401` OK、WSL 两地址皆 FAIL；`0.0.0.0` 绑定监听（`:135`）→ WSL `127.0.0.1` FAIL / 网关 OK | 在 WSL 里跑端口探测会得到「拒绝连接」，**易被误诊为「容器没起来」** |
-| **Windows 二进制经 interop 能连 Windows 环回** | 实测：WSL 内调 `python.exe` → `connect_ex` = **0**；同处调 Linux `python3` → **111**（ECONNREFUSED） | ⇒ **一条道路同时覆盖两个面**（见下） |
+| **Docker 发布端口** `-p 127.0.0.1:18080`（`owning process = com.docker.backend`） | HTTP 200 | **200（3/3 次 + 两个端口复现）** |
+| **普通 Windows 监听**（DSH GUI `:10724`） | HTTP 401 | **FAIL** |
 
-**✅ 定案（Q37 乙）**：
-- `make` **全在 WSL2** 执行（Linux shell 语义、`make` 可 `apt install`，**不必在宿主新装 GNU make** ⇒ 回滚面更小；避开 Windows 上 GNU make 的 `SHELL`/`COMSPEC` 分叉）。
-- Makefile 里解释器按落点分派：WSL 下 **`PYBIN ?= python.exe`**，宿主下 `PYBIN ?= python`。
-- **A 面**（Flink UI `8081` / Kafka `9092` / Doris `9030`/`8030` / Superset `8088` 的 HTTP 与 TCP 探测）走 **`python.exe`**（Windows 进程）。
-- **B 面**（编排、生成器）走 WSL 侧。
-- **C 面**（Stream Load 两跳）走 **compose 网内 `client` 服务**（§4.4）。
+⇒ **代理测试不成立**：Docker Desktop 的 WSL integration 让**已发布端口**经 distro 的 `localhost` 可达，而普通 Windows 监听不具备该通路（机制细节官方未明文）。**故「必须用 `python.exe` 探测」这条约束被撤销**——它是那个误导性代理测试的产物。
 
-**⚠️ 这条约束最容易踩的地方**（故单列）：**写成 `python3` 就静默失败**——失败形态是立即 refused，与「服务没起来」无法区分。
-**检查方式（可证伪，双向）**：
+**✅ 定案**：
+- `make` **全在 WSL2** 执行（Linux shell 语义；`make` 经 apt 装）。
+- **A 面**（Flink UI `8081` / Kafka `9092` / Doris `9030`·`8030` / Superset `8088` 探测）在 WSL2 内用 `curl`/`python3` 直连 `127.0.0.1`。
+- **B 面**（编排、生成器）在 WSL2 内。
+- **C 面**（Stream Load 两跳）仍归 **compose 网内 `client` 服务**（§4.4，与落点无关）。
+- **触发条件（可逆）**：上述 A 面可达**依赖 Docker Desktop 对 Ubuntu 的 WSL integration 处于开启状态**（P0 实测：`/var/run/docker.sock` 存在、`/usr/bin/docker` 可用、`docker version` 返回 Server 29.8.0）。**若该集成被关闭，A 面须重测**。
+
+**检查方式（可证伪）**：
 ```bash
-# 在 WSL2 内执行；两个期望值必须同时成立，否则落点判定错了
-wsl -e bash -lc 'python.exe -c "import socket;s=socket.socket();s.settimeout(3);print(s.connect_ex((\"127.0.0.1\",8081)))"'   # 期望 0
-wsl -e bash -lc 'python3   -c "import socket;s=socket.socket();s.settimeout(3);print(s.connect_ex((\"127.0.0.1\",8081)))"'   # 期望 111（故意失败）
+# WSL2 内：对已发布端口应返回 2xx/3xx；对非 Docker 监听应失败（证明测的是 Docker 通路）
+wsl -e bash -lc 'curl -s -m 5 -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8081'   # Flink UI，期望非 000
+wsl -e bash -lc 'test -S /var/run/docker.sock && echo socket-present'                    # 期望 socket-present
 ```
-**判定条件**：第一行返回 `0`（可达）**且** 第二行返回非 `0`（不可达）。**若第二行也返回 `0`**，说明本机网络模式已变（例如将来升到 Win11 并用 `mirrored`）⇒ 该约束**须重新裁决**，不得沿用。
-
-**落点是设计面**：改落点不动任何冻结接缝。`REQ-F-ORCH-06` **不得为了让 WSL 能连而改成 `0.0.0.0`**（官方：不写 host IP 即绑 `0.0.0.0` 并 **bypassing host firewall rules** ⇒ 直接违规）。
+**判定条件**：已发布端口返回非 `000` **且** `/var/run/docker.sock` 存在 ⇒ 落点成立。若 socket 消失，说明 integration 被关 ⇒ **须重新裁决**，不得沿用。
 
 ### 4.8 编排执行面的两条候选路径（WSL 侧）
 
@@ -451,12 +449,13 @@ WSL 内的 `docker` 有两条路，差别在**路径语义**：
 **检测信号**：`java -version`（WSL 内）；`start_fe.sh` 的 `ERROR: The jdk_version is N, must be 17.` 直接 `exit 1`。
 **判定条件**：WSL 内 `java -version` 为 17 且 `mvn -version` ≥3.8.6 且指向该 JDK；Flink 作业 jar 构建成功。
 
-### R4 · 执行面落点（**已实证定案**；残留风险=误用 `.exe`）
-**证据**：见 §4.7 三条实测——`-p 127.0.0.1:H:C` 绑在 Windows 侧；WSL **Linux** 进程连 Windows `127.0.0.1` 与网关**皆 FAIL 且立即 refused**；**Windows 二进制经 interop 可达**（`connect_ex`=0 vs Linux `111`）。
-**定案**：单一执行面 WSL2 + A 面探测由 **`PYBIN ?= python.exe`** 发起。
-**残留风险（真实且易踩）**：**写成 `python3` 即静默失败**，且失败形态与「容器没起来」**无法区分**。
-**检测信号**：§4.7 的双向探针（`python.exe` 期望 `0`；`python3` 期望 **非 0**）。
-**判定条件**：**两行同时成立**。若 `python3` 那行也返回 `0`（例如将来升 Win11 并用 `mirrored`），**该约束须重新裁决**、不得沿用。
+### R4 · 执行面落点（**已由 P0 实测裁决，并推翻了一轮错误推论**）
+**证据**：P0 实测（2026-10-19 20:29）——**Docker 发布端口** `-p 127.0.0.1:18080/18081` 从 WSL2 内 `curl` **可达（200，3/3 次 + 双端口复现）**；**普通 Windows 监听** `:10724` 从 WSL2 **不可达**。此前「一律不可达」的结论源于用**等价监听做代理测试**，该代理**不成立**（详见 §4.7）。
+**定案**：单一执行面 WSL2，A 面探测**直接用 WSL 内 `curl`/`python3`**；**「必须用 `python.exe`」这条约束已撤销**。
+**残留风险（真实且已踩过一次）**：A 面可达**依赖 WSL integration 处于开启**（现 `/var/run/docker.sock` 存在、Server 29.8.0）。集成若被关，`curl` 会得到 `000`——**形态与「容器没起来」相同**，仍会误导。
+**检测信号**：§4.7 的两条检查（已发布端口返回非 `000`；`/var/run/docker.sock` 存在）。
+**判定条件**：两条同时成立。**若 socket 消失 ⇒ 须重新裁决，不得沿用。**
+**教训（写进流程）**：**代理测试必须用真实同类对象复验**，否则会把「代理的性质」当成「被代理对象的性质」。
 
 ### R5 · 磁盘预算与官方口径冲突 + Paimon `file://` 峰值未实测
 **证据**：Doris 官方 dev/test 磁盘口径 **FE 10 GB+ / BE 50 GB+**，与 `SRS.md` 的 ≤20 GB 正面冲突；Paimon 物理删除**只在快照过期时**发生（默认 `snapshot.time-retained=1h` 内所有历史版本保留），主键表在 compaction 前同一 key 有**多份物理版本** ⇒ **空间放大与写入放大都是真实的**。
