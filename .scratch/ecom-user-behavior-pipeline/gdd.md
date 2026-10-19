@@ -140,7 +140,11 @@
 **验收判据**
 - ODS 行数 ≥ 摄入事件数；`payload` 列非空（`REQ-F-LAKE-01`）。
 - 查到 DWD 行数 > 0；`event_time_ms` 为毫秒整数（`REQ-F-LAKE-02`）。
-- 五层表均存在于同一 catalog（`REQ-F-LAKE-06`）；`make replay` 可跑完五层（`REQ-F-LAKE-07`）；表属性配置可见、快照数受控（`REQ-F-LAKE-08`）。
+- 五层表均存在于同一 catalog（`REQ-F-LAKE-06`）；`make replay` 可跑完五层（`REQ-F-LAKE-07`）。
+- **GDD 升级判据（替代原「表属性配置可见、快照数受控」的空泛说法，`REQ-F-LAKE-08`）**：
+  - 快照数由 Paimon 官方系统表**直接读出**，不靠人眼看配置：`SELECT count(*) FROM <table>$snapshots`（官方原话：「The `snapshots` table lists retained snapshots and their commit metadata」）。
+  - 「有数据」也须用 `COUNT(*)` 判，**不得**用 `total_record_count` —— 官方明确后者是「unmerged counts calculated from data files, **not logical row counts**」（这是个容易算错数的坑）。
+  - schema 演进可查：`SELECT * FROM <table>$schemas`（供 F5 演练用）。
 - **GDD 升级判据（原判据空表也能通过）**：
   - DIM 判据从「可 join 出结果」升级为「**同一 `item_id` 在不同 `event_time` 下 join 出不同属性值，且拉链区间无重叠无空洞**」（`REQ-F-LAKE-03` 的强化）。
   - 拒绝表判据为「违规样本被正确分流**且有计数**」，且**必须能区分三类原因**（结构/取值、时间范围、重复）。
@@ -189,6 +193,8 @@
 **流程**
 - 【已确认 G2】**Doris 没有官方 docker-compose**（官方仅 `curl -fsSL .../start-doris.sh | bash`，且仓库内 `docker/` 是开发/编译环境；官方明确 Docker 部署**仅用于本地开发与测试、容器销毁即丢数据**）→ 本项目**自己手写 compose**，并自行承担 FE/BE 注册、root 密码、建库等初始化（**SRS 未列这块工作量**）。
 - 【已确认 G3】Superset 复用官方 `docker/` 骨架（compose + entrypoint + 初始化脚本），但剥离其演示用示例数据。
+  **初始化的确切顺序**（官方 `docker-init.sh` 实证）：① `superset db upgrade` → ② `superset fab create-admin` → ③ `superset init`（建默认角色与权限）→ ④ `superset load_examples`（**可选，本项目应关闭**）。密钥由环境变量 `SUPERSET_SECRET_KEY` 提供（官方变量名）。
+  看板交付形式：`superset import-dashboards -p <.zip>`（产物由 `superset export-dashboards` 生成；zip 内含 `metadata.yaml`、`dashboards/*.yaml`、`charts/*.yaml`、`datasets/*.yaml` 等）。⚠️ 该 CLI 的官方原话**只在源码 docstring**（「Export dashboards to ZIP file」），官方文档页未见——故文档引用时注明「源码级证据」。
 - 逐服务显式 `mem_limit`；`restart: unless-stopped`；端口仅绑 `127.0.0.1`；日志轮转 10 MB × 3。
 - named volume 持久化 Kafka/Paimon/Doris/Superset 元数据——【已确认 G2】在 Doris 这一侧这是**必需而非优化**，否则 `down` 即丢数据、直接违反 `REQ-NF-REL-02`。
 - Makefile 目标：`up` / `down` / `init` / `replay` / `verify` / `spike` / `verify-fault` / `logs`。
@@ -208,9 +214,19 @@
 **状态与数据变化**：无自身状态；产出断言结果与退出码。
 
 **验收判据**
-- `make verify` 五项断言全通过、退出码 0（`REQ-F-VERIFY-01`）。
+- `make verify` 五项断言全通过、退出码 0（`REQ-F-VERIFY-01`）。**五项的确切断言形式**（据官方接口，避免「配置可见」式空判据）：
+
+| 烟测项 | 可执行断言 | 出处/接口 |
+| --- | --- | --- |
+| Kafka 有数据 | 消费组 lag 查询返回非空；或 `kafka-topics --describe` 的 `retention.ms`/`retention.bytes` 与 §A 一致 | 官方 CLI |
+| Flink job RUNNING | `GET /jobs/overview` 的 `jobs[].state == "RUNNING"`（**字段名确切为 `state`**） | [REST API 2.2](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/ops/rest_api/) |
+| Paimon 五层有行 | 逐层 `SELECT COUNT(*) FROM <table>`（**不用** `total_record_count`） | [system-tables](https://paimon.apache.org/docs/master/concepts/system-tables/) |
+| Doris ADS 有行 | `SELECT COUNT(*) FROM ecom_ads.<ads_table>`；FE 健康 `GET :8030/api/health` 返回 `online_backend_num == total_backend_num` | [FE health-action](https://doris.apache.org/docs/3.x/admin-manual/open-api/fe-http/health-action/) |
+| Superset 健康 | `GET /health` 返回 **200 且响应体为纯文本 `OK`**（⚠️ **不是 JSON**，别按 JSON 解析） | [health.py](https://github.com/apache/superset/blob/master/superset/views/health.py) |
+
 - `REQ-F-VERIFY-02` 幂等：同 `--seed` 同批数据跑两遍，Doris 结果一致。
 - `REQ-F-VERIFY-03` 故障注入：kill TaskManager → 从 checkpoint 自动恢复 → 校验条数一致。
+  **前提**：`execution.checkpointing.externalized-checkpoint-retention` 必须**显式设为 `RETAIN_ON_CANCELLATION`/`RETAIN_ON_FAILURE`**（官方默认 `NO_EXTERNALIZED_CHECKPOINTS`，默认值下**无法**从指定点恢复）。
 - **GDD 新增判据（把「配置可见」升级为「行为可证」）**：
   - `verify-fault` 期间**脏率不得上升**（重复与脏必须可分）。
   - UV 对账断言为「实时 == 离线精确」，逐窗口比。
@@ -278,10 +294,13 @@
 | Kafka 分区键 | **`user_id`** | 保每用户有序 |
 | DLQ 分区数 / 键 | 6 / `user_id` | 便于定位哪个用户的数据出问题 |
 | Kafka RF | **1** | 单机 KRaft |
-| Kafka retention | 7 天**或** 2 GB 取小 | ⚠️ 实测**约 6 小时**触发 2 GB（D3，≈8.05 GB/天） |
+| Kafka retention | **`retention.ms=604800000`（7 天）或 `retention.bytes=2147483648`（2 GB）取小** | ⚠️ 官方原话「A segment will be deleted whenever **either** of these criteria are met」——即**任一先满足即删**。实测**约 6 小时**触发 2 GB（D3，≈8.05 GB/天）。两键默认值分别为 7 天与 `-1`（无上限），**2 GB 须显式设** |
 | Flink 并行度 | **≤4** | |
-| checkpoint 间隔 / 最小间隔 / 超时 | **30 s / 10 s / 10 min** | 状态小，恢复点近 |
-| checkpoint 语义 | `EXACTLY_ONCE` + RocksDB **增量** + externalized retention on failure | 外部化保留是 verify-fault 的前提 |
+| checkpoint 间隔 / 最小间隔 / 超时 | **30 s / 10 s / 10 min** | 官方默认：`interval`=(none)、`min-pause`=0 ms、`timeout`=10 min（超时用默认） |
+| checkpoint 语义 | `execution.checkpointing.mode=EXACTLY_ONCE` | 官方默认即 EXACTLY_ONCE；另一合法值 `AT_LEAST_ONCE` |
+| 状态后端 | `state.backend.type=**rocksdb**` | ⚠️ 合法取值**只有 `hashmap` / `rocksdb` / `forst`**，**没有 `embedded`**（官方原话：「Recognized shortcut names are 'hashmap', 'rocksdb' and 'forst'」）。默认是 `hashmap`，须显式改 |
+| 增量 checkpoint | `execution.checkpointing.incremental=true` | ⚠️ **2.2 的确切键名是这个**；旧的 `state.backend.incremental` 已是**废弃别名**（源码 `withDeprecatedKeys("state.backend.incremental")`）。默认 `false`，须显式开 |
+| externalized retention | `execution.checkpointing.externalized-checkpoint-retention=**RETAIN_ON_CANCELLATION`**（或 `RETAIN_ON_FAILURE`） | 官方默认 `NO_EXTERNALIZED_CHECKPOINTS` —— **默认值下 verify-fault 无法从指定点恢复**，须显式改。这是 `REQ-F-RT-05` + `REQ-F-VERIFY-03` 的前提 |
 | 用户池规模 | **10 万**（可配置） | UV 与漏斗状态量基数 |
 | 生成速率 | 默认 **200 ev/s**；尖峰 **≥1000 ev/s** | 原型已实测 201.6 / 1001.6 |
 | 容器常驻内存 | **≤8 GB**（逐服务 `mem_limit`） | **天花板** |
@@ -394,8 +413,11 @@ pending ──> running ──> published
 
 ### D1 · `REQ-NF-REL-03` 与 `REQ-F-OLAP-02` 把一件事说成两道独立防线
 SRS 一边要「end-to-end exactly-once：source offset + checkpoint + sink 2PC 三处对齐」，一边要 unique key 幂等。
-**官方原话**：*Under the Unique model, you can also disable 2pc to achieve idempotent writes*（[FAQ](https://doris.apache.org/docs/dev/connection-integration/data-integration/flink-doris-connector/faq)）。
-**修正**：写成「一层主防 + 一层兜底」。label＝事务级重放，unique key＝行级重放；UNIQUE MoW 下后者已使重放成幂等 no-op。
+**官方原话（两条，互相印证）**：
+- *Under the Unique model, you can also disable 2pc to achieve idempotent writes*（[FAQ](https://doris.apache.org/docs/dev/connection-integration/data-integration/flink-doris-connector/faq)）。
+- *The Label mechanism guarantees no duplication **for a single transaction**, and two-phase commit provides the ability to coordinate no duplication **across multiple transactions***（[Doris Transaction](https://doris.apache.org/docs/4.x/data-operate/transaction/)）——官方**自己就把二者的分工说清了**：label＝单事务、2PC＝跨事务。
+**修正**：写成「一层主防 + 一层兜底」。label＝事务级重放，unique key＝行级重放；UNIQUE MoW 表上后者已使重放成幂等 no-op。
+**端点备查**：`PUT /api/{db}/{table}/_stream_load`（普通）与 `PUT /api/{db}/{table}/_stream_load_2pc`（2PC）；2PC 下事务停在 `PRECOMMITTED`，由后续 `txn_operation=commit|abort`（带 `txn_id` 或 `label`）结束。**注意**：4.1.4 起 BE 侧 Stream Load 端点不再做全局 `LOAD` 权限预检（[stream-load-manual](https://doris.apache.org/docs/dev/data-operate/import/import-way/stream-load-manual/)）——不影响本项目，但版本相关行为须记。
 
 ### D2 · `REQ-F-VERIFY-04` 把「重复」列为脏，与 `REQ-F-VERIFY-03` 的故障演练互斥
 `REQ-F-VERIFY-03` 的故障注入**本身就是合法重放**，重放事件**必然重复**。若重复＝脏，则每次演练都会把合法重放倒进 DLQ，并让「脏数据率」面板飙到假值。
