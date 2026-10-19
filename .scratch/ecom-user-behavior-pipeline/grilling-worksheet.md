@@ -147,17 +147,20 @@ SRS 原文：`REQ-F-RT-03` 「UV 用近似算法（HyperLogLog / Theta sketch）
 | Q20 | 生成器会话连贯性 | (d) 默认按**会话轨迹**产出（`purchase` 必有前置步）+ 另设 `--chaos-ratio` 开关故意跳步，用于测试补记逻辑 |
 | Q21 | `--late-ratio` 的注入公式 | 拆为 `--late-correctable 0.03`（水位线 − 随机 5–115 s → 允许延迟内，触发修正）+ `--late-expired 0.02`（水位线 − 随机 130–300 s → 超期只计数）；**相对水位线**计算，`--seed` 可复现 |
 | Q22 | 漏斗状态 TTL | 会话 **30 分钟**；`StateTtlConfig` 清理 **32 分钟**（30 + 2 分钟允许延迟）；跨会话同用户重开漏斗 |
+| **Q23** | **UV 与幂等** | **(ii) Flink 侧精确滚动 UV + 保留 UNIQUE 模型**：UV 由 Flink 1 小时滚动去重状态精确算出（用户池 10 万 → 状态几 MB 级），写 Doris 的只是**已算好的整数**；`REQ-F-OLAP-02` 的 unique key 模型**不改**；`REQ-F-RT-03` 的近似算法**降级为可选实验**（理由见 B10） |
 
-### E2. ⚠️ 尚未落定（本轮必须由用户定的三件）
+### E2. ⚠️ 尚未落定
 
-**E2-1 · Q14/Q23 的机制被官方文档否掉，重选依据已齐（2026-10-19 第二轮核查）**
+**E2-1 · Q23 已裁决（2026-10-19，选项 ii）—— 决策与依据**
 
-*否掉原推荐 (c) 的证据：*
-- [CREATE TABLE](https://doris.apache.org/docs/4.x/sql-manual/sql-statements/table-and-view/table/CREATE-TABLE) 原话：「`<col_aggregate_type>` ... **Can only be used when the table is an aggregation model**」→ 聚合类型**只能用于 AGGREGATE 模型**；官方 `BITMAP_UNION` 示例**全部**是 `AGGREGATE KEY`。
+*决策*：UV 走 **Flink 侧精确滚动去重**，Doris 只存整数结果；保留 UNIQUE 模型与 `REQ-F-OLAP-02`。
+
+*为什么否掉一开始推荐的 (c)「Doris 侧 BITMAP 精确滚动」：*
+- [CREATE TABLE](https://doris.apache.org/docs/4.x/sql-manual/sql-statements/table-and-view/table/CREATE-TABLE) 原话：「`<col_aggregate_type>` ... **Can only be used when the table is an aggregation model**」→ 聚合类型**只能用于 AGGREGATE 模型**。
 - 源码级（[ColumnDefinition.java](https://github.com/apache/doris/blob/master/fe/fe-core/src/main/java/org/apache/doris/nereids/trees/plans/commands/info/ColumnDefinition.java)）：Unique 表非键列 `aggType = REPLACE`（MoW 下 `NONE`），复杂类型仅放行 NONE/REPLACE/REPLACE_IF_NOT_NULL。
-- **→ UNIQUE 表里的 BITMAP 列是「整值替换」不是 union**，故「Doris 侧自动滚动去重」在保幂等的前提下**不成立**。
+- **→ UNIQUE 表里的 BITMAP 列是「整值替换」不是 union**，「Doris 侧自动滚动去重 + 保幂等」不成立。
 
-*转而评估 AGGREGATE 路线的三条风险（本轮核查新证据）：*
+*为什么也否掉 AGGREGATE 替代路线（六条风险）：*
 | 事实 | 出处 | 影响 |
 | --- | --- | --- |
 | `REPLACE` = last-write-wins | [Aggregate Model](https://doris.apache.org/docs/4.x/table-design/data-model/aggregate) | 标量列幂等 ✅ |
@@ -165,12 +168,16 @@ SRS 原文：`REQ-F-RT-03` 「UV 用近似算法（HyperLogLog / Theta sketch）
 | 「同键重复导入」被列**使用限制**，仅对 REPLACE 松绑 | [tips](https://doris.apache.org/docs/4.x/table-design/data-model/tips) | ⚠️ 整体幂等不能无条件推出 |
 | 查询期额外聚合算子，**比 MoW 慢 5–10 倍**（`count(*)` 慢 10 倍以上） | [tips](https://doris.apache.org/docs/4.x/table-design/data-model/tips)、[partial-column-update](https://doris.apache.org/docs/4.x/data-operate/update/partial-column-update) | ⚠️ 看板 10 s 刷新吃这个开销 |
 | AGGREGATE **不支持 Sequence 列** | update-overview | ⚠️ 无版本序控制 |
-| connector **类型映射表无 BITMAP**；写 BITMAP 靠 `sink.properties.columns` 的 `to_bitmap()`，**只接整数** | [write](https://doris.apache.org/docs/dev/connection-integration/data-integration/flink-doris-connector/write)、[data-type-mapping](https://doris.apache.org/docs/dev/connection-integration/data-integration/flink-doris-connector/data-type-mapping) | 🔴 `user_id` 是字符串，路径别扭 |
-| UNIQUE 表**无** `bitmap_union*` 跨行聚合示例（但类型页明说该列 can only be queried by 这些函数） | BITMAP 类型页 | 文档缺口，非禁止 |
+| connector **类型映射表无 BITMAP**；写 BITMAP 靠 `to_bitmap()`，**只接整数** | [write](https://doris.apache.org/docs/dev/connection-integration/data-integration/flink-doris-connector/write)、[data-type-mapping](https://doris.apache.org/docs/dev/connection-integration/data-integration/flink-doris-connector/data-type-mapping) | 🔴 `user_id` 是字符串，路径别扭 |
 
-*数字更正*：`bitmap_hash` 无全局字典时官方承认**约千分之一误差**（不是零误差）；`approx_count_distinct` 为 HLL、相对标准误 **0.8125%**；`bitmap_hash64` 返回 64 位哈希 BITMAP。
+*连带效应（须写入 GDD）*：
+1. `REQ-F-RT-03` 从 MUST **降级为可选实验**，理由**不是**「近似不够好」，而是 **B10 证明其立论前提（全量去重会顶满天花板）在本规模不成立**——UV 去重基数是用户池而非事件数。按 Q8(a) 记入偏离节。
+2. 对账性质**升级**：实时与离线**都是精确值**，故 `REQ-F-RT-03` 的「离线算精确 UV 并对账」从「误差量化」变成**一致性校验**（更强，且面试可讲「我用精确滚动去重，因此不需要近似算法」）。
+3. `REQ-F-VERIFY-02` 的比对面含义更明确：同一 `--seed` 跑两遍，实时 UV 与离线精确 UV 应**逐窗口相等**。
 
-*旁证（Paimon 侧，供 §3.1.4 用）*：`snapshot.num-retained.min` 默认 **10**（非 5）、`max` 默认 Integer.MAX_VALUE、`time-retained` 默认 **1h**、`compaction.min.file-num` 默认 **5**、`full-compaction.delta-commits` 默认 **1**（[Manage Snapshots](https://paimon.apache.org/docs/2.1/maintenance/manage-snapshots)、[Configurations](https://paimon.apache.org/docs/2.1/maintenance/configurations)）。**注意**：`REQ-F-LAKE-08` 写的「保留最近 5 个」与官方默认 10 不符——要么把属性显式设为 5，要么改需求。
+*数字更正*：`bitmap_hash` 无全局字典时官方承认**约千分之一误差**；`approx_count_distinct` 为 HLL、相对标准误 **0.8125%**（均作为可选实验的参考，不再是主路径）。
+
+*旁证（Paimon 侧，供 §3.1.4 用）*：`snapshot.num-retained.min` 默认 **10**（非 5）、`max` 默认 Integer.MAX_VALUE、`time-retained` 默认 **1h**、`compaction.min.file-num` 默认 **5**、`full-compaction.delta-commits` 默认 **1**（[Manage Snapshots](https://paimon.apache.org/docs/2.1/maintenance/manage-snapshots)、[Configurations](https://paimon.apache.org/docs/2.1/maintenance/configurations)）。
 
 **E2-2 · Q12 的空闲超时落点更正**
 `scan.watermark.idle-timeout` 在 **connector 5.0.0 中未实现为 Kafka 表选项**（`KafkaConnectorOptions` / `KafkaDynamicTableFactory.optionalOptions()` / `KafkaSourceOptions` 逐项皆无）；它是 **core planner 支持、connector 未暴露**。**故 30 s 必须落在 `table.exec.source.idle-timeout`（全局）**——亦是 connector 官方文档推荐的那个。
@@ -182,20 +189,46 @@ SRS 原文：`REQ-F-RT-03` 「UV 用近似算法（HyperLogLog / Theta sketch）
 - `asis`（只记自身）：**产生倒挂**（实测 D3：第 3 步 1 > 第 2 步 0）→ 看板出现「>100% 转化率」。
 - **冻结方案**：主口径 `autofill` + **双列并陈**（`funnel_cnt_observed` 真实到达 / `funnel_cnt_inferred` 含补记），补记值不冒充观测值。
 
-### E4. 本轮新增的待办（不依赖 Q23）
+### E4. 保留策略与容量验算（三处缺陷，D1–D3）
 
-| 项 | 问题 | 待办 |
+**D1 · `REQ-F-OLAP-03` 的「保留 30 天」默认不生效**
+官方 `dynamic_partition.start` 默认 **-2147483648**，语义是「**历史分区不删除**」。要让 30 天保留真正生效，**必须显式设 `start=-30`**。照默认建表的结果是**永不删除**——与需求**恰好相反**。出处：[Dynamic Partitioning](https://doris.apache.org/docs/4.x/table-design/data-partitioning/dynamic-partitioning)。
+
+**D2 · `REQ-F-LAKE-08` 的「保留最近 5 个」与官方默认冲突**
+Paimon `snapshot.num-retained.min` 官方默认是 **10**，非 5。要么表属性显式设 5，要么改需求。出处：[Manage Snapshots 2.1](https://paimon.apache.org/docs/2.1/maintenance/manage-snapshots)。
+
+**D3 · `REQ-F-MQ-03` 的「7 天或 2 GB 取小」实际生效窗是约 6 小时** ★新发现
+算术（按 200 ev/s、约 500 B/条 JSON）：**≈8.05 GB/天**；故 2 GB 上限约在 **6 小时**处触发。
+→ 「7 天」在本速率下是**装饰性上限**，真实保留窗 ≈6 小时。这不是缺陷，但**必须写明**，因为它有下游后果：
+- `REQ-F-GEN-07` 的「离线回放」若从 **Kafka 重读**，超过约 6 小时的历史**读不到**——离线链路的输入应走 `dump` 文件（`REQ-F-GEN-01` 的 dump 模式）而非 Kafka 重读，否则长回放会静默丢数据。
+- `verify-fault` 的恢复窗口若超过 6 小时，offset 可能已过期（`auto.offset.reset` 行为必须先定）。
+
+**容量验算（`REQ-NF-CAP-02` 磁盘 ≤20 GB，此前从未被验算）**
+| 项 | 估算 | 依据 |
 | --- | --- | --- |
-| `REQ-F-LAKE-08` 快照数 | SRS 写「保留最近 **5** 个」，Paimon 官方默认 `snapshot.num-retained.min = 10` | 要么表属性显式设 5，要么改需求 → 记入偏离节 |
-| 动态分区保留 | `REQ-F-OLAP-03` 要 30 天；官方 `dynamic_partition.start` 默认 **-2147483648（不删历史）**，必须显式设 `start=-30` 才生效 | GDD 必须写明显式配置，否则默认下**永不删除**、与需求相反 |
+| Kafka（2 GB 上限） | 2.0 GB | `REQ-F-MQ-03` |
+| Paimon 五层（100 万事件 × 500 B × 放大 2–3×） | ~1.5 GB | `REQ-NF-CAP-05` 的最小可跑量 |
+| Doris（30 天窗口指标 + 明细，压缩后） | 3–6 GB | `REQ-F-OLAP-03` |
+| Superset 元数据 + 镜像层 | 1–2 GB | 官方未给数字（A2） |
+| **合计** | **7–11 GB** | ✅ 在 20 GB 内，留有余量 |
 
-### E3. 已建但未执行的仓库改动（均需用户单独授权后落盘）
+→ 「20 GB」这个门槛**成立**，但**不是自明的**：若采纳亿级回放（`REQ-NF-CAP-06`，官方口径约 1 亿事件 / ~3.4 GB 解压、约 37 GB 原始 JSON 级）则**必然击穿** 20 GB——故 `REQ-NF-CAP-06` 的 COULD 定级是对的，且 GDD 必须写明「亿级回放与 20 GB 门槛互斥，二选一」。
+
+### E3. 已建但未推送的仓库改动
 
 | 项 | 现状 | 待办 |
 | --- | --- | --- |
-| `GLOSSARY.md` | **已建**（仓库根，111 行） | 无（已授权 Q15） |
-| `prototypes/` 入库 | untracked；`.gitignore` 不挡（只挡 `.scratch/**/tmp/`） | `git add` + 提交（Q17 已批，但**未执行**） |
-| `docs/adr/` | **尚未创建** | GDD 成稿时按 Q2 借 500 B 模板创建，登记被否决路线（R1 Catalog 直读、R2 Flink 2.3） |
+| `GLOSSARY.md` | **已建并已提交**（`e7e6480`） | 无 |
+| `prototypes/` 入库 | **已提交**（`e7e6480`，3 个 HTML + 底稿 + 术语表，2253 行） | **未推送**（`main` 领先 `origin/main` 1 个提交）——推送即公开，等用户确认 |
+| `docs/adr/` | **尚未创建** | GDD 成稿时按 Q2 借 500 B 模板创建，登记被否决路线（R1 Catalog 直读、R2 Flink 2.3、Q14 近似 UV 的降级） |
+
+### E5. GDD 与 spec 的落点（待用户裁决）
+
+GDD 文本尚未开始写。落点有两处候选，且与 `spec.md` 的关系需要一句话确认：
+- **(a)** `.scratch/ecom-user-behavior-pipeline/gdd.md`（与 SRS/FSR 同址，spec 也在此目录）
+- **(b)** 仓库根 `gdd.md` 或 `docs/gdd.md`
+
+用户已明确「SRS 和 GDD 都不是 spec，后面会专门开会话生成 spec.md」——故 GDD 与 spec 同址最为自然。
 
 ---
 
