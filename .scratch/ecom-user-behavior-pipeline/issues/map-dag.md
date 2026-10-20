@@ -1,7 +1,7 @@
 # 可选目标 DAG（wayfinder 地图 · 依赖关系图）
 
 > **性质**：`map.md` 的**辅助视图**，不是权威。权威在地图正文与各票文件；本图只回答「先解哪个、解了它才轮到谁」。
-> **日期**：2026-10-20（第三轮：[01] 落子后重画）
+> **日期**：2026-10-20（第四轮：[05] 落子后重画）
 > **节点**：`NN`＝本目录 `issues/NN-<slug>.md` 的票；`Dn`＝地图 Decisions so far 的正文级已决；`F*`＝迷雾（见 `map.md` 的 Not yet specified）。
 > **边**：`A → B`＝「A 决出来之前，B 的问题没法精确表述或没法裁决」。
 
@@ -20,22 +20,20 @@ flowchart TD
     D3["D3 执行面=WSL2 · 超集 schema"]
     D4["D4 配置确定性与可复现 = 立项基石"]
     D5["D5 唯一真相源=canonical-truth.md"]
+    D6["D6 Paimon/Flink/Doris 用法一手事实"]
     T02["02 P1 最小可证集<br/>grilling · 已落子"]
     T01["01 唯一真相源<br/>grilling · 已落子"]
+    R08["08 Paimon/Flink/Doris 用法一手事实<br/>research · 已落子"]
   end
 
-  subgraph L1["L1 · 前锋（现在就能开）"]
-    T04["04 可复现的边界<br/>grilling"]
-  end
-
-  subgraph L2["L2 · research 双轨（可并行、可另开会话）"]
-    R07["07 Doris 容量与可证性<br/>research"]
-    R08["08 Paimon/Flink/Doris 用法一手事实<br/>research"]
+  subgraph L1["L1 · 已落子（原前锋）"]
+    T04["04 可复现的边界<br/>grilling · 已落子"]
+    R07["07 Doris 容量与可证性<br/>research · 已落子"]
+    T05["05 离线分层：范围 + 五层形状<br/>grilling · 已落子"]
   end
 
   subgraph L3["L3 · 语义与范围"]
     T03["03 语义与判据：漏斗/UV 窗口 + verify 断言强度<br/>grilling"]
-    T05["05 离线分层：范围 + 五层形状<br/>grilling"]
   end
 
   subgraph L4["L4 · 交付与收束"]
@@ -44,13 +42,9 @@ flowchart TD
   end
 
   subgraph FOG["FOG · 尚未精确"]
-    F2["F2 公开数据集回放范围"]
     F3["F3 live 确定性"]
-    F4["F4 迟到计数表落点"]
-    F5["F5 client 何时不该存在"]
     F6["F6 降级阶梯触发条件"]
     F7["F7 世界时钟（回放时间戳 vs 窗口）"]
-    F8["F8 多 JDK / 多 Python 的现实包袱"]
   end
 
   D1 -.已落子.-> D4
@@ -62,6 +56,7 @@ flowchart TD
   D4 --> R07
   D4 --> R08
   T01 --> D5
+  R08 --> D6
 
   T02 --> T01
   T01 --> T03
@@ -82,16 +77,16 @@ flowchart TD
   T02 --> F3
   T02 --> F6
   T02 --> F7
-  T01 --> F4
-  R08 --> F4
   T04 --> F5
   T04 --> F8
   T05 --> F2
+  T01 --> F4
+  R08 --> F4
 
-  class D1,D2,D3,D4,D5,T01,T02 landed;
-  class T04 frontier;
-  class R07,R08,T03,T05,T06,T09 blocked;
-  class F2,F3,F4,F5,F6,F7,F8 fog;
+  class D1,D2,D3,D4,D5,D6,D7,D8,T01,T02,T04,R07,R08,T05,F2,F4,F5,F8 landed;
+  class T03 frontier;
+  class T06,T09 blocked;
+  class F3,F6,F7 fog;
 ```
 
 ## 分层与入边
@@ -100,11 +95,11 @@ flowchart TD
 | --- | --- | --- | --- | --- |
 | **L0** | **02 P1 最小可证集** | grilling | D4 | **已落子**：收窄为「P1 的成功判据」，圈表仍待裁 |
 | **L0** | **01 唯一真相源** | grilling | 02（＝D4） | **已落子**：产出 [`canonical-truth.md`](../canonical-truth.md)——双轨权威模型、封闭处置词表、12 条冲突裁决、3 组规则铁律 |
-| **L1** | **04 可复现的边界** | grilling | **02**（＝D4） | 与 01 并列的前锋；含三份 P0 交接的合流 |
-| L2 | **07 Doris 容量与可证性** | research | 02 | 只查官方语义，可另开会话并行 |
-| L2 | **08 Paimon/Flink/Doris 用法一手事实** | research | 02 | 四组事实打包，一次 research 会话可全出 |
-| L3 | **03 语义与判据** | grilling | 02, 05 | 判据口径要用到 01 的「行为可证」与 05 的窗口边界 |
-| L3 | **05 离线分层范围** | grilling | 02 | 上依赖 08 的事实、07 的成本；形状重一点，是这一层最重的一张 |
+| **L1** | **04 可复现的边界** | grilling | **02**（＝D4） | **已落子**：产出 [`reproducibility-boundary.md`](../reproducibility-boundary.md)——主体＝制品、四档契约 L0–L3、「一条命令」＝`make init`、`client` 两平台必需性、能力×平台成立性表、交接合流清单；产出 **D7**；并**收掉迷雾 F5、F8** |
+| L1 | **07 Doris 容量与可证性** | research | 02 | **已落子**：产出 [research/07](../research/07-doris-dynamic-partition-retention.md) 与 **D8**；判据定为「配置＋小时级演练」；gdd D8/D3 两处被推翻（修订归 [09]）；三张实机 task 待开 |
+| L0 | **08 Paimon/Flink/Doris 用法一手事实** | research | 02 | **已落子**：四组一手事实归档于 [08](08-lake-shaping-and-schema-evolution.md#answer) 与 `research/08a·08b·08c`；产出 **D6**（14 条副作用面，其中 8 条改变已有设计） |
+| L1 | **05 离线分层范围** | grilling | 02, 08 | **已落子**（2026-10-20，⇒ **D9**）：18 问全按推荐——强序＋判据分层（`verify` 第三项 P1 阶段显式 SKIP）、dump 门槛批（104 万/3 天）、单目标 `replay`+`LAYER=`、五层形状表（`dt` 分区、DWD `(dt,event_id)`、DIM 拉链 `valid_from_ms/valid_to_ms` 区间 join、ADS 与 Doris 键同构＝两套物化一个口径）、快照 [5,20]、不变量改 A1/A2/A3、全 SQL 零 jar、warehouse 具名卷硬约束；对 [08] 两处订正（R1/R2）；**收口迷雾 F2、F4**；5 项批准已签，落笔归 [09] |
+| L3 | **03 语义与判据** | grilling | 02, 05 | **现在的前沿**：判据口径要用到 01 的「行为可证」与 05 的窗口边界；[05] 还移交了三条接口（对账口径、指标列留白、`verify` 退出码与阶段闸门一致性） |
 | L4 | **06 看板交付** | prototype | 03 | 「暂定/落定/已修订」画得准不准，取决于 03 的语义 |
 | L4 | **09 施工规格与交接** | grilling | 其余全部 | **汇聚节点**：只有它 resolved，地图才算完成 |
 
@@ -121,7 +116,7 @@ flowchart TD
 | 原 06 跨平台 | 保留 **04**，并入「交接合流」执行面 | D4 把合流留给了执行面，放在这里一次做完 |
 | — | 新增 **09** 施工规格与交接 | 目的地是「spec-ready 路线图」，落地动作需要一张汇聚票 |
 
-迷雾从 13 条降到 7 条（[01] 落子后）：**F1（schema 版本化）已由 [01] 定案**（`canonical-truth.md` §3.1）；F6（Superset delivery）并入 06；F8/F10/F12 三条（verify 边界、保留窗、对账口径）并入 03 / 07 / 05 的正文；F9（降级触发）与 F11（拉链判据）分别并入 F6 与 05 的正文；F13（Paimon compaction 成本）并入 08/07；**F4（迟到计数表）原则已由 [01] 定案**（§3.3），只剩取值归 05。
+迷雾从 13 条降到 4 条：**F1（schema 版本化）已由 [01] 定案**（`canonical-truth.md` §3.1）；F6（Superset delivery）并入 06；F8/F10/F12 三条（verify 边界、保留窗、对账口径）并入 03 / 07 / 05 的正文；F9（降级触发）与 F11（拉链判据）分别并入 F6 与 05 的正文；F13（Paimon compaction 成本）并入 08/07；**F4（迟到计数表）已由 [05] 收口**（表名 `dwd_late_event_count`、`dt`×60 s 档）；**F2（公开数据集回放）已由 [05] 收敛**（P2 门槛批＝生成器 dump 现产，`REQ-F-LAKE-09` 维持 COULD 不在 P2 最小集）。
 
 ## 缺口（读图时不要当成已覆盖）
 
@@ -132,6 +127,6 @@ flowchart TD
 
 ## 怎么读
 
-- **绿**：现在就能开（[04]；research 轨 [07]、[08] 可并行）。**灰**：已落子，只作上下文。**橙虚线**：迷雾，不要预设成票。
+- **绿**：现在就能开（**[03]**，唯一前沿）。**灰**：已落子，只作上下文。**橙虚线**：迷雾，不要预设成票。
 - **一次会话只解一张**（research 可批量）；解前先把 `Status: claimed` 写盘，避免两个会话撞车。
 - **图会变**：每解一张票重画一次；新增节点「先建票、后补边」，边写进票的 `Blocked by:` 行，图逐条对齐。
