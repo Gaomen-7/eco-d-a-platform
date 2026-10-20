@@ -263,20 +263,27 @@ interface PyrightJsonDiagnostic { file; severity; message; range?; rule? }
 
 | 服务 | `mem_limit` | **实测常驻** | 占限额 |
 | --- | --- | --- | --- |
-| kafka | 1g | **671.7 MiB** | 66% |
-| flink-jm | 1g | **309.9 MiB** | 30% |
-| flink-tm | 2g | **405.6 MiB** | 20% |
-| superset | 1g | **200.1 MiB** | 20% |
-| **小计（实测）** | — | **≈1.55 GiB** | — |
+| kafka | 1g | **647.8 MiB** | 63% |
+| flink-jm | 1g | **456.3 MiB** | 45% |
+| flink-tm | 2g | **567.9 MiB** | 28% |
+| superset | 1g | **259.4 MiB** | 25% |
+| **小计（四服务实测）** | — | **≈1.89 GiB** | — |
+| `doris-fe`（profile `doris`） | 2g | **994.3 MiB** | **49%** |
+| `doris-be`（profile `doris`） | 3g | **995.2 MiB** | **32%** |
+| **小计（含 doris，六服务全起）** | — | **≈3.83 GiB** | — |
 | `kafka-init`（一次性） | 256m | 不常驻 | — |
-| `doris-fe` / `doris-be`（profile `doris`） | 2g / 3g | **未实测**（镜像构建中） | — |
+| `client`（profile `client`，`run --rm`） | 256m | 不常驻 | — |
 | **声明上限合计（默认 up）** | — | **5.25 GiB** | 天花板 11.68 ⇒ 余 **6.43** GiB |
-| **声明上限合计（--profile doris）** | — | **10.25 GiB**（10,496 MiB） | 天花板 11.68 ⇒ 余 **1.43** GiB |
+| **声明上限合计（--profile doris）** | — | **10.5 GiB**（10,752 MiB） | 天花板 11.68 ⇒ 余 **1.18** GiB |
 
-> **★ 两个口径别混用（P0 实测澄清）**：`scripts/config_check.py` 的「常驻上限合计」按**「有 `mem_limit` 且**无** `profiles` 键」**统计 ⇒ 它报的是 **5.25 GiB**（**不含** profile 隔离的 Doris）。而「全部服务声明上限」是 **10.25 GiB**（含 Doris 的 2g+3g）。**两个数都对，只是口径不同**——写文档时必须说明用的是哪一个。
-> **读法（重要）**：`mem_limit` 是**上限**不是占用。实测值远低于上限（Kafka 用 66%、Flink TM 只用 20%），说明当前**空载**骨架很轻；**真正的压力在 P1 有数据流之后**——Flink 的 managed memory 会随 RocksDB 状态增长、Doris 的 BE compaction 会吃内存。故「5.25/10.25 GiB」是**已声明的上限契约**，「1.55 GiB」是**当前空载实测**，两者不可互相冒充。
-> **待回填**：Doris FE/BE 拉起后的实测值（镜像构建中，见 §7.3 U-ν）。
-> **待回填项**：Doris（镜像须本地构建）与 P1 带载后的实测值。
+> **★ 两个口径别混用（P0 实测澄清）**：`scripts/config_check.py` 的「常驻上限合计」按**「有 `mem_limit` 且**无** `profiles` 键」**统计 ⇒ 它报的是 **5.25 GiB**（**不含** profile 隔离的 Doris）。而「全部服务声明上限」含 Doris 的 2g+3g。**两个数都对，只是口径不同**——写文档时必须说明用的是哪一个。
+> **读法（重要）**：`mem_limit` 是**上限**不是占用。实测值远低于上限，说明当前**空载**骨架很轻；**真正的压力在 P1 有数据流之后**——Flink 的 managed memory 会随 RocksDB 状态增长、Doris 的 BE compaction 会吃内存。故「5.25 / 10.5 GiB」是**已声明的上限契约**，「1.89 / 3.83 GiB」是**当前空载实测**，两者不可互相冒充。
+>
+> ★ **Doris 实测已回填**（2026-10-20，U-ν 完成）：六服务**全起**时 `docker stats --no-stream` 合计 **≈3.83 GiB**，距 11.68 GiB 天花板余 **7.85 GiB**。判据 `curl :8030/api/health` 实测返回
+> `{"msg":"success","code":0,"data":{"online_backend_num":1,"total_backend_num":1}}` ⇒ **`online_backend_num == total_backend_num == 1`**，R1 的「Doris 能在下调后稳定供数」这一半**已实测通过**（`SHOW BACKENDS` 的 `Alive=true`；三张 ADS 表建成并已有 30 天动态分区）。
+> ⚠️ **口径更正（本条为实测修正，勿沿用旧数）**：旧表「--profile doris = 10.25 GiB」少算了 `client` 的 256m ⇒ 实为 **10.5 GiB**（`10,752 MiB` = 10.5 GiB），余量随之由「1.43」更正为 **1.18 GiB**。`client` 虽以 `run --rm` 按需起、**不常驻**，但计入「全部服务声明上限」口径。此更正是**修正而非估算**：`docker compose --profile doris --profile client config` 求和得 11,274,289,152 B。
+> **仍待回填**：**P1 带载后**的实测值（当前是空载）。
+
 
 | 约束 | 定案 | 检查方式 |
 | --- | --- | --- |
@@ -439,10 +446,33 @@ WSL 内的 `docker` 有两条路，差别在**路径语义**：
 | **U-ε** | Docker Desktop 对 Ubuntu 开 **WSL integration** | ✅ **已生效**（实测 `/var/run/docker.sock` 存在、WSL 内 `docker version` 返 Server 29.8.0；设置里 `IntegratedWslDistros: ["Ubuntu"]`） | 回滚＝同页关闭；**关闭后 §4.7 的 A 面可达性须重测** |
 | **U-ζ** | 设 **`UV_CACHE_DIR`** 到 F: | ✅ **已执行**（Windows 用户级环境变量 → `F:\...\.uv-cache`；备份 `%USERPROFILE%\.env-backup-2026-10-19-before-uvcache.txt`） | 回滚＝删除该环境变量。WSL 侧 uv cache 本就在 Linux 文件系统内，无需改 |
 | **U-η** | Ubuntu 发行版 `ext4.vhdx` 是否迁出 C 盘 | **待定** | 体积**未测**；迁移＝`wsl --export/--import`，属动本机配置 |
-| **U-ν** | **Doris 镜像本地构建** | **路径已探明（P0 实测）** | 官方镜像**无**可直接拉取的 4.1.5（版本化标签全部 `denied`）；**但二进制包 URL 实测 HTTP 200、4.32 GB**：`apache-doris-releases.oss-accelerate.aliyuncs.com/apache-doris-4.1.5-bin-x64.tar.gz`（另有 `-noavx2` 变体同样 200）。⇒ 路径＝下载二进制 → 基于 `apache/doris:base-latest` 写 Dockerfile → 覆盖 `fe.conf` 的 `-Xmx8192m`→1536m 与 `be.conf` 的 `mem_limit` 90%→25%。**工作量：一次 4.3 GB 下载 + 镜像构建**，未执行 |
+| **U-ν** | **Doris 镜像本地构建** | ✅ **已完成（2026-10-20 实测）**。`eco/doris:4.1.5` 已建成并跑通（`docker images` = 13.5 GB）。路径＝**构建内下载**（Dockerfile 单条 `RUN curl -xz` 下载 4.32 GB 二进制包）＋修 5 处缺陷。**实测**：下载 **457 s**（≈9.4 MB/s）、解压 **712 s**、导出/解包 **862 s**，全程约 **35 分钟**；上下文由 4.03 GiB 降至 **6.13 kB**（`.dockerignore`）。见本行下方「U-ν 修复清单」 |
 | **U-θ** | `uv python install 3.12` | 已批 | 回滚＝`uv python uninstall 3.12` |
 | **U-ι** | 安装 **`basedpyright==1.40.2`**（`uv add --dev`） | **待批** | 回滚＝`uv remove --dev basedpyright` + 重生成 `uv.lock`；含写 `[tool.pyright]` 段的回滚（删除该段） |
 | **U-κ** | 若走包装器兜底，设 **`PYRIGHT_PYTHON_CACHE_DIR`** 到 F: | **待批** | 选 `basedpyright` 则基本不需要（node 由 wheel 提供）；保留以防兜底 |
+
+**★ U-ν 修复清单（P0 实测，2026-10-20；每处都有实机证据）**
+
+| # | 缺陷 | 根因 | 修法 | 复验判据（均已实测通过） |
+| --- | --- | --- | --- | --- |
+| **A** | FE 必 `exit 1` | Dockerfile 内 `ENV JAVA_HOME` **重复赋值**，后者把正确的 `/usr/lib/jvm/jdk-17` 覆盖成**不存在**的 `/usr/lib/jvm/java-17-openjdk-amd64` | 删掉第二次赋值，注释警示 | 镜像内 `echo $JAVA_HOME` = `/usr/lib/jvm/jdk-17`、`test -x $JAVA_HOME/bin/java` ✅ |
+| **B** | `run client <cmd>` 的参数被吞 | `entrypoint: ["/bin/bash","-c","sleep infinity"]`：`bash -c` 只把**紧跟的单个参数**当脚本文本，其余进 `$0` ⇒ 多词命令全丢 | `["/bin/bash","-c","exec \"$@\"","dummy"]` + `command: ["sleep","infinity"]`（**双元素**） | 三档实测：默认常驻 ✅；单词脚本 ✅；**多词 `mysql -h doris-fe ...` 参数透传**（报 `ERROR 2005 Unknown host 'doris-fe'`＝已按主机名解析，**不再**退 `mysqld.sock`）✅ |
+| **C** | 初始化 SQL 路径不存在 | 三方不一致：脚本默认 `/scripts/doris/init.sql`、compose 只挂 `./docker/scripts`、文件实在 `docker/doris/init.sql` | compose 加 **`./docker/doris:/doris:ro`**，脚本默认改 `/doris/init.sql`。⚠️ **不能**挂 `/scripts/doris`：`/scripts` 是只读绑定，runc 无法在其内建挂载点（实测 `mkdirat ... read-only file system`，容器**直接起不来**） | `ls /doris` 见 `init.sql` ✅ |
+| **D** | BE 从未注册 ⇒ 无可用 backend ⇒ 建表必失败 | 无人发 `ALTER SYSTEM ADD BACKEND`（官方部署 Step 3.3 要求；官方 all-in-one `run_be()`＝先注册后起进程） | `entrypoint.sh` 在**起 BE 进程前**用**容器 IP** 注册并等 `Alive=true` | `SHOW BACKENDS` `Alive=true`；`:8030/api/health` `online_backend_num=1 == total_backend_num=1` ✅ |
+| **E** | **BE 必 `exit 1`，根本起不来**（★ 本会话新查出，两份旧交接均无） | `be/bin/start_be.sh:194-216` 起进程**前**检查 `vm.max_map_count ≥ 2000000`、`swapon -s ≤ 1 行`、`ulimit -n ≥ 60000`。本机 VM 实测 `max_map_count=1048576`、`swapon` 2 行 ⇒ **双双不过**；而 `max_map_count` **非 namespaced sysctl**，容器内改不了 | Dockerfile 显式 `ENV SKIP_CHECK_ULIMIT=true`（官方 all-in-one 同款做法；官方原注：*"vm.max_map_count is not a namespaced sysctl, so a container cannot fix it -- the check has to be skipped here"*） | BE 容器 `Up (healthy)` 而非 `exit 1` ✅ |
+| **F** | Doris 的 compose env 是**死配置** | 对真 tar 包 `fe/bin`+`be/bin` **整目录 grep** `FE_SERVERS`/`BE_ADDR` ⇒ **零命中**；`start_be.sh` 也不吃 FE 地址（无 `--helper`）⇒ 原设的 `FE_SERVERS`/`FE_ID`/`BE_ADDR` 无人消费 | 删死配置，改设 entrypoint 真正消费的 `FE_HOST`/`FE_PORT`/`FE_USER`/`BE_HEARTBEAT_PORT`/`START_TIMEOUT` | `docker compose config` 解析出的 env 与实际消费一致 ✅ |
+| **G** | `ads_funnel_step` **必然建表失败**（★ 本会话实测暴露） | UNIQUE KEY `(session_date, step_no, window_start)` 不是列声明的有序前缀，Doris 报 `Key columns should be a ordered prefix of the schema` | **保持作者原 Key 顺序不变**，只把列声明调成同序（三列前置）⇒ Key 顺序与分区键均未变，仅声明位置变化 | `init.sql` 全量执行至 `[doris-init] 完成`，三表建成 ✅ |
+| **H** | **`down`→`up` 后 FE 永久起不来**（★ 本会话在「重启复现性」复验中查出；**首次构建时不会暴露**，故极易漏） | Doris 把**自身 IP** 写进持久化元数据（`doris-meta`）：首启日志逐字 `initAddrUseIp(): local address: /172.22.0.6`、`getSelfHostPort(): HostInfo{host='172.22.0.6', port=9010}`。而 Docker 重建容器会**重新分配** IP（实测重建后变 `172.22.0.3`）⇒ 元数据里的地址与实际的自己对不上，FE 卡在 `Env.waitForReady(): feType:UNKNOWN isReady:false` **无限循环**（healthcheck `FailingStreak=18`） | **重定义 default 网络为固定子网 `172.31.88.0/24`，给 FE/BE 钉死 IP**（`172.31.88.40`/`.50`）——官方 `multi-node.yml` 同款，官方原注："Node addresses are pinned inside the private network, so a restarted container keeps the identity Doris knows it by." ⚠️ **只重定义、不新建网络**：其余服务不写 `networks:` 键 ⇒ 仍自动加入同一 default 网络 ⇒ **拓扑不变**，Flink TM 照样能按容器地址连 BE（保住 HLD §4.4 的 P1 写入路径） | `down`（**不删卷**）→`up` **两轮**：FE 每次 `health=healthy`、`fails=0`、IP 恒为 `172.31.88.40`；`:8030/api/health` `online_backend_num=1`；三张 ADS 表**重启后仍在** ✅ |
+
+> ⚠️ **本会话自犯并已修正的两个坑**（记入教训，防复发）：
+> ① **`mysql -N` 会抑制表头** ⇒ 按**列名**取值的 awk（`col["Alive"]`）因表头缺失而**恒假**，把「BE 明明 Alive」误判为「未注册」。凡按列名取值**绝不能带 `-N`**（官方 `lib.sh` 的 `node_alive` 亦不带）。
+> ② **注册绝不能用主机名**：BE 已用容器 IP 注册后，再用 `doris-be:9050` 去 ADD，Doris 视其为**另一身份** ⇒ 注册出**幽灵 backend**（实测 `SHOW BACKENDS` 同时出现 `172.22.0.7` 与 `doris-be` 两行，后者 `TabletNum=0`）。**必须统一用容器 IP**（`enable_fqdn_mode` 默认 **false**，已由 `Config.java` 源码逐字确认：`public static boolean enable_fqdn_mode = false;`）。
+
+> ★ **方法论收获（本会话新增，建议并入 §8-R7 教训栏）**：**「能起来」≠「能重起来」**。
+> Bug A–G 都只在**首次** `up` 的路径上暴露，一路全绿；只有**刻意做 `down`→`up` 循环**才逼出 Bug H。
+> ⇒ 凡「把状态持久化进卷」的组件（Doris FE 元数据即典型），验收判据**必须包含一次
+> **「不删卷的重启周期」**，否则交付的是「一次性可跑」而非「可复现」。
+> 本条与既有纪律（①配置格式②镜像内容③数据落点④CLI 版本行为**都必须实机验证**）同级。
 
 ---
 
@@ -456,6 +486,7 @@ WSL 内的 `docker` 有两条路，差别在**路径语义**：
 **处置**：P0 **必须**显式下调（FE `-Xmx`、BE `mem_limit`），并把预算表每项标 `官方给出`/`设计值`；`SRS.md` 的 ≤8 GB **不动**（按 §7.1 D-B 登记）。
 **检测信号**：`docker stats --no-stream` 各服务与总值；Doris FE 启动日志（`fe.out`）。
 **判定条件**：下调后 Doris 能在 `docker stats` 实测下**稳定供数**（`/api/health` 返回 `online_backend_num == total_backend_num` 且 ADS 表可查）——**未实测即未通过**。
+**★ 2026-10-20 实测进度**：**下调有效（空载已通过）**。镜像内 `fe.conf` 确认 `-Xmx1536m -Xms1536m`、`be.conf` 确认 `mem_limit = 25%`（BE 启动日志实测 `Mem Limit: 768.00 MB, origin config value: 25%`）。六服务全起实测合计 **≈3.83 GiB** / 天花板 11.68 GiB；`/api/health` `online_backend_num=1 == total_backend_num=1`、`SHOW BACKENDS` `Alive=true`、三张 ADS 表建成。⚠️ **仍未完全通过**：判据后半「**稳定**供数」需 **P1 带载后**复测（Flink managed memory 随 RocksDB 状态增长、BE compaction 吃内存）——**带载未实测即未通过**。
 
 ### R2 · ★ Doris Stream Load 在 Docker Desktop 下宿主不可 follow
 **证据**：官方原话（Doris README）「a stream load from the host **cannot follow FE's redirect to a BE; run it from the `client` service instead**」；官方同时说明「Per-container IP addressing is not possible」。

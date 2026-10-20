@@ -1,0 +1,19 @@
+# 构建上下文排除项 —— docker/doris/
+#
+# ★ 存在的唯一理由（P0 实测，2026-10-20）：本目录曾放 4.03 GiB 的
+#   `apache-doris-4.1.5-bin-x64.tar.gz`（当前同名文件仍在，见下）。构建上下文
+#   会把整个目录打包发给 daemon，实测传输 **3276 秒（54 分钟）**后在 COPY 阶段
+#   `EOF`、Docker Desktop 被压垮退出。
+#   自本会话「构建内下载」改道后（见 Dockerfile 的单条 RUN curl+xzf），
+#   上下文**不再需要**该 tarball ⇒ 必须在此排除，否则 4 GB 每次构建都被重传。
+#
+# 回滚：删除本文件即可恢复「tarball 进上下文」的旧行为（但需同时把 Dockerfile
+#       改回 COPY 写法，否则 Dockerfile 不读该文件、无影响）。
+
+*.tar.gz
+*.tgz
+*.tar
+
+# 构建产物与临时物
+*.log
+/tmp/

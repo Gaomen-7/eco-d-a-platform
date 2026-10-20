@@ -149,12 +149,40 @@ services:
     memswap_limit: 2g
     profiles: ["doris"]
     command: ["fe"]
+    # ★★ Bug H（P0 实测，2026-10-20）——**必须固定 IP，否则 down/up 后 FE 永远起不来** ★★
+    #   症状：`docker compose down`（不删卷）后再 `up`，FE 卡在
+    #     `Env.waitForReady(): wait catalog to be ready. feType:UNKNOWN isReady:false`
+    #     无限循环，healthcheck 连续失败（实测 FailingStreak=18）。
+    #   根因：Doris 把**自己的 IP** 写进持久化元数据（`doris-meta`）：
+    #     首次启动日志逐字：`FrontendOptions.initAddrUseIp(): local address: /172.22.0.6`
+    #                      `Env.getSelfHostPort(): get self node: HostInfo{host='172.22.0.6', port=9010}`
+    #     而 Docker 在容器重建时会**重新分配**网络内 IP（实测重建后 FE 变成 172.22.0.3）
+    #     ⇒ 元数据里的 `172.22.0.6:9010` 与实际的自己**对不上** ⇒ FE 找不到自己，永久卡住。
+    #   ⇒ 修法：**固定默认网络的子网**并给 FE/BE **钉死 IP** —— 这正是官方
+    #      all-in-one `compose/multi-node.yml` 的做法，官方原注逐字：
+    #      "Node addresses are pinned inside the private network, so a restarted
+    #       container keeps the identity Doris knows it by."
+    #   ⚠️ 为什么不另建一个只为 Doris 的网络：HLD §4.4 明确「Flink TM 本就**在
+    #      compose 网内**」⇒ P1 的 Flink-Doris-Connector 必须能按容器地址直接
+    #      连到 BE。若把 FE/BE 挪到**独立**网络，Flink TM（仍在 default）就**够不到**
+    #      它们，会打断 P1 写入路径。故改为：**重定义 default 网络为固定子网**，
+    #      其它服务不带 `networks:` 键 ⇒ 仍自动加入同一个 default 网络，
+    #      FE/BE 则在该网络内钉死 IP。**拓扑不变，只是 IP 稳定**。
+    networks:
+      default:
+        ipv4_address: 172.31.88.40
     environment:
       # ⚠️ 真正的 -Xmx 覆盖在**镜像构建期**完成（fe.conf 的 JAVA_OPTS_FOR_JDK_17）。
       #    start_fe.sh 会先用 `-Xmx1024m` 再用 fe.conf 覆盖，故这里再设一层保险。
       JAVA_OPTS_FOR_JDK_17: "-Xmx1536m -Xms1536m -Dfile.encoding=UTF-8 -XX:+HeapDumpOnOutOfMemoryError"
-      FE_SERVERS: fe@doris-fe:9010
-      FE_ID: "1"
+      # ★ 本镜像是**自写 entrypoint**（docker/doris/entrypoint.sh），它消费的变量：
+      FE_HOST: doris-fe
+      FE_PORT: "9030"
+      FE_USER: root
+      # ⚠️ 已删除 `FE_SERVERS: fe@doris-fe:9010` 与 `FE_ID: "1"`（P0 实测 2026-10-20）：
+      #    这两个是**官方 k8s operator** 的约定，只被官方的 fe_entrypoint.sh 消费；
+      #    本镜像的 entrypoint 与 `start_fe.sh`/`start_be.sh` 都**不读**它们
+      #    （在真 tar 包 fe/bin + be/bin 整目录 grep ⇒ 零命中）⇒ 原属**死配置**。
     ports:
       - "127.0.0.1:8030:8030"   # FE HTTP（/api/health）
       - "127.0.0.1:9030:9030"   # FE MySQL 协议（看板/客户端）
@@ -179,12 +207,32 @@ services:
     memswap_limit: 3g
     profiles: ["doris"]
     command: ["be"]
+    # ★ Bug H 同理：BE 也必须钉死 IP（它把自身地址报给 FE，见 doris-fe 的说明）。
+    #   ⚠️ BE 注册用的**容器 IP** 由此确定为 172.31.88.50，
+    #      与 docker/doris/entrypoint.sh 的 `my_ip()` 取值一致。
+    networks:
+      default:
+        ipv4_address: 172.31.88.50
     depends_on:
       doris-fe:
         condition: service_healthy
     environment:
-      FE_SERVERS: fe@doris-fe:9010
-      BE_ADDR: doris-be:9050
+      # ★ 自写 entrypoint 消费的变量（见 docker/doris/entrypoint.sh 文件头 Bug D/F 说明）：
+      #   它会在**起 BE 进程之前**，用容器 IP 发 `ALTER SYSTEM ADD BACKEND`，
+      #   并等到 `SHOW BACKENDS` 的 Alive=true 才放手 —— 与官方 all-in-one
+      #   的 `run_be()`（resolve_master → register_be → start_be）同构。
+      #   ⚠️ 顺序承重：BE 的 conf 里没有 FE 地址，BE 靠「FE 注册后主动来连它」
+      #      的握手才知道向谁心跳 ⇒ 必须先注册、后起进程。
+      FE_HOST: doris-fe
+      FE_PORT: "9030"
+      FE_USER: root
+      BE_HEARTBEAT_PORT: "9050"
+      START_TIMEOUT: "300"
+      # ⚠️ 已删除 `FE_SERVERS: fe@doris-fe:9010` 与 `BE_ADDR: doris-be:9050`（死配置，
+      #    同上）。**注意**：`BE_ADDR` 原写的是**主机名**，而 fe.conf 出厂没有
+      #    `enable_fqdn_mode` 行 ⇒ 走默认 **IP 语义**（官方 FE entrypoint：
+      #    `parse enable_fqdn_mode` 非 true 时 `MYSELF=$POD_IP`）⇒ 即便它被读，
+      #    主机名写法也是错的。正确写法是**容器 IP**：见 entrypoint.sh 的 my_ip()。
       # ⚠️ BE 的 mem_limit 覆盖主要在**镜像构建期**（be.conf: 90% → 25%）。
     ports:
       - "127.0.0.1:8040:8040"   # BE webserver（/metrics 等）
@@ -252,12 +300,38 @@ services:
     mem_limit: 256m
     memswap_limit: 256m
     profiles: ["client"]
-    entrypoint: ["/bin/bash", "-c", "sleep infinity"]
+    # ★ `exec "$@"` 派发器（P0 实测，2026-10-20）——旧写法 `["/bin/bash","-c","sleep infinity"]`
+    #   会把 `docker compose run client <cmd...>` 传入的命令整条丢成 `$0`：
+    #     实测 `... client echo SHOULD_PRINT` 一次都没打印；
+    #          `... client mysql -h doris-fe -P 9030 -u root -e "SELECT 1"`
+    #          退回本地 socket 报 `ERROR 2002 ... mysqld.sock`（参数全丢）。
+    #   根因：`bash -c` 只把**紧跟的单个参数**当脚本文本，其余全丢进 `$0`/`$@`。
+    #   修法：`dummy` 占住 `$0`，真实参数从 `$1` 起算，`exec "$@"` 原样派发。
+    #   ⚠️ 两处不可省：① `dummy` 占位；② `command` 必须**双元素**——实测单元素
+    #      `["sleep infinity"]` 会报 `exec: sleep infinity: not found`。
+    entrypoint: ["/bin/bash", "-c", "exec \"$@\"", "dummy"]
+    command: ["sleep", "infinity"]
     depends_on:
       kafka:
         condition: service_healthy
     volumes:
       - ./docker/scripts:/scripts:ro
+      # ★ 补齐 init.sql 的默认路径（Bug C，P0 实测）——三方曾不一致：
+      #   `doris-init.sh` 默认 SQL_FILE=/scripts/doris/init.sql；
+      #   compose 只挂 ./docker/scripts ⇒ 容器内 `/scripts/doris` **不存在**
+      #   （实测 `--entrypoint ls client /scripts` 只有 doris-init.sh、init-kafka.sh）；
+      #   而文件真实位置是 docker/doris/init.sql。
+      #   ⇒ 加一条挂载补齐。**不要**改上面那条挂载的根：`kafka-init` 依赖
+      #     `/scripts/init-kafka.sh`，改根会连累它。
+      #
+      #   ⚠️ **挂到 /doris 而非 /scripts/doris**（实测踩到，2026-10-20）：
+      #     挂 `/scripts/doris` 会直接**起不来容器**——
+      #       `runc create failed: ... error mounting ... to rootfs at "/scripts/doris":
+      #        make mountpoint for /scripts/doris mount: mkdirat ...: read-only file system`
+      #     根因：`/scripts` 本身是**只读绑定**，runc 无法在其内部再创建挂载点目录。
+      #     ⇒ 挂到**非嵌套**路径 `/doris`，并把 `doris-init.sh` 的默认值同步改为
+      #       `/doris/init.sql`（两处已对账一致）。
+      - ./docker/doris:/doris:ro
     restart: "no"
     logging: *default-logging
 
@@ -268,3 +342,18 @@ volumes:
   doris-be-storage:
   doris-be-log:
   superset-home:
+
+# ★ Bug H（P0 实测，2026-10-20）：把 **default 网络重定义为固定子网**，
+#   以便给 Doris FE/BE 钉死 IP（原因见 doris-fe 服务注释：Doris 把自身 IP
+#   持久化进元数据，重建后 IP 一变即永久卡在 feType:UNKNOWN）。
+#   ⚠️ 只**重定义**、不新增网络：其余服务都不写 `networks:` 键 ⇒ 仍自动加入
+#      这个同一个 default 网络 ⇒ **拓扑不变**，Flink TM 照样能按容器地址连 BE
+#      （HLD §4.4 的 P1 写入路径不受影响）。
+#   子网选 172.31.88.0/24：与官方 multi-node 示例的 172.31.81.0/24 **错开**，
+#   也避开 Docker 默认 bridge 池，避免与本机其它 compose 项目撞段。
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.88.0/24

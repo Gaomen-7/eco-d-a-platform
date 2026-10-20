@@ -56,10 +56,22 @@ PROPERTIES (
 );
 
 -- 步进漏斗（双列并陈：观测值 / 推断值）——gdd §1.3 / GLOSSARY「观测值 / 推断值」
+--
+-- ★ DDL 修正（P0 实机实测，2026-10-20）——原写法**必然建表失败**：
+--   原声明顺序是 window_start, session_date, step_no, ...，而 UNIQUE KEY 写的是
+--   (session_date, step_no, window_start)。Doris 要求 **Key 列必须是表声明的
+--   有序前缀**（官方约束），故原写法报：
+--     ERROR 1105 ... Key columns should be a ordered prefix of the schema.
+--     KeyColumns[0] (starts from zero) is session_date, but corresponding column
+--     is window_start in the previous columns declaration.
+--   ⇒ 修法：**保持作者原本的 Key 顺序不变**（session_date, step_no, window_start），
+--     只把**列声明**调整成同序（这三列前置）即可满足前缀约束。
+--     这样 Key 顺序与分区键（session_date，须为 Key 列子集）都**未改变**，
+--     仅列声明位置变化 —— 数据语义不变。
 CREATE TABLE IF NOT EXISTS ads_funnel_step (
-    window_start     DATETIMEV2(0) NOT NULL,
     session_date     DATE          NOT NULL COMMENT '会话归属日',
     step_no          TINYINT       NOT NULL COMMENT '1=浏览 2=加购 3=下单 4=支付',
+    window_start     DATETIMEV2(0) NOT NULL,
     cnt_observed     BIGINT        NOT NULL DEFAULT 0 COMMENT '只记真实到达的步',
     cnt_inferred     BIGINT        NOT NULL DEFAULT 0 COMMENT '含补记（推断值，不得冒充观测值）',
     revision         INT           NOT NULL DEFAULT 0,
