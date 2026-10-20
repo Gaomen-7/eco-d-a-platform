@@ -18,7 +18,15 @@ single-context：全仓共用根目录一份 `GLOSSARY.md`，架构决定放 `do
 
 ### Design docs
 
-`.scratch/ecom-user-behavior-pipeline/` 持有本仓的设计链：`SRS.md`（必须做到什么）→ `gdd.md`（每个功能怎么做）→ `HLD.md`（结构、技术栈定案、运行约束）。**HLD.md 是定位这一层的唯一入口**——读它看：
+`.scratch/ecom-user-behavior-pipeline/` 持有本仓的设计链：`SRS.md`（必须做到什么）→ `gdd.md`（每个功能怎么做）→ `HLD.md`（结构、技术栈定案、运行约束）。
+
+**定位这一层从 `map.md` 进**——它是 wayfinder 地图（`Kind: map`）：已落子决策、当前前沿、迷雾。**HLD §0.1 自称「唯一入口」是上一代说法**，以本节为准；两者冲突时，`map.md` 与本节赢。读 `map.md` 看：
+
+- 目的地是什么、什么在范围外、迷雾在哪 → `map.md` 的 Destination / Not yet specified / Out of scope
+- 下一个该解哪个决策、依赖关系 → `map.md` 的 Decisions so far + [`issues/map-dag.md`](.scratch/ecom-user-behavior-pipeline/issues/map-dag.md)
+- 每张票的问题与已解答案 → `.scratch/ecom-user-behavior-pipeline/issues/NN-*.md`
+
+**HLD 细节指针**（`map.md` 负责「走到哪了」，HLD 负责「为什么是这么定的」）：
 
 - 改技术栈、加组件、换版本，或问「为什么不用 X」→ HLD §3（定案表 + 弃选理由，含 `ty`/Grafana/Hudi/ClickHouse 等）
 - 写 compose、定资源上限、端口绑定、沙箱形态，或排查「容器起不来/连不上」→ HLD §4（运行环境与沙箱约束）
