@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>原型 4 · Superset 约束下的看板判据（三态画法 × 五面板 × 刷新 × 零账号）</title>
+<style>
+/* ========================================================================
+   原型 4（票 06）—— throwaway，单文件 HTML，双击可开。
+   它回答的问题不是「布局哪个好看」（那是原型 3 的活），而是：
+     Q1 三态载体：暂定/落定/已修订在 Superset 里怎么画（三种范式各成一变体）
+     Q2 刷新矛盾：10s 刷新 vs 60s 数据粒度，"观察到数值变化"证的是哪半
+     Q3 五面板：无 deck.gl/无插件/纯内置图表怎么做地域/品类
+     Q4 脏率面板：基线从哪来，故障演练期间为何不飙升
+     Q5 零账号：哪行配置对应哪条判据
+     Q6 交付形态：zip 是手段不是判据
+   约束（票 06 约束栏）：不写实现代码；Superset 6.1.0 + 内置图表 + 自定义 CSS
+   为唯一表达手段；P0 事实（R7-c：镜像无 DB 驱动、元数据库 SQLite、
+   ecom_ads 走 PyMySQL）为硬边界。
+   ======================================================================== */
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font:14px/1.55 -apple-system,"Segoe UI",system-ui,"Microsoft YaHei",sans-serif;background:#fff;color:#16181d}
+#app{min-height:100vh}
+
+/* 切换条（原型脚手架，非被评估设计的一部分） */
+#switcher{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:9999;
+  display:flex;align-items:center;gap:10px;background:#111827;color:#fff;border-radius:999px;
+  padding:8px 14px;box-shadow:0 8px 28px rgba(0,0,0,.35);font-size:13px;user-select:none}
+#switcher button{background:transparent;border:0;color:#fff;font:inherit;font-size:16px;cursor:pointer;padding:0 8px}
+#switcher button:hover{color:#7dd3fc}
+#switcher .lbl{font-variant-numeric:tabular-nums;min-width:230px;text-align:center}
+#switcher .hint{color:#9ca3af;font-size:11px;border-left:1px solid #374151;padding-left:10px}
+
+/* 演示控制（原型专用） */
+#democtl{position:fixed;right:14px;top:14px;z-index:9999;background:#fffbeb;border:1px dashed #d97706;
+  border-radius:8px;padding:8px 10px;font-size:12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;
+  max-width:360px;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+#democtl .tag{font-weight:700;color:#b45309;letter-spacing:.05em}
+#democtl button{font:inherit;cursor:pointer;border:1px solid #d97706;background:#fff;border-radius:5px;padding:3px 7px}
+#democtl button.on{background:#c2410c;color:#fff}
+#democtl button:hover{background:#fef3c7}
+#democtl .asof{width:100%;color:#6b7280;font-variant-numeric:tabular-nums}
+#democtl #refreshlog{display:block;max-height:120px;overflow:hidden}
+
+/* 通用小件 */
+.spark{display:block}
+.sub{font-size:11.5px;opacity:.65}
+.num{font-variant-numeric:tabular-nums}
+.bar-track{background:rgba(127,127,127,.18);border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px;transition:width .35s ease}
+
+/* ============ 三个变体 ============ */
+/* 变体 A：并排双图范式（暂定/落定各一张图，物理隔离） */
+#vA{min-height:100vh;background:#f6f7f9;padding:20px 24px 96px}
+#vA .hd{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}
+#vA .hd h1{font-size:17px;margin:0}
+#vA .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+#vA .panel{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;min-height:130px}
+#vA .panel h3{margin:0 0 8px;font-size:12px;color:#6b7280;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+#vA .panel.full{grid-column:span 2}
+#vA .tentative{border-left:4px dashed #f59e0b}
+#vA .settled{border-left:4px solid #10b981}
+#vA .revised{border-left:4px solid #8b5cf6}
+#vA .v{font-size:26px;font-weight:650;line-height:1.15}
+#vA .badge{font-size:10.5px;font-weight:700;letter-spacing:.06em;padding:1px 8px;border-radius:999px}
+#vA .badge.t{background:#fef3c7;color:#b45309;border:1px dashed #f59e0b}
+#vA .badge.s{background:#d1fae5;color:#047857}
+#vA .badge.r{background:#ede9fe;color:#6d28d9}
+#vA .panel.duel{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* 变体 B：单图行内状态徽标范式（一张图，行级 badge+着色） */
+#vB{min-height:100vh;background:#fff;padding:20px 26px 96px;max-width:1100px;margin:0 auto}
+#vB table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+#vB th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;text-align:left;padding:6px 10px;border-bottom:2px solid #e5e7eb}
+#vB td{padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:13px}
+#vB tr.st-tentative td{background:#fffbeb}
+#vB tr.st-revised td{background:#faf5ff}
+#vB tr.st-settled td{background:transparent}
+#vB .pill{font-size:10.5px;font-weight:700;padding:1px 8px;border-radius:999px;white-space:nowrap}
+#vB .pill.t{background:#fef3c7;color:#b45309}
+#vB .pill.s{background:#d1fae5;color:#047857}
+#vB .pill.r{background:#ede9fe;color:#6d28d9}
+#vB .cell-val{font-size:24px;font-weight:650;margin:8px 0 2px}
+#vB .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:14px 0}
+
+/* 变体 C：单图双色叠加范式（同一张图，暂定画浅/落定画深/修订描边） */
+#vC{min-height:100vh;background:#0f172a;color:#e2e8f0;padding:20px 26px 96px}
+#vC h1{font-size:17px;margin:0 0 4px;color:#fff}
+#vC .panel{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px 14px;margin-bottom:12px}
+#vC .panel h3{margin:0 0 8px;font-size:12px;color:#94a3b8;font-weight:600}
+#vC .legend{display:flex;gap:16px;font-size:11.5px;margin-bottom:10px;flex-wrap:wrap}
+#vC .legend span{display:inline-flex;align-items:center;gap:5px}
+#vC .sw{width:18px;height:9px;border-radius:2px;display:inline-block}
+#vC .sw.t{background:#38bdf8;opacity:.35}
+#vC .sw.s{background:#38bdf8}
+#vC .sw.r{background:transparent;border:2px solid #f59e0b}
+#vC .chart{display:flex;align-items:flex-end;gap:8px;height:190px}
+#vC .chart .col{flex:1;position:relative;display:flex;flex-direction:column;align-items:center}
+#vC .chart .bar{width:100%;background:#38bdf8;border-radius:3px 3px 0 0;transition:height .4s}
+#vC .chart .bar.tent{opacity:.35;border:1.5px dashed #38bdf8}
+#vC .chart .bar.revd{outline:2px solid #f59e0b;outline-offset:1px}
+#vC .chart .lbl{font-size:10.5px;color:#94a3b8;margin-top:5px}
+#vC .chart .val{font-size:12px;font-weight:700;color:#fff;margin-bottom:3px}
+#vC .revmark{position:absolute;top:-14px;font-size:11px;color:#fbbf24;font-weight:700}
+
+/* 判据注解（原型结论层，三变体共用） */
+.verdict{position:fixed;left:14px;top:14px;z-index:9998;max-width:380px;background:#fff;border:1px dashed #64748b;
+  border-radius:8px;padding:9px 12px;font-size:11.5px;color:#334155;box-shadow:0 2px 12px rgba(0,0,0,.1)}
+.verdict b{font-size:11px;letter-spacing:.08em;color:#0f172a}
+.verdict ul{margin:4px 0 0;padding-left:16px}
+.verdict li{margin:3px 0}
+.verdict code{background:#f1f5f9;border-radius:3px;padding:0 4px;font-size:10.5px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<!-- 判据注解（结论层：每个变体挂自己的三条） -->
+<div class="verdict" id="verdict"></div>
+
+<!-- 演示控制 -->
+<div id="democtl">
+  <span class="tag">PROTOTYPE 演示</span>
+  <button id="d-pause">暂停</button>
+  <button id="d-fault">故障重放（重复涌灌注）</button>
+  <button id="d-dirty">注入真脏数据</button>
+  <button id="d-reset">重置</button>
+  <span class="asof" id="d-asof"></span>
+  <span class="asof" id="refreshlog"></span>
+</div>
+
+<!-- 变体切换条 -->
+<div id="switcher">
+  <button id="sw-prev" title="上一个变体（← 键）">◀</button>
+  <span class="lbl" id="sw-lbl">A</span>
+  <button id="sw-next" title="下一个变体（→ 键）">▶</button>
+  <span class="hint">← → 切换 · #variant= 可分享</span>
+</div>
+
+<script>
+/* ========================================================================
+   数据引擎（照原型 3 的加速时钟纪律：真实 1s = 模拟 10s，60s 窗口 = 6s 真实）
+   三态模型严格按 [03] Q2：同表同一行 (window_start, metric_name, dim_key)，
+   is_settled 0/1 + revision 递增；漏斗行同构（[03] Q1：修正面含漏斗行）。
+   ======================================================================== */
+const CFG = {
+  SIM_SECONDS_PER_TICK: 10,   // 加速时钟
+  WINDOW_MS: 60000,
+  REFRESH_INTERVAL_MS: 10000, // Superset 面板刷新 ≤10s（REQ-F-BI-02）
+  DIRTY_RATE_BASE: 0.004      // 设计值：基线脏率 ≈0.4%（--chaos-ratio 决定，非官方给出）
+};
+const STEPS = ['view_item','add_to_cart','begin_checkout','purchase'];
+const STEP_LABEL = {view_item:'浏览商品', add_to_cart:'加入购物车', begin_checkout:'发起结算', purchase:'支付成功'};
+const CATEGORIES = [
+  {name:'数码',w:22},{name:'服饰',w:20},{name:'家居',w:16},{name:'食品',w:14},
+  {name:'美妆',w:12},{name:'运动',w:9},{name:'图书',w:7}
+];
+const PROVINCES = [
+  {name:'广东',w:14},{name:'江苏',w:9},{name:'浙江',w:9},{name:'山东',w:8},{name:'河南',w:7},
+  {name:'四川',w:7},{name:'上海',w:6},{name:'北京',w:6},{name:'河北',w:5},{name:'湖北',w:5},
+  {name:'湖南',w:5},{name:'福建',w:5},{name:'安徽',w:4},{name:'陕西',w:4},{name:'辽宁',w:4}
+];
+const TILE_POS = {
+  '黑龙江':[6,0],'吉林':[7,1],'辽宁':[7,2],'内蒙古':[4,1],'新疆':[0,1],
+  '甘肃':[1,2],'宁夏':[3,2],'北京':[6,2],'天津':[7,3],'河北':[5,3],
+  '山西':[4,3],'陕西':[3,3],'青海':[1,3],'西藏':[1,4],'四川':[2,4],
+  '重庆':[3,4],'河南':[4,4],'山东':[6,4],'湖北':[4,5],'安徽':[5,5],
+  '江苏':[6,5],'上海':[7,5],'浙江':[7,6],'江西':[5,6],'湖南':[4,6],
+  '贵州':[3,6],'云南':[2,6],'广西':[3,7],'广东':[4,7],'福建':[6,7],'海南':[4,8]
+};
+function pickWeighted(list){
+  const tot = list.reduce((a,b)=>a+b.w,0);
+  let r = Math.random()*tot;
+  for(const it of list){ r -= it.w; if(r<=0) return it; }
+  return list[list.length-1];
+}
+function emptyWindow(start){
+  return { start, end:start+CFG.WINDOW_MS, pv:0, uv:{}, gmv:0, events:0, dirtyReal:0,
+    funnel:{view_item:0,add_to_cart:0,begin_checkout:0,purchase:0},
+    funnelObserved:{view_item:0,add_to_cart:0,begin_checkout:0,purchase:0},
+    categories:{}, provinces:{}, isSettled:false, revision:0, settledAt:null, revisedAt:null };
+}
+function newSim(){
+  const base = Math.floor(Date.now()/60000)*60000 - 4*60000;
+  const s = { now:base, windows:{}, sessions:{}, uidSeq:1, paused:false,
+    refreshLog:[], lastRefreshedAt:0, fault:false, dirtyPulse:0, baselineDirty:CFG.DIRTY_RATE_BASE };
+  for(let i=0;i<4;i++){ const ws = base-(i+1)*60000; s.windows[ws]=emptyWindow(ws); }
+  // 预热 4 个已落定窗口，其中一个带 revision=2（演示「已修订」三态）
+  for(let i=0;i<4;i++){
+    const ws = base-(4-i)*60000, w = emptyWindow(ws);
+    for(let j=0;j<46;j++){
+      const cat = pickWeighted(CATEGORIES), prov = pickWeighted(PROVINCES);
+      const step = j%4;
+      w.funnel[STEPS[step]] += 1; w.funnelObserved[STEPS[step]] += (step===3 && j>40)?0:1;
+      w.events += 1; w.pv += (step===0)?1:0; w.uv['h'+i+'_'+j]=true;
+      if(step===0){ w.categories[cat.name]=(w.categories[cat.name]||0)+1; }
+      w.provinces[prov.name]=(w.provinces[prov.name]||0)+1;
+      if(step===3) w.gmv += 160+Math.random()*340;
+    }
+    w.dirtyReal = Math.round(w.events*CFG.DIRTY_RATE_BASE);
+    w.isSettled = true; w.settledAt = ws+60000;
+    if(i===2){ w.revision=2; w.revisedAt=ws+60000+45000; w.pv+=3; w.funnel.view_item+=3; w.funnelObserved.view_item+=3; }
+    s.windows[ws]=w;
+  }
+  return s;
+}
+let SIM = newSim();
+
+function tick(sim){
+  const now = sim.now;
+  const ws = Math.floor(now/60000)*60000;
+  if(!sim.windows[ws]) sim.windows[ws]=emptyWindow(ws);
+  const w = sim.windows[ws];
+  const n = Math.max(1, Math.round(200*CFG.SIM_SECONDS_PER_TICK/10)); // ≈200 ev/s
+  for(let i=0;i<n;i++){
+    const uid='u-'+(sim.uidSeq++);
+    const step = Math.random()<0.62?0:(Math.random()<0.55?1:(Math.random()<0.6?2:3));
+    const et=STEPS[step];
+    w.funnel[et]+=1;
+    if(Math.random()>=0.06) w.funnelObserved[et]+=1; // --chaos-ratio 下少数跳步只有推断值
+    w.events+=1;
+    if(et==='view_item'){ w.pv+=1; const c=pickWeighted(CATEGORIES); w.categories[c.name]=(w.categories[c.name]||0)+1; }
+    const p=pickWeighted(PROVINCES); w.provinces[p.name]=(w.provinces[p.name]||0)+1;
+    w.uv[uid]=true;
+    if(et==='purchase') w.gmv+=160+Math.random()*340;
+  }
+  if(sim.dirtyPulse>0){ w.dirtyReal += sim.dirtyPulse; w.events += sim.dirtyPulse; sim.dirtyPulse=0; }
+  // 窗口关闭 → 落定（is_settled=1）
+  Object.values(sim.windows).forEach(ww=>{
+    if(!ww.isSettled && ww.end<=now){ ww.isSettled=true; ww.settledAt=now; }
+  });
+  // 迟到修正（≤120s）：改上一个已落定窗口，revision+1（[03] Q1/Q2）
+  if(Math.random()<0.18){
+    const prev = sim.windows[ws-60000];
+    if(prev && prev.isSettled){
+      prev.pv+=2; prev.funnel.view_item+=2; prev.funnelObserved.view_item+=2;
+      prev.revision+=1; prev.revisedAt=now;
+    }
+  }
+  // Superset 面板刷新：每 10s（模拟）触发一次 → 记「刷新到了」和「值变了没有」两件事
+  if(now - sim.lastRefreshedAt >= CFG.REFRESH_INTERVAL_MS){
+    sim.lastRefreshedAt = now;
+    const cur=sim.windows[ws];
+    const changed = !sim._lastVal || sim._lastVal!==cur.pv;
+    sim._lastVal = cur.pv;
+    sim.refreshLog.unshift({t:now, refreshed:true, valueChanged:changed, curPv:cur.pv,
+      curState: cur.isSettled?'落定':'暂定'});
+    if(sim.refreshLog.length>10) sim.refreshLog.pop();
+  }
+  sim.now += CFG.SIM_SECONDS_PER_TICK*1000;
+  return sim;
+}
+
+/* 只读视图模型 */
+function view(sim){
+  const S=sim, now=S.now;
+  const curWs=Math.floor(now/60000)*60000;
+  const cur=S.windows[curWs]||emptyWindow(curWs);
+  const all=Object.values(S.windows).sort((a,b)=>b.start-a.start);
+  const settled=all.filter(w=>w.isSettled);
+  const revised=settled.filter(w=>w.revision>0);
+  const last6=all.slice(0,6);
+  const sum=(k)=>last6.reduce((a,w)=>a+w[k],0);
+  const f={view_item:0,add_to_cart:0,begin_checkout:0,purchase:0};
+  const fo={view_item:0,add_to_cart:0,begin_checkout:0,purchase:0};
+  last6.forEach(w=>STEPS.forEach(s=>{f[s]+=w.funnel[s];fo[s]+=w.funnelObserved[s];}));
+  const cats={},provs={};
+  last6.forEach(w=>{Object.entries(w.categories).forEach(([k,v])=>cats[k]=(cats[k]||0)+v);
+                    Object.entries(w.provinces).forEach(([k,v])=>provs[k]=(provs[k]||0)+v);});
+  const rank=o=>Object.entries(o).map(([k,v])=>({name:k,v})).sort((a,b)=>b.v-a.v);
+  const evT=sum('events'), dirtyT=settled.reduce((a,w)=>a+w.dirtyReal,0);
+  return {
+    now, curWs, cur,
+    windowLabel:fmtClock(curWs)+'–'+fmtClock(curWs+60000),
+    secToClose:Math.max(0,Math.round((curWs+60000-now)/1000)),
+    windowsDesc:all.slice(0,6),
+    revisedCount:revised.length,
+    kpi:{ pv:sum('pv'), gmv:sum('gmv'),
+      uv:(()=>{const set={};last6.forEach(w=>Object.keys(w.uv).forEach(k=>set[k]=1));return Object.keys(set).length;})() },
+    funnel:f, funnelObserved:fo,
+    categories:rank(cats), provinces:rank(provs),
+    dirtyRate: evT?dirtyT/evT:0,
+    baselineDirty: S.baselineDirty,
+    dirtyDeltaPct: ((dirtyT/(evT||1))-S.baselineDirty)*100,
+    refreshLog:S.refreshLog, lastRefresh:S.lastRefreshedAt, fault:S.fault
+  };
+}
+function fmtClock(ms){const d=new Date(ms);const p=n=>String(n).padStart(2,'0');
+  return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());}
+const nf=n=>Number(Math.round(n)).toLocaleString('en-US');
+function sparkline(vals,color,w,h){
+  w=w||170;h=h||28; if(!vals.length) return '';
+  const mx=Math.max(...vals)||1,mn=Math.min(...vals),span=(mx-mn)||1;
+  const pts=vals.map((v,i)=>((i/(vals.length-1||1))*w).toFixed(1)+','+(h-2-(v-mn)/span*(h-6)).toFixed(1)).join(' ');
+  return '<svg class="spark" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'"><polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="1.6"/></svg>';
+}
+function bars(items,color){
+  const mx=items.length?items[0].v:1;
+  return items.map(it=>'<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12.5px">'+
+    '<span style="width:44px;opacity:.75">'+it.name+'</span>'+
+    '<span class="bar-track" style="flex:1;height:9px"><span class="bar-fill" style="width:'+
+    Math.max(2,it.v/mx*100).toFixed(1)+'%;background:'+color+'"></span></span>'+
+    '<span class="num" style="width:48px;text-align:right">'+nf(it.v)+'</span></div>').join('');
+}
+function tileMap(provs){
+  const mx=provs.length?provs[0].v:1;
+  return Object.entries(TILE_POS).map(([name,pos])=>{
+    const it=provs.find(p=>p.name===name); const v=it?it.v:0; const t=v/mx;
+    const bg='rgba(37,99,235,'+(0.10+t*0.8).toFixed(2)+')';
+    return '<div style="grid-column:'+(pos[0]+1)+';grid-row:'+(pos[1]+1)+';background:'+bg+
+      ';color:'+(t>0.45?'#fff':'#1e293b')+';border-radius:4px;display:flex;flex-direction:column;align-items:center;'+
+      'justify-content:center;font-size:10px;min-height:26px"><span>'+name+'</span><b>'+nf(v)+'</b></div>';
+  }).join('');
+}
+function treemap(cats){
+  const tot=cats.reduce((a,c)=>a+c.v,0)||1;
+  const cols=['#1f6feb','#0ea5e9','#8b5cf6','#ec4899','#f59e0b','#10b981','#64748b'];
+  return cats.map((c,i)=>'<div style="background:'+cols[i%cols.length]+';color:#fff;border-radius:4px;'+
+    'display:flex;flex-direction:column;justify-content:center;padding:5px 8px;width:'+(c.v/tot*100).toFixed(1)+'%;height:100%">'+
+    '<b style="font-size:12px">'+c.name+'</b><span style="font-size:11px;opacity:.85">'+nf(c.v)+' · '+(c.v/tot*100).toFixed(1)+'%</span></div>').join('');
+}
+
+/* 判据注解（三变体各自的结论草案，答案对拍后落票） */
+const VERDICTS = {
+  A: '<b>变体 A · 并排双图范式</b>（暂定/落定物理隔离成两张图）<ul>'+
+     '<li><b>Superset 落法</b>：同一 dataset 两张 ECharts 图，一张 <code>WHERE is_settled=0</code>、一张 <code>=1</code>——纯内置图表即可，<b>零插件</b></li>'+
+     '<li><b>判据映射</b>：暂定值「虚线左边框」＝自定义 CSS 类（gdd Q13 视觉区分）；已修订面板 <code>revision&gt;0</code> 紫色徽标</li>'+
+     '<li><b>代价</b>：同一数字占双倍版面；修订后两图数值会短暂不一致，需图例注明</li></ul>',
+  B: '<b>变体 B · 单表行内状态范式</b>（一张 Table 图，行级徽标+底色）<ul>'+
+     '<li><b>Superset 落法</b>：Table 图 + 自定义 SQL 列 <code>state = CASE WHEN is_settled=0 THEN \'暂定\' WHEN revision&gt;0 THEN \'已修订\' ELSE \'落定\' END</code>，条件格式按 state 上底色</li>'+
+     '<li><b>判据映射</b>：三态同行可见（[03] Q2 同表三态的最直译）；徽标列 = 视觉区分判据</li>'+
+     '<li><b>代价</b>：表格态「实时感」弱（无数值跳动）；需要 CSS 注入才好看</li></ul>',
+  C: '<b>变体 C · 单图双色叠加范式</b>（同一张柱图，暂定半透明+落定实色+修订描边）<ul>'+
+     '<li><b>Superset 落法</b>：最贴近官方能力的折衷——ECharts 柱图用<strong>自定义 SQL 透出</strong>三态列，颜色映射靠<strong>系列级着色</strong>；「修订描边」内置图表做不到，只能靠<strong>看板 CSS 类</strong>（见 Q5 判据注解）或拆两个系列</li>'+
+     '<li><b>判据映射</b>：一张图内直接看出「当前窗口是暂定」＝Q13 的强形态；修订次数以 ⚡ 角标标注（CSS 实现）</li>'+
+     '<li><b>代价</b>：对 CSS 定制依赖最重。CSS 边界（6.1.0 已证）：CSP <code>style-src</code> 含 <code>&#39;unsafe-inline&#39;</code> ⇒ 内联样式/看板 Edit CSS 可用；<code>script-src</code> 仅 <code>&#39;self&#39;+strict-dynamic</code> ⇒ <b>自定义 JS 无官方路径</b>。「修订描边/⚡角标」若 DOM 无挂钩点，就得退回变体 B 的徽标列或双系列</li></ul>'
+};
+const COMMON_FOOT = '<hr style="border:0;border-top:1px dashed #cbd5e1;margin:6px 0">'+
+  '<b>三变体共用判据</b><ul>'+
+  '<li><b>Q2 刷新矛盾</b>：右上演示面板显示每次「刷新到了」但值常「没变」——<code>REQ-F-BI-02</code> 的「观察到数值变化」应证 <b>60s 窗口关闭/修订时刻值确实变了</b>，10s 刷新只证「链路活着」；GIF 证据应录窗口关闭瞬间的跳变</li>'+
+  '<li><b>Q4 脏率</b>：点「故障重放」——重复涌灌注后脏率<b>不飙升</b>（重复不进分子，gdd D2）；点「注入真脏」才上升。基线＝kill 前 DLQ 快照（[03] Q7），非历史统计</li>'+
+  '<li><b>Q3 五面板</b>：全部内置图表（已证 6.1.0 MainPreset.ts）：Big Number / ECharts Bar（横向排行靠 orientation）/ ECharts Funnel / Table 条件格式 / ECharts Treemap——<b>零插件、零 JS 注入</b>。方格地图＝CSS Grid（Superset 无此图表；deck_geojson 需 GeoJSON 列＝变相 GIS，违背 gdd「不依赖底图」，排除）</li>'+
+  '<li><b>Q5 零账号</b>：<code>AUTH_TYPE=AUTH_ANONYMOUS</code> + <code>PUBLIC_ROLE_LIKE="Gamma"</code>（config.py 6.1.0 逐字：PUBLIC_ROLE_LIKE 注释 "useful if one wants to enable anonymous users to view dashboards… Explicit grant on specific datasets is still required"）——判据＝无痕浏览器直接打开 8088 看到刷新；dataset 须显式授 Public</li>'+
+  '<li><b>Q2 档位修正</b>：6.1.0 <code>DASHBOARD_AUTO_REFRESH_INTERVALS</code> 逐字只有 10s/30s/1m/5m/30m/1h/6h/12h/24h+关闭 10 档，<b>无 1s/5s 档</b>——「≤10s」的可达档位就是 10s，恰为上限</li>'+
+  '<li><b>Q6 交付</b>：zip（<code>import-dashboards -p</code>）是复现手段；判据仍是「浏览器打开能看能刷」（REQ-F-BI-01..03）——两者都要保留，zip 进 make init，判据进 verify</li></ul>';
+
+/* ============ 变体 A · 并排双图 ============ */
+function VariantA(d){
+  const t = d.cur;
+  return '<div id="vA">'+
+    '<div class="hd"><h1>电商实时看板 · 并排双图范式</h1>'+
+      '<span class="sub">窗口 '+d.windowLabel+' · 距关闭 '+d.secToClose+'s · 已修订窗口 '+d.revisedCount+' 个</span></div>'+
+    '<div class="grid">'+
+      '<div class="panel full duel">'+
+        '<div class="tentative"><h3>当前窗口 PV（暂定） <span class="badge t">暂定 · is_settled=0</span></h3>'+
+          '<div class="v">'+nf(t.pv)+'</div><div class="sub">数据源：WHERE is_settled = 0</div></div>'+
+        '<div class="settled"><h3>上一窗口 PV（落定） <span class="badge s">落定 · is_settled=1</span></h3>'+
+          '<div class="v">'+nf(d.windowsDesc[1]?d.windowsDesc[1].pv:0)+'</div>'+
+          '<div class="sub">数据源：WHERE is_settled = 1'+(d.windowsDesc[1]&&d.windowsDesc[1].revision>0?
+            ' · <span class="badge r">已修订 ×'+d.windowsDesc[1].revision+'</span>':'')+'</div></div>'+
+      '</div>'+
+      '<div class="panel'+(d.windowsDesc[1]&&d.windowsDesc[1].revision>0?' revised':' settled')+'"><h3>滚动 UV（近 5 窗口）</h3>'+
+        '<div class="v">'+nf(d.kpi.uv)+'</div>'+sparkline(d.windowsDesc.slice(0,5).map(w=>Object.keys(w.uv).length),'#8b5cf6')+'</div>'+
+      '<div class="panel settled"><h3>滚动 GMV</h3><div class="v">¥'+nf(d.kpi.gmv)+'</div>'+
+        sparkline(d.windowsDesc.slice(0,5).map(w=>w.gmv),'#10b981')+'</div>'+
+      '<div class="panel full"><h3>四步漏斗 · 观测值 vs 推断值（gdd §1.6：同屏两列，图例标注哪个是补记）</h3>'+
+        funnelDual(d)+'</div>'+
+      '<div class="panel"><h3>地域 · 省份排行（内置 Horizontal Bar）</h3>'+bars(d.provinces.slice(0,8),'#2563eb')+'</div>'+
+      '<div class="panel"><h3>地域 · 省份方格地图（CSS Grid 自绘，零 GIS）</h3>'+
+        '<div style="display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(9,1fr);gap:3px;min-height:190px">'+tileMap(d.provinces)+'</div></div>'+
+      '<div class="panel"><h3>品类分布（Treemap）</h3>'+
+        '<div style="display:flex;gap:3px;height:96px">'+treemap(d.categories)+'</div></div>'+
+      '<div class="panel settled"><h3>脏数据率（SHOULD · REQ-F-BI-04）</h3>'+
+        '<div class="v">'+(d.dirtyRate*100).toFixed(2)+'%</div>'+
+        '<div class="sub">基线 '+(d.baselineDirty*100).toFixed(2)+'% · Δ '+(d.dirtyDeltaPct>=0?'+':'')+d.dirtyDeltaPct.toFixed(2)+'pp</div></div>'+
+    '</div></div>';
+}
+function funnelDual(d){
+  return '<table style="width:100%;border-collapse:collapse;font-size:13px">'+
+    '<tr style="color:#6b7280;font-size:11px;text-transform:uppercase"><th style="text-align:left;padding:4px">步骤</th>'+
+    '<th>观测值 cnt_observed（直击）</th><th>推断值 cnt_inferred（含补记·单调）</th><th>差＝补记</th></tr>'+
+    STEPS.map(s=>'<tr><td style="padding:5px 4px;border-bottom:1px solid #f1f5f9">'+STEP_LABEL[s]+'</td>'+
+      '<td style="text-align:center" class="num">'+nf(d.funnelObserved[s])+'</td>'+
+      '<td style="text-align:center" class="num">'+nf(d.funnel[s])+'</td>'+
+      '<td style="text-align:center;color:#b45309" class="num">'+nf(d.funnel[s]-d.funnelObserved[s])+'</td></tr>').join('')+
+    '</table>';
+}
+
+/* ============ 变体 B · 单表行内状态 ============ */
+function VariantB(d){
+  const rows = d.windowsDesc.map(w=>{
+    const st = !w.isSettled?'t':(w.revision>0?'r':'s');
+    const stTxt = st==='t'?'暂定':(st==='r'?'已修订 ×'+w.revision:'落定');
+    return '<tr class="st-'+(st==='t'?'tentative':(st==='r'?'revised':'settled'))+'">'+
+      '<td class="num">'+fmtClock(w.start).slice(0,5)+'</td>'+
+      '<td><span class="pill '+st+'">'+stTxt+'</span></td>'+
+      '<td class="num">'+nf(w.pv)+'</td>'+
+      '<td class="num">'+nf(Object.keys(w.uv).length)+'</td>'+
+      '<td class="num">¥'+nf(w.gmv)+'</td>'+
+      '<td class="num">'+(w.dirtyReal?w.dirtyReal:0)+'</td>'+
+      '<td class="sub">'+(w.isSettled?'关闭于 '+fmtClock(w.settledAt).slice(0,5):'关闭于 '+fmtClock(w.end).slice(0,5)+'（未到）')+
+        (w.revisedAt?' · 修于 '+fmtClock(w.revisedAt).slice(0,5):'')+'</td></tr>';
+  }).join('');
+  return '<div id="vB">'+
+    '<h1 style="font-size:17px;margin:0 0 4px">电商实时看板 · 行内状态范式 <span class="sub">当前窗口 '+d.windowLabel+' · 距关闭 '+d.secToClose+'s</span></h1>'+
+    '<div class="cards">'+
+      '<div><h3 style="font-size:12px;color:#6b7280;margin:0">滚动 PV</h3><div class="cell-val">'+nf(d.kpi.pv)+'</div>'+
+        sparkline(d.windowsDesc.map(w=>w.pv),'#1f6feb')+'</div>'+
+      '<div><h3 style="font-size:12px;color:#6b7280;margin:0">滚动 UV</h3><div class="cell-val">'+nf(d.kpi.uv)+'</div>'+
+        sparkline(d.windowsDesc.map(w=>Object.keys(w.uv).length),'#8b5cf6')+'</div>'+
+      '<div><h3 style="font-size:12px;color:#6b7280;margin:0">滚动 GMV</h3><div class="cell-val">¥'+nf(d.kpi.gmv)+'</div>'+
+        sparkline(d.windowsDesc.map(w=>w.gmv),'#10b981')+'</div>'+
+      '<div><h3 style="font-size:12px;color:#6b7280;margin:0">脏数据率</h3><div class="cell-val">'+(d.dirtyRate*100).toFixed(2)+'%</div>'+
+        '<div class="sub">基线 '+(d.baselineDirty*100).toFixed(2)+'%</div></div>'+
+    '</div>'+
+    '<table><thead><tr><th>窗口</th><th>状态</th><th>PV</th><th>UV</th><th>GMV</th><th>脏数据</th><th>as-of</th></tr></thead>'+
+    '<tbody>'+rows+'</tbody></table>'+
+    '<div class="sub" style="margin-top:8px">漏斗同屏：'+STEPS.map(s=>STEP_LABEL[s]+' '+nf(d.funnelObserved[s])+'/'+nf(d.funnel[s])).join(' · ')+
+      '（观测/推断）</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">'+
+      '<div class="panel" style="border:1px solid #e5e7eb;border-radius:8px;padding:10px"><h3 style="margin:0 0 6px;font-size:12px;color:#6b7280">地域排行</h3>'+bars(d.provinces.slice(0,7),'#2563eb')+'</div>'+
+      '<div class="panel" style="border:1px solid #e5e7eb;border-radius:8px;padding:10px"><h3 style="margin:0 0 6px;font-size:12px;color:#6b7280">品类 Treemap</h3><div style="display:flex;gap:3px;height:90px">'+treemap(d.categories)+'</div></div>'+
+    '</div></div>';
+}
+
+/* ============ 变体 C · 单图双色叠加 ============ */
+function VariantC(d){
+  const wins=d.windowsDesc.slice(0,8).reverse();
+  const mx=Math.max(...wins.map(w=>w.pv))||1;
+  const cols=wins.map(w=>{
+    const st=!w.isSettled?'t':(w.revision>0?'r':'s');
+    return '<div class="col">'+
+      (w.revision>0?'<div class="revmark">⚡×'+w.revision+'</div>':'')+
+      '<div class="val">'+nf(w.pv)+'</div>'+
+      '<div class="bar'+(st==='t'?' tent':'')+(st==='r'?' revd':'')+'" style="height:'+Math.max(3,w.pv/mx*150)+'px"></div>'+
+      '<div class="lbl">'+fmtClock(w.start).slice(0,5)+(st==='t'?'<br>暂定':'')+'</div></div>';
+  }).join('');
+  return '<div id="vC">'+
+    '<h1>电商实时看板 · 单图双色叠加范式</h1>'+
+    '<div class="sub" style="margin-bottom:12px">窗口 '+d.windowLabel+' · 距关闭 '+d.secToClose+'s · 刷新 10s</div>'+
+    '<div class="legend"><span><span class="sw t"></span>暂定（is_settled=0，半透明）</span>'+
+      '<span><span class="sw s"></span>落定（is_settled=1）</span>'+
+      '<span><span class="sw r"></span>已修订（revision&gt;0，描边）</span></div>'+
+    '<div class="panel"><h3>PV · 逐 1 分钟窗口</h3><div class="chart">'+cols+'</div></div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">'+
+      '<div class="panel"><h3>滚动 KPI</h3>'+
+        '<div style="font-size:22px;font-weight:700;color:#fff">'+nf(d.kpi.pv)+' <span class="sub" style="font-size:12px">PV</span></div>'+
+        '<div style="font-size:22px;font-weight:700;color:#fff">'+nf(d.kpi.uv)+' <span class="sub" style="font-size:12px">UV</span></div>'+
+        '<div style="font-size:22px;font-weight:700;color:#fff">¥'+nf(d.kpi.gmv)+' <span class="sub" style="font-size:12px">GMV</span></div></div>'+
+      '<div class="panel"><h3>脏数据率</h3><div style="font-size:26px;font-weight:700;color:#fbbf24">'+(d.dirtyRate*100).toFixed(2)+'%</div>'+
+        '<div class="sub" style="color:#94a3b8">基线 '+(d.baselineDirty*100).toFixed(2)+'% · 故障演练期不得飙升</div></div>'+
+      '<div class="panel"><h3>地域 Top</h3>'+bars(d.provinces.slice(0,6),'#38bdf8')+'</div>'+
+    '</div>'+
+    '<div class="panel"><h3>四步漏斗 · 观测 vs 推断</h3>'+funnelDual(d).replace(/#f1f5f9/g,'#334155')+'</div>'+
+    '</div>';
+}
+
+/* ============ 刷新矛盾演示面板（右上，覆盖在 democtl 下方） ============ */
+function refreshPanelHTML(d){
+  return d.refreshLog.map(r=>'<div style="display:flex;gap:6px;align-items:center;margin:2px 0">'+
+    '<span class="num" style="color:#6b7280">'+fmtClock(r.t).slice(0,8)+'</span>'+
+    '<span style="color:#047857;font-weight:600">刷新 ✓</span>'+
+    (r.valueChanged?'<span style="color:#b45309;font-weight:600">值变了 → '+nf(r.curPv)+'</span>'
+                   :'<span style="color:#9ca3af">值没变（'+nf(r.curPv)+'）</span>')+
+    '<span class="sub">'+r.curState+'</span></div>').join('') ||
+    '<div class="sub">等待第一次刷新…</div>';
+}
+
+/* ============ 切换器 ============ */
+const VARIANTS=[
+  {key:'A',name:'并排双图范式',render:VariantA},
+  {key:'B',name:'单表行内状态范式',render:VariantB},
+  {key:'C',name:'单图双色叠加范式',render:VariantC}
+];
+function currentVariant(){
+  const q=new URLSearchParams(location.search).get('variant');
+  const h=(location.hash.match(/variant=([ABC])/)||[])[1];
+  const k=(q||h||'A').toUpperCase();
+  return VARIANTS.filter(v=>v.key===k)[0]||VARIANTS[0];
+}
+function render(force){
+  const v=currentVariant(), d=view(SIM);
+  document.getElementById('app').innerHTML=v.render(d);
+  document.getElementById('sw-lbl').textContent=v.key+' · '+v.name;
+  document.getElementById('verdict').innerHTML=VERDICTS[v.key]+COMMON_FOOT;
+  document.getElementById('d-asof').textContent=
+    '模拟时钟 '+fmtClock(SIM.now)+' · 上次面板刷新 '+fmtClock(SIM.lastRefreshedAt)+' · 10× 加速 · 演示面板刷新记录：';
+  document.getElementById('refreshlog').innerHTML=refreshPanelHTML(d);
+  try{history.replaceState(null,'',location.pathname+location.search+'#variant='+v.key);}
+  catch(e){location.hash='variant='+v.key;}
+}
+function cycle(dir){
+  const v=currentVariant(); let i=VARIANTS.indexOf(v)+dir;
+  if(i<0)i=VARIANTS.length-1; if(i>=VARIANTS.length)i=0;
+  location.hash='variant='+VARIANTS[i].key; render(true);
+}
+document.getElementById('sw-prev').addEventListener('click',()=>cycle(-1));
+document.getElementById('sw-next').addEventListener('click',()=>cycle(1));
+document.addEventListener('keydown',e=>{
+  const t=document.activeElement;
+  if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;
+  if(e.key==='ArrowLeft')cycle(-1); if(e.key==='ArrowRight')cycle(1);
+});
+window.addEventListener('hashchange',()=>render(true));
+document.getElementById('d-pause').addEventListener('click',function(){
+  SIM.paused=!SIM.paused; this.textContent=SIM.paused?'继续':'暂停'; this.className=SIM.paused?'on':'';});
+document.getElementById('d-fault').addEventListener('click',function(){
+  // 故障重放：重复涌灌 → 重复不进脏率分子（gdd D2），脏率不得飙升
+  SIM.fault=true; this.className='on';
+  const ws=Math.floor(SIM.now/60000)*60000;
+  const w=SIM.windows[ws]; w.events+=1200; // 重复只增分母/计数通道，不增 dirtyReal
+  setTimeout(()=>{this.className='';SIM.fault=false;},2500);
+});
+document.getElementById('d-dirty').addEventListener('click',()=>{SIM.dirtyPulse=30;});
+document.getElementById('d-reset').addEventListener('click',function(){
+  SIM=newSim(); document.getElementById('d-pause').textContent='暂停';
+  document.getElementById('d-pause').className=''; render(true);});
+setInterval(function(){
+  if(!SIM.paused) tick(SIM);
+  render(false);
+},1000);
+render(true);
+</script>
+</body>
+</html>
+

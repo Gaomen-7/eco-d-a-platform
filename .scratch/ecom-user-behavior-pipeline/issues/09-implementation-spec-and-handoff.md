@@ -1,7 +1,7 @@
 # 09 · 施工规格与交接：19 条已决怎么变成下一会话能直接照做的 spec.md
 
 Type: grilling
-Status: open
+Status: claimed
 Blocked by: 01, 03, 04, 05, 06, 07, 08
 Blocked by (note): 这是全图的**汇聚节点**——它要把其余八张票的答案压成一份可施工的规格，所以它被所有票阻塞。
 Created: 2026-10-20（新增；原「目的地＝spec.md」在 D4 收窄为「spec-ready 路线图」后，落地动作需要一张票）
