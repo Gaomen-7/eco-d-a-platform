@@ -2,9 +2,9 @@
 
 Kind: map
 Label: wayfinder:map
-Status: open
+Status: resolved
 Created: 2026-10-20
-Progress: 9 票，**8 已落子**（P1 最小可证集 · 唯一真相源 · Paimon/Flink/Doris 一手事实 · 可复现边界 · Doris 容量与可证性 · 离线分层范围与五层形状 · 语义与判据 · **看板交付**）｜**现在的前沿：[09]（[06] 已落子，全部输入汇聚就绪）**｜迷雾 **4 条**（F2/F4 已收口）｜图形见 [map-dag.md](issues/map-dag.md)
+Progress: 9 票，**9 已落子（全部）**（P1 最小可证集 · 唯一真相源 · Paimon/Flink/Doris 一手事实 · 可复现边界 · Doris 容量与可证性 · 离线分层范围与五层形状 · 语义与判据 · 看板交付 · **施工规格与交接**）｜**前沿：空——地图完成（[09] 落子，⇒ D12）**｜迷雾 **0 条在图**（F2/F4/F5/F8 已收口；F1 残留与 F3/F6/F7 随 D12 转交 spec 撰写会话）｜图形见 [map-dag.md](issues/map-dag.md)
 
 > **本文件是这张地图的唯一权威**；依赖图见 [map-dag.md](issues/map-dag.md)（辅助视图，与本文逐条对齐）。
 > **上游档案**：`SRS.md`（必须做到什么）→ `gdd.md`（每个功能怎么做）→ `HLD.md`（结构、栈定案、运行约束）→ `FSR.md`（路线冻结）→ `hld-research-*.md`×8（一手证据）。
@@ -53,15 +53,17 @@ Progress: 9 票，**8 已落子**（P1 最小可证集 · 唯一真相源 · Pai
   - ⚠️ D1–D5 是本轮 agent 的推导产物，一手论据在 HLD 对应章节与 `canonical-truth.md` 的 file:line 引用，尚未在票里逐条重述。
   - **(D6) Paimon / Flink / Doris 用法的一手事实**（票 [08] 已落子，全文见 [issues/08](issues/08-lake-shaping-and-schema-evolution.md#answer) 与 [research/08a](research/08a-paimon-flink-sql.md)·[08b](research/08b-flink-sql-late-and-early-fire.md)·[08c](research/08c-doris-mow-partial-columns.md)）：**14 条副作用面逐条归档**，其中**八条会改变已有设计**——①**B5 成立**：Flink 2.2 仍无 SQL 级迟到侧输出（FLINK-10031/20527 均 Open/Unresolved，官方原话 "The Table API & SQL drop late events right now."）⇒ gdd D11「混合路线」由文档级断言升为**源码+双 JIRA 现状级**的硬约束，**冲突 C 可从「挂起待证」转正**；②**B6 更强**：唯一支持 early-fire 的 Group Window Aggregation 在 2.2 官方文档标 **`deprecated`**（源码 "will be dropped"），TVF 聚合官方明写 "do not emit intermediate results" ⇒ gdd D12 需补记该事实；③**A3 证伪**：Paimon 层级是 catalog→database→table，**`ecom_lake` 官方对应 database**，`REQ-F-LAKE-06`「单一 catalog（库名 ecom_lake）」一个词混说两件事且判据不具区分力 ⇒ **建议新增冲突 M**；④**A1 证伪**：Paimon 2.1.0 **无 `MERGE INTO` 语句**，官方等价物是 `sys.merge_into` procedure；⑤**A2 部分证伪**：`$files`/`$snapshots` **官方未给完整列名清单**，`$schemas` 无 `schema` JSON 列 ⇒ `research-notes.md` 的列名清单非官方逐字；⑥**A8 补强**：Paimon **主键表默认 MOR 而非 MOW**（MOW 需显式 `deletion-vectors.enabled`），官方 bucket 指引 "200 MB–1 GB per bucket" 明写是 MOR 口径；⑦**C7 收窄**：Doris **普通 `partial_columns` 受 "Batch constraint" 限制**（一批内只能更新同一组列），一批内多列组须用 3.1.0+ 灵活列更新（JSON + `skip_bitmap_column`，且禁用 `sequence_col`）⇒ gdd §1.5 的「`partial_columns=true`」**不是表属性**。⑧**D-11 补强**：**SQL 侧连 allow-lateness 都没有**（FLINK-24000 Closed/Later，逐字 "Currently, Window aggregate does not support allow-lateness like Group Window Aggregate."）⇒ gdd D10 的「允许延迟内→窗口修正」**必须落在 DataStream 段**，`allowedLateness` 是 DataStream-only；⑨**D-14 排除替代路径**：CUMULATE 官方只声明累计语义，**未给出**支持 `early-fire.*`，源码上走 TVF 路径会被直接抛异常。另补：官方迟到机制映射（`allowedLateness` → late firing → "multiple results for the same computation … deduplicate them"；`sideOutputLateData` → "the data that was discarded as late"）为 gdd D10 落点提供依据；`sys.expire_snapshots(retain_max => N)` 为 `REQ-F-LAKE-08` 判据提供可执行手段；`file://` compaction 官方入口为 action jar + `flink run compact`、**成本数字官方未给出**。**版本锚点未动**，不重启选型论证。
 
+- **(D12) 施工规格与交接：spec 蓝图定案，正文归专门会话**（票 [09] 已落子，2026-10-20，14 问全按推荐＋Q8 修正「spec.md 由专门会话撰写，本票不生成正文」；全文见 [issues/09](issues/09-implementation-spec-and-handoff.md#answer)）：①**形态**＝单份 `spec.md`（与 SRS 分工：SRS＝必须做什么 / spec＝怎么施工怎么判；`SRS.md:6` 不冲突）、**自足式**（表/句/判据逐字嵌入，票只作「为什么」档案；已解票保留原文，不加 `folded` 状态）；②**骨架九节**（头部定位 / 全局铁律（canonical-truth §3 逐字）/ P0 薄写 / P1 / P2 / 看板 / 逐字修订清单 / 不做清单 / 追溯表），闸门＝追溯表逐行全命中、责任人＝撰写会话；③**落笔链取代**——canonical-truth §5「统一由 [09] 落笔」改为「**spec 会话汇编修订清单 → 施工会话机械执行**」，各票「落笔归 [09]」＝spec 会话的输入清单；④**交接**＝handoff 入口四条（①写 spec ②按 spec §⑦落笔上游 ③P1 施工 ④三张须先获批实机 task），原定入口「Doris 改道」**已执行入库**（`4a4759a`：镜像建成跑通、`make verify` fail=0、八缺陷教训进 HLD §8）；⑤**完成语义**——[09] resolved ⇔ 地图完成、frontier 空；**F1 残留（六处落点逐字）与 F3/F6/F7 转出本图**，归 spec 撰写会话/施工面（卡口径走 09-Q10 兜底：spec 附录「冲突待回票」，不回开地图）。**地图至此完成。**
+
 ## Not yet specified
 
-1. **F1 · 事件 schema 的版本化铁律与演进演练**→ **已由 [01] 落子**（`canonical-truth.md` §3.1：四条铁律 + 六处落点分工）；仅剩「六处落点的逐字撰写」随 [09] 执行。
+1. **F1 · 事件 schema 的版本化铁律与演进演练**→ **已由 [01] 落子**（`canonical-truth.md` §3.1：四条铁律 + 六处落点分工）；仅剩「六处落点的逐字撰写」**随 spec 撰写会话执行**（D12 转交）。
 2. ~~**F2 · 公开数据集回放在首版的范围**~~ → **已由 [05] 收敛**：P2 门槛批由生成器 `dump` 现产（104 万事件 / 3 天跨度，落 `data/` 不入 git）；`REQ-F-LAKE-09` 维持 COULD、公开数据集回放**不在 P2 最小集内**；回放可用性由冲突 H 的相对下界保障（签字版在 `canonical-truth.md` §2.2）。
-3. **F3 · 生成器 live 模式的确定性**（挂 [02]）：`REQ-F-GEN-06`（同种子同哈希）在 live 下要同时满足「pin 到补丁号的 Faker」「同种子」「按速率写」——速率是墙上时钟量，三者能否同真说不清。
+3. **F3 · 生成器 live 模式的确定性**（挂 [02]）：`REQ-F-GEN-06`（同种子同哈希）在 live 下要同时满足「pin 到补丁号的 Faker」「同种子」「按速率写」——速率是墙上时钟量，三者能否同真说不清。→ **D12 转出本图**（P1 施工面参数）。
 4. ~~**F4 · 迟到计数表落在哪**~~ → **已由 [05] 收口**：原则（[01] §3.3）＋取值（表名 **`dwd_late_event_count`**、粒度 **`dt` × 60 s 档**、append、只存计数）齐备；FC-2 已批，落笔归 [09]。
 5. ~~**F5 · `client` 何时不该存在、空转开销**~~ → **已由 [04] 落子**：`client` 在 **Docker Desktop 面必需、原生 Linux 面可选**（官方「Linux hosts can reach the nodes directly」）；常驻记账用**按需 `run --rm`**，并计入「全部声明上限」口径（10.5 GiB）而非「常驻上限」（5.25 GiB）。见 [`reproducibility-boundary.md`](reproducibility-boundary.md) §4。
-6. **F6 · 降级阶梯的触发条件**（挂 [02]）：HLD §8-R6 的 Superset 减服务 A/B/C、gdd §1.11 的 G4（Kafka 原生镜像）都没写「什么信号出现才降级、降级后谁回填实测」。
-7. **F7 · 世界时钟**（挂 [02]）：`--seed` 下的回放会带 2022-2024 的时间戳，而 1 分钟窗口按「当前水印」关窗——回放怎么被当成实时喂进去，涉及是否允许写 event_time 而不是墙钟。
+6. **F6 · 降级阶梯的触发条件**（挂 [02]）：HLD §8-R6 的 Superset 减服务 A/B/C、gdd §1.11 的 G4（Kafka 原生镜像）都没写「什么信号出现才降级、降级后谁回填实测」。→ **D12 转出本图**（P1 施工面参数）。
+7. **F7 · 世界时钟**（挂 [02]）：`--seed` 下的回放会带 2022-2024 的时间戳，而 1 分钟窗口按「当前水印」关窗——回放怎么被当成实时喂进去，涉及是否允许写 event_time 而不是墙钟。→ **D12 转出本图**（P1 施工面参数，卡施工口径时走 09-Q10 兜底）。
 8. ~~**F8 · 多 JDK / 多 Python 的现实包袱**~~ → **已由 [04] 收敛为一句可判的话**：**JDK/Maven 只服务于「构建 Flink 作业」，不在起链路路径上**（`up`/`init`/`verify`/`lint`/`typecheck` 都不需要它）⇒ 它既不挡 L0，也不进 `REQ-F-ORCH-01` 的判据；`uv` 的三处偏差属生成器施工面，归 **P1**。见 [`reproducibility-boundary.md`](reproducibility-boundary.md) §6。
 
 ## Out of scope
@@ -85,7 +87,7 @@ Progress: 9 票，**8 已落子**（P1 最小可证集 · 唯一真相源 · Pai
 > ✅ **2026-10-20 再后续：[05] 已落子**（⇒ **D9**，18 问全按推荐：强序＋判据分层、dump 门槛批、单目标 `replay`、五层形状表、快照 [5,20]、不变量改三条断言、全 SQL 零 jar、warehouse 卷硬约束；**[03] 解除阻塞**；F2/F4 收口）。**[05] 的 5 项批准与 6 条落笔分工见票 Answer 末节，全部归 [09] 汇聚。**
 > ✅ **2026-10-20 三后续：[03] 已落子**（⇒ **D10**，10 问一轮全按推荐：修正面含漏斗行、暂定/落定/修正同表同行、对账断言只比 `is_settled=1` 且 P1 SKIP、`verify` 分层进码、幂等不进每次 verify（SRS 改写已签）、`verify-fault` 120 s/300 s 参数化、负断言基线＝DLQ 快照、不新增 `make check`、fail 痕迹三层；**[05] 三条接口全闭合**；GLOSSARY 零修订）。**[03] 的 1 项签字与 6 条落笔分工见票 Answer 末节，归 [09] 汇聚。**
 > ✅ **2026-10-20 四后续：[06] 已落子**（⇒ **D11**，5 项裁决「全按推荐」：三态载体 B 为主+A 式补充、`REQ-F-BI-02` 判据改写**已签**、方格地图改横条排行、zip 手段/判据两留、`make init` 固定 database_uuid 硬约束；官方取证全部 6.1.0 tag 源码级，「官方未给出」新增 8 条）。**[06] 的 1 项签字与 4 条落笔分工见票 Answer 末节，归 [09] 汇聚。**
-> **现在的前沿：[09]**（汇聚 [01]–[08] 全部落笔输入）——唯一可开。
+> ✅ **2026-10-20 五后续：[09] 已落子**（⇒ **D12**，14 问全按推荐＋Q8 修正：spec.md 形态/自足边界/九节骨架/追溯表闸门定案，**正文由专门会话撰写**；落笔链改为「spec 会话汇编 → 施工执行」；原定 Doris 改道已由 `4a4759a` 执行入库）。**地图完成——前沿空**；下一步入口见 `.scratch/handoff/20261020-233014-194-spec-ready.md`。
 >
 > ~~⚠️ **动笔前的必读指针（[04] 用，已被执行完毕）**~~ —— 保留作留痕：
 > - ~~**必读 ①**：`canonical-truth.md` **§1 冲突 I**（内存双口径的逐字新句）~~ → [04] 已按它写 HLD §4.2 的体积表与两口径说明。

@@ -1,7 +1,7 @@
 # 09 · 施工规格与交接：19 条已决怎么变成下一会话能直接照做的 spec.md
 
 Type: grilling
-Status: claimed
+Status: resolved
 Blocked by: 01, 03, 04, 05, 06, 07, 08
 Blocked by (note): 这是全图的**汇聚节点**——它要把其余八张票的答案压成一份可施工的规格，所以它被所有票阻塞。
 Created: 2026-10-20（新增；原「目的地＝spec.md」在 D4 收窄为「spec-ready 路线图」后，落地动作需要一张票）
@@ -26,4 +26,43 @@ Source: map.md · Destination / Notes · `docs/agents/issue-tracker.md` · 三�
 
 ## Answer
 
-<!-- 待解。解析步骤：Skill "grilling" → Status: resolved → 地图完成，往 map.md 追加最后一条 Decision，并把 frontier 标为「空」 -->
+> **2026-10-20 落子**。两轮 grilling、14 问（R1：Q1–Q7 形态/边界/票档/交接/入场/完成语义/不做清单；R2：Q8–Q13 骨架/闸门/冲突/入口/P0 详略/git 卫生；收口：Q14 迷雾转交），**全部按推荐落子**；其中 **Q8 带用户修正：spec.md 由专门会话撰写，本票只定蓝图与闸门，不生成正文**。
+
+### 裁决表
+
+| # | 问 | 裁决 |
+| --- | --- | --- |
+| Q1 | 形态与文件名 | **单份 `spec.md`**（`docs/agents/issue-tracker.md` 约定路径）；头部自声明与 SRS 的分工；`SRS.md:6`「不使用 spec.md」不动——那句说的是 SRS 自己不用该名，不与本文件冲突 |
+| Q2 | 内容边界 | **自足式**：施工要用的表/句/判据**逐字嵌入**；票链接只作「为什么」的档案指针 |
+| Q3 | 落笔执行点 | **清单进 spec、改动算施工第一步**——[09] 不就地改 SRS/HLD/gdd（「不改 `SRS.md`」约束维持） |
+| Q4 | 已解票归宿 | **保留原文**作决策档案，不加 `folded` 新状态（`Status` 枚举封闭） |
+| Q5 | 交接仪式 | 照三份 P0 交接格式产 `handoff/…-spec-ready.md`，放 `handoff/` 根、不入库（用户 2026-10-20「handoff 不入库」裁决） |
+| Q6 | 完成语义 | **[09] resolved ⇔ 地图完成**；施工类后续不开新票、只进 handoff |
+| Q7 | 不做清单 | spec 设专节：收 map `Out of scope` ＋各票判不做项，**单向引用 map 不复制**（防第二真相源） |
+| Q8 | spec 骨架 | 九节定案（见下「spec.md 蓝图」）；**正文归专门会话撰写，本票不生成** |
+| Q9 | 完备闸门 | spec §⑨**追溯表**逐行自检全命中才算成；**责任人＝spec 撰写会话**（随 Q8 修正迁移） |
+| Q10 | 新矛盾处理 | 草拟中发现的矛盾**当场作为追加问句请用户裁决**；兜底记 spec 附录「冲突待回票」，**不回开地图** |
+| Q11 | handoff 入口 | 见下「交接」；（落子时发现原入口②Doris 改道**已被执行入库 `4a4759a`**，入口表据实更新） |
+| Q12 | P0 详略 | 薄写已完成事实＋指针；（原推荐「Doris 残留详写」——落子时证实 `4a4759a` 已把 P0 全收口，故全节薄写，八缺陷教训已在 HLD §8） |
+| Q13 | git 卫生 | 删 `nul`（0 字节误产物）与三个 `.scratch/tmp*` 验证脚本；两条本地 commit、**不推送** |
+| Q14 | 迷雾转交 | **F1 残留与 F3/F6/F7 随 D12 转出本图**，归 spec 撰写会话/施工面 |
+
+### 对既有分工的取代（下一会话必读）
+
+- `canonical-truth.md` §5「**落笔统一由 [09] 执行**」经本票 Q3+Q8 裁决改为三段链：**spec 撰写会话**汇编逐字修订清单（spec §⑦）→ **施工会话**机械执行改上游。各票 Answer 末节「落笔归 [09]」的条目一律按此链理解——它们是 **spec 会话的输入清单**，不是对本票会话的指令。
+- spec 不叫「收口产物」（D5③ 维持）：`canonical-truth.md` 是冲突裁决权威，spec 是施工总纲，两者并存。
+
+### spec.md 蓝图（交给撰写会话）
+
+- **形态**：单份 `.scratch/ecom-user-behavior-pipeline/spec.md`，中文，术语从 `GLOSSARY.md`，数字一律标 `官方给出`/`设计值`。
+- **骨架九节**（Q8）：①头部定位与阅读顺序（SRS＝必须做什么 / HLD＝为什么这么定 / spec＝怎么施工怎么判 / 票＝为什么的档案）②全局铁律（`canonical-truth.md` §3.1–3.3 逐字：schema_version 四律、离线 DDL 三原则、迟到计数表三原则）③P0（薄写：已完成事实＋指针 HLD §4 /`reproducibility-boundary.md`；含 `4a4759a` 八缺陷与「不删卷重启周期」纪律）④P1 实时闭环（[02] 圈表 PI-1/2/3 ＋ [03] 语义与断言 ＋ verify/verify-fault 分层）⑤P2 离线分层（[05] 五层形状表、A1/A2/A3 断言、快照判据、warehouse 卷等 DDL 硬约束）⑥看板交付（[06] 零账号四步链、三态画法 B 主 A 辅、`database_uuid` 硬约束、`REQ-F-BI-02` 签字句）⑦**逐字修订清单**（按文件分组：文件 → 定位 → 原句 → 新句；输入源＝canonical-truth §2/§4/§6 ＋各票 Answer 末节落笔分工）⑧不做清单（Q7）⑨**追溯表**（Q9）。
+- **闸门（Q9）**：⑨行＝D1–D12 ＋ canonical-truth §4 改写清单 ＋各票落笔分工条目，逐行标落点章节，**全命中才发布**。
+- **迷雾承接（Q14）**：F1 残留（canonical-truth §3.1 六处落点的逐字撰写）＝spec 正文素材；F3（live 确定性）/F6（降级触发）/F7（世界时钟）＝P1 施工面参数——卡住施工口径时按 Q10 兜底记 spec 附录，不回开地图。
+
+### 交接（Q5/Q11，据实更新）
+
+handoff 文件：[`../../handoff/20261020-233014-194-spec-ready.md`](../../handoff/20261020-233014-194-spec-ready.md)（不入库）。入口四条：**① 写 spec.md**（专会话、按本蓝图，先行）；**② 按 spec §⑦落笔上游文件**（机械）；**③ P1 施工**（按 spec §P1）；**④ 三张须先获批实机 task**（HOUR 演练 / DROP 后回盘 / compaction×20 GB 对撞——挂审批门，不可自开）。原定入口「Doris 改道＋Bug B/C/D」**已执行入库**（`4a4759a`，2026-10-20 15:11：镜像首次建成实机跑通、`make verify` fail=0、Doris 断言 PENDING→PASS、Bug H 教训进 HLD §8），handoff 改记「已完成勿重做」。
+
+### 产物与完成
+
+本票产物＝本 Answer ＋ handoff 文件 ＋ map.md **D12** 与前沿置空 ＋ map-dag 终态 ＋ 两条本地 commit（`f48dbce` [03]/[06] 补遗、本条落子）；**spec.md 本体不在其中**。`Status: resolved` ⇒ **地图完成，frontier 空**（Q6/Q14）。
