@@ -247,6 +247,8 @@ interface PyrightJsonDiagnostic { file; severity; message; range?; rule? }
 > 本仓「**沙箱**」有**两个所指**，必须分开命名（既有文档把它们混在 R8/U3 一处，是术语债）：
 > **甲·运行面沙箱**＝跑这条链路的**容器运行面**；**乙·会话沙箱**＝**agent 会话**的文件写权限模式。两者**无因果关系**。
 > **一条被证伪的因果**：「放宽沙箱才能跑 docker」是**错误**的——容器与卷数据由 Docker Desktop 自己的 VMM 写入，**不经 agent 令牌**。
+>
+> ★ **可复现的边界另见** [`reproducibility-boundary.md`](reproducibility-boundary.md)（票 [04] 产物）：主体＝制品而非平台、**四档契约 L0–L3**、「一条命令」＝`make init` 的四段、`client` 的两平台必需性、**能力×平台成立性表**、以及三份 P0 交接的合流清单。本节只写运行面与沙箱约束，**不重复那张表**。
 
 ### 4.1 甲·运行面沙箱：维持 **Docker Desktop / WSL2**
 
@@ -290,8 +292,13 @@ interface PyrightJsonDiagnostic { file; severity; message; range?; rule? }
 | 逐服务显式 `mem_limit` | **每个服务都写**，且**同时写 `memswap_limit` ＝ `mem_limit`** | ✅ **P0 已证**：`config-check` 断言全 PASS（8 服务逐条比对） |
 | 不与 `deploy.limits.memory` 并存 | **只写 `mem_limit`** | 官方：`deploy` 是**可选段**（未实现即忽略）；二者并存时官方要求**必须一致**，写错一个即自相矛盾 |
 | 「不允许有服务缺省」 | 由 `make verify` / `config-check` **脚本断言** | ⚠️ **P0 实测确认**：`docker compose config` 能**列出** `mem_limit` 但**不报缺** ⇒ 判据必须脚本化。规则已写进 `Makefile` 的 `config-check` 目标 |
-| 冷启动/体量记账 | **用 `docker image inspect`**，不用 `docker images` | 本机 `UseContainerdSnapshotter=true`，官方警告此时 `docker images` 会**把压缩 blob 叠加进读数、显著虚高**。**P0 实测镜像体积**（`image inspect`）：Kafka 654.1 MiB / Flink 1491.4 MiB / **Superset 1207.8 MiB**（官方未给出，此处为实测取得）/ Doris base-latest 1.96 GB |
+| 冷启动/体量记账 | **用 `docker image inspect`**，不用 `docker images` | 本机 `UseContainerdSnapshotter=true`，官方警告此时 `docker images` 会**把压缩 blob 叠加进读数、显著虚高**。**实测镜像体积**（`image inspect`）：Kafka 654.1 MiB / Flink 1491.4 MiB / **Superset 1207.8 MiB** / Doris base-latest 1.96 GB / **`eco/doris:4.1.5`（自建）12.60 GiB**（13,526,796,833 B，2026-10-20 实测）/ `mysql:8.0`（`client` 用）1.01 GiB |
 | 常驻预算 | 见下表。**声明的 `mem_limit` 上限合计**：默认 `up` = **5.25 GiB**；`--profile doris` = **10.25 GiB**（10,496 MiB）⇒ **两种场景都在 11.68 GiB 天花板内**（余量 6.43 / **1.43** GiB） | `docker stats --no-stream` 实测；`make config-check` 断言。⚠️ 统计口径见下注 |
+
+> ★ **Doris 自建镜像体积的读法（2026-10-20 实测）**：`eco/doris:4.1.5` = **12.60 GiB**（`image inspect`），是 Kafka+Flink+Superset 三者之和（**3.28 GiB**）的 **3.8 倍**。这是「Doris **必须本地构建**」（官方不发版本化镜像）的体积代价，也是「零状态冷启」档豁免 30 分钟判据的根因之一（另一根因是 ≈35 min 的构建耗时）。详见 [`reproducibility-boundary.md`](reproducibility-boundary.md) §3。
+> ★★ **口径核实已结案（2026-10-20，结论与旧猜测相反）**：U-ν 旧文的 `docker images` = **13.5 GB** 与本次 `image inspect` 的 **12.60 GiB（＝13,526,796,833 B ＝13.53 GB 十进制）** **一致** ⇒ **旧读数不是 containerd snapshotter 造成的虚高**。规则仍照旧（**记账一律用 `image inspect`**），但引用时**必须带单位**（GiB 与 GB 差 7%，这才是本例真正的坑）。
+> ⚠️ **本表「`--profile doris`」一行的数字是旧值，引用时不要抄**：现写 `10.25 GiB` / 余 `1.43 GiB`，那是**漏算 `client` 256m** 的旧数；正确值是 **10.5 GiB** / 余 **1.18 GiB**（见本节上方「★ 口径更正」段与 `canonical-truth.md` §4.3 **F-1**）。按落笔分工该订正由 **[09]** 执行；**本票（[04]）不改这个数字，但任何引用一律用 10.5 / 1.18**。
+
 
 ### 4.3 端口与网络
 
@@ -308,7 +315,11 @@ interface PyrightJsonDiagnostic { file; severity; message; range?; rule? }
 **事实**：Docker Desktop 下**容器地址宿主不可路由**（官方：「**Per-container IP addressing is not possible** — the Docker `bridge` network is not reachable from the host」）。
 **后果**：Doris 的 Stream Load 是「FE 收标 → **重定向到某个 BE**」的**两跳**，第二跳是**容器地址** ⇒ 官方原话：a stream load **from the host cannot follow FE's redirect to a BE; run it from the `client` service instead**, which is inside the network。
 **处置**：
-- compose 里**声明**一个 `client` 服务（持 `mysql` 与 `curl`，`depends_on` 全链路 `service_healthy`），但**不常驻**——以 `docker compose run --rm` 按需拉起，从而**不占常驻预算**。
+- compose 里**声明**一个 `client` 服务（持 `mysql` 与 `curl`），但**不常驻**——以 `docker compose run --rm` 按需拉起，从而**不占常驻预算**。
+  - **拓扑（2026-10-20 订正）**：`client` 的 `depends_on` **只等 `kafka`**（`docker-compose.yml:314-316`）。本节旧说法「`depends_on` **全链路** `service_healthy`」**是错的**，照它实现会**成环**——`client` 等 Doris healthy，而 Doris 的库表就绪要走 `doris-init.sh`，该脚本只能在 `client` 内跑。
+  - **不成环判据（可机读）**：`client` **不得出现在任何服务的 `depends_on` 被依赖侧**。即 `docker compose --profile doris --profile client config --format json` 的展开结果里，**没有任何服务的 `depends_on` 键包含 `client`**。
+  - 其余等待由 **`doris-init.sh` 自己轮询**（`SHOW FRONTENDS` 与 `SHOW BACKENDS` 的 `Alive=true`，各 60×3 s）——这类等待表达不了成 compose 依赖，写进脚本才对。
+  - ⚠️ **适用范围（2026-10-20 补，官方原文）**：该两跳约束是 **Docker Desktop 专属**。Doris 官方 README 同段写着「**Linux hosts can reach the nodes directly.**」⇒ **原生 Linux 上 `client` 非必需**（可直连 FE）。故本节「必须」只在 Docker Desktop 面成立；能力×平台判定见 [`reproducibility-boundary.md`](reproducibility-boundary.md) §5 第 7 行。
 - 所有 Doris 相关断言与导入演练**一律经该服务执行**；所有权：容器定义归**模块⑦**，断言内容归**模块⑧**。
 - **不受影响**：Flink-Doris-Connector 的写入（TaskManager 本就**在 compose 网内**）。
 **检查方式**：`make verify` 的 Doris 断言**必须**经 `client` 服务执行——在宿主上直接跑即为**失败**。
@@ -332,6 +343,8 @@ interface PyrightJsonDiagnostic { file; severity; message; range?; rule? }
 - **`ops_bash` 缺 IPC 凭据的失败不可修**——它是 **named-pipe 设计边界**（受限进程内 `spawn(stdio:'pipe')` 以 EPERM 失败），**ACL 修复脚本对它无效**。绕法只有 `stdio:'inherit'/'ignore'` 或改用 PowerShell 原生管道。这与 ACL 故障是**不同因**。
 - **一条被证伪的因果**：「放宽沙箱才能跑 docker」是**错的**——容器与卷数据由 Docker Desktop 自己的 VMM 写入，**不经 agent 令牌**。
 
+> ★ **本节曾在 §4.8 尾部被逐字重复粘贴（2026-10-20 合并，已删重复）**。留此注释，防止再被复制到别处。
+
 ### 4.7 ★ 执行面落点（**已由 P0 实测裁决；此前一轮的「推论」被推翻**）
 
 **结论（P0 实测，2026-10-19 20:29，daemon 已起）**：**单一执行面 = WSL2**，端口探测**不需要**特殊处理——WSL 内直接用 `curl`/`python3` 访问 `127.0.0.1:<published>` **即可达**。
@@ -351,6 +364,7 @@ interface PyrightJsonDiagnostic { file; severity; message; range?; rule? }
 - **B 面**（编排、生成器）在 WSL2 内。
 - **C 面**（Stream Load 两跳）仍归 **compose 网内 `client` 服务**（§4.4，与落点无关）。
 - **触发条件（可逆）**：上述 A 面可达**依赖 Docker Desktop 对 Ubuntu 的 WSL integration 处于开启状态**（P0 实测：`/var/run/docker.sock` 存在、`/usr/bin/docker` 可用、`docker version` 返回 Server 29.8.0）。**若该集成被关闭，A 面须重测**。
+- ⚠️ **口径（2026-10-20 补）**：「单一执行面＝WSL2」是**本机执行面事实**，**不是「可复现承诺」的一部分**。可复现的主体是**制品**（compose + 锚点 + 相对路径纪律 + 契约），执行面与主机平台**不进入承诺**——依据见 [`reproducibility-boundary.md`](reproducibility-boundary.md) §0 与 §5 的跨平台成立性表。**不要把本节读成「只能在这台机器上复现」**。
 
 **检查方式（可证伪）**：
 ```bash
@@ -371,11 +385,7 @@ WSL 内的 `docker` 有两条路，差别在**路径语义**：
 
 > ⚠️ 本机 `command -v docker` 命中的是 Docker 注入的 **shim**（1359 B，`#!/usr/bin/env sh`）——它因 `/usr/bin/docker` 不存在而**直接 `exit 1`** 并提示开启 integration。**即当前 WSL 内 `docker` 命令不可用**，须按 U-ε 开通。
 
-**现状**：本会话 `danger-full-access`。**调研结论**：本仓**不需要**它。
-**最小可行形态（建议顺序）**：①在**审批通道可用**的会话里，对**仓库根**跑一次随包 ACL 修复脚本；②在受限模式下**重放原操作**验证；③验证通过后长期降至 **`workspace-write`**（root ＝ 仓库根）。
-**两条必须分清的事实**：
-- `docker`/`compose` 走 **npipe**，而沙箱「**读、网络与进程可见性不受限**」、npipe **非文件读写** ⇒ 受限模式下**有理由**照常可用（**未实测**：本会话审批被禁用、无法降级验证）。
-- **`ops_bash` 缺 IPC 凭据的失败不可修**——它是 **named-pipe 设计边界**（受限进程内 `spawn(stdio:'pipe')` 以 EPERM 失败），**ACL 修复脚本对它无效**。绕法只有 `stdio:'inherit'/'ignore'` 或改用 PowerShell 原生管道。这与 ACL 故障是**不同因**。
+> ⚠️ **乙·会话沙箱的完整论述见 §4.6**——本节尾部曾**逐字重复粘贴**了同一段（原 §4.8 尾部），2026-10-20 合并、删去重复，只留本行指针。
 
 ---
 
@@ -422,6 +432,8 @@ WSL 内的 `docker` 有两条路，差别在**路径语义**：
 | **D-E** | `FSR.md` §3 记 ClickHouse「**无 Paimon 支持**」、StarRocks 因「Elastic License」被排除 | ⚠️ 前者**不成立**（官方**有** Paimon 引擎，但**读不了主键表**）；后者许可证**是** Apache-2.0（排除的真实原因是**版本相容性**） | 登记；**弃选理由表已按一手证据重写**（§3.5） |
 | **D-F** | `FSR.md` §3 记 Hudi 为对照、Iceberg 弃选 | ⚠️ Hudi 的**决定性证据**是 **`hudi-flink2.2-bundle` 不存在**（比原表述更硬）；Iceberg **artifact 齐全**（`iceberg-flink-runtime-2.2/1.12.0`）⇒ 弃选理由**不能**是版本缺失 | 登记；§3.5 已重写 |
 | **D-G** | `SRS.md` §2.5 A2 笼统称多家组件「官方未给出最低内存」 | ⚠️ 需**逐组件区分**：Doris**给出了**（见 D-A）；Kafka/Flink/Superset/Paimon 确实未给出（但 Flink 给了**分项默认**，且**不配 `process.size` 则启动失败**） | 登记；§0.3 的参数性质边界即此事的制度化 |
+| **D-H** | `SRS.md` `REQ-NF-CAP-04`：「**冷启动（含拉镜像）≤ 30 分钟**」 | ❌ **原口径不可达**：它把「构建 Doris 镜像」隐含在「拉镜像」内，而 Doris **无官方版本化镜像**（`apache/doris:4.1.5` / `all-in-one-4.1.5` / `base-4.1.5` 全部 `denied`）⇒ 必须本地构建，实测 **≈35 min**，**单构建一步就超 30 min**，还没算拉 Kafka/Flink/Superset | 登记；改写为「**预构建镜像经 `docker save`/`load` 导入后**冷启动 ≤30 min」，构建耗时单独记录、**不设上限**（逐字新句见 [`reproducibility-boundary.md`](reproducibility-boundary.md) §8.3；**已签字**，落笔归 **[09]**） |
+| **D-I** | `SRS.md` `REQ-F-ORCH-01`：「`docker compose up` 一键拉起整条链路（**含初始化脚本**）」 | ❌ **该「一条命令」在仓库里不存在**：① **无 README**（`REQ-NF-MNT-03` 要求有）；② `docker compose up` **不含 Doris**（在 `profiles: ["doris"]`）；③ `make init` 自己写着「**待补**：Doris 建库/建表、Superset db upgrade + create-admin + init」（`Makefile:51`） | 登记；「一条命令」**具名为 `make init`** 并冻结四段内容（逐字新句见 [`reproducibility-boundary.md`](reproducibility-boundary.md) §8.1；**已签字**，落笔归 **[09]**）。`init` 是冻结目标名 ⇒ 不触发冻结项变更 |
 
 ### 7.2 `gdd.md` 的就地修订（**已证伪，会造成施工错误**）
 
@@ -446,7 +458,7 @@ WSL 内的 `docker` 有两条路，差别在**路径语义**：
 | **U-ε** | Docker Desktop 对 Ubuntu 开 **WSL integration** | ✅ **已生效**（实测 `/var/run/docker.sock` 存在、WSL 内 `docker version` 返 Server 29.8.0；设置里 `IntegratedWslDistros: ["Ubuntu"]`） | 回滚＝同页关闭；**关闭后 §4.7 的 A 面可达性须重测** |
 | **U-ζ** | 设 **`UV_CACHE_DIR`** 到 F: | ✅ **已执行**（Windows 用户级环境变量 → `F:\...\.uv-cache`；备份 `%USERPROFILE%\.env-backup-2026-10-19-before-uvcache.txt`） | 回滚＝删除该环境变量。WSL 侧 uv cache 本就在 Linux 文件系统内，无需改 |
 | **U-η** | Ubuntu 发行版 `ext4.vhdx` 是否迁出 C 盘 | **待定** | 体积**未测**；迁移＝`wsl --export/--import`，属动本机配置 |
-| **U-ν** | **Doris 镜像本地构建** | ✅ **已完成（2026-10-20 实测）**。`eco/doris:4.1.5` 已建成并跑通（`docker images` = 13.5 GB）。路径＝**构建内下载**（Dockerfile 单条 `RUN curl -xz` 下载 4.32 GB 二进制包）＋修 5 处缺陷。**实测**：下载 **457 s**（≈9.4 MB/s）、解压 **712 s**、导出/解包 **862 s**，全程约 **35 分钟**；上下文由 4.03 GiB 降至 **6.13 kB**（`.dockerignore`）。见本行下方「U-ν 修复清单」 |
+| **U-ν** | **Doris 镜像本地构建** | ✅ **已完成（2026-10-20 实测）**。`eco/doris:4.1.5` 已建成并跑通（**`docker image inspect` = 12.60 GiB ＝ 13,526,796,833 B**，2026-10-20 复测）。路径＝**构建内下载**（Dockerfile 单条 `RUN curl -xzf` 下载 4.32 GB 二进制包）＋修 5 处缺陷。**实测**：下载 **457 s**（≈9.4 MB/s）、解压 **712 s**、导出/解包 **862 s**，全程约 **35 分钟**；上下文由 4.03 GiB 降至 **6.13 kB**（`.dockerignore`）。见本行下方「U-ν 修复清单」 |
 | **U-θ** | `uv python install 3.12` | 已批 | 回滚＝`uv python uninstall 3.12` |
 | **U-ι** | 安装 **`basedpyright==1.40.2`**（`uv add --dev`） | **待批** | 回滚＝`uv remove --dev basedpyright` + 重生成 `uv.lock`；含写 `[tool.pyright]` 段的回滚（删除该段） |
 | **U-κ** | 若走包装器兜底，设 **`PYRIGHT_PYTHON_CACHE_DIR`** 到 F: | **待批** | 选 `basedpyright` 则基本不需要（node 由 wheel 提供）；保留以防兜底 |
@@ -491,8 +503,10 @@ WSL 内的 `docker` 有两条路，差别在**路径语义**：
 ### R2 · ★ Doris Stream Load 在 Docker Desktop 下宿主不可 follow
 **证据**：官方原话（Doris README）「a stream load from the host **cannot follow FE's redirect to a BE; run it from the `client` service instead**」；官方同时说明「Per-container IP addressing is not possible」。
 **处置**：见 §4.4（网内 `client` 服务，`run --rm` 按需拉起）。
+**⚠️ 适用范围（2026-10-20 补）**：本约束**只对 Docker Desktop 成立**。官方 README 同段写明「**Linux hosts can reach the nodes directly.**」⇒ 原生 Linux 上可直连 FE/BE，`client` **非必需**。
 **检测信号**：`make verify` 的 Doris 断言执行位置。
 **判定条件**：断言**经 `client` 服务**执行并返回预期标量；在宿主直接跑即为**失败**。
+**⚠️ 实现现状（doc ≠ reality，本票只登记不改）**：`Makefile:76-78` 第 4/5 项**在宿主侧** `curl 127.0.0.1:8030/api/health`（且只查 FE 健康、不查 ADS 有行）⇒ **当前判据未按本节实现**。归属 **[09]**（并 P1 补真实断言）。见 [`reproducibility-boundary.md`](reproducibility-boundary.md) §9。
 
 ### R3 · ★ P0 环境阻塞：JDK 17 + Maven —— **已解除（且无需 sudo）**
 **原阻塞证据**：本机实测三处常见目录**无 JDK 17**；宿主 PATH 上是 **Oracle 18.0.2**、`JAVA_HOME=E:\space\09-tools\Jdk1.8`；WSL 是 **OpenJDK 11.0.32.1**；Maven **3.6.0**（官方要求 **≥3.8.6**）且运行在 **JDK 1.8** 上。而 Flink 2.2 要求 17、**Doris `start_fe.sh` 要求恰为 17**（非 17 `exit 1`）。
