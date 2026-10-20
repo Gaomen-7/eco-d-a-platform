@@ -39,7 +39,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | **A** | `REQ-F-LAKE-08`：快照过期保留最近 **5 个**（SRS.md:171） | `snapshot.num-retained.min` 是**下限**（快照数不会低于 5），实际数量由 `snapshot.time-retained`(1h) 与 `num-retained.max` 决定；官方支持系统表的引擎列表**不含 Doris** ⇒ 判据须走 Flink SQL（gdd.md:481-482；HLD.md:432 G-D2） | 事实 | `改写上游` | SRS `REQ-F-LAKE-08`（判据须走 Flink SQL） | 随 [05] | 待执行 |
 | **B** | `REQ-F-RT-03`：UV 用**近似算法**（HLL/Theta），离线算精确 UV 并对账，**文档给出误差量化**（SRS.md:151）；`REQ-F-RT-02` 指标含「UV（近似）」（SRS.md:150） | 去重基数是**用户池**（10 万）而非事件数（720k/h）⇒ 精确去重状态 **MB 级**，近似算法的**立论前提不成立**；已【已确认 Q23】改为 Flink 侧**精确**滚动去重，近似降级为可选实验，对账升级为**一致性校验**（gdd.md:488-490） | 事实 | `改写上游` | SRS `REQ-F-RT-03` + `REQ-F-RT-02` | **P1 前** | 待执行 |
-| **C** | `REQ-F-RT-04`：迟到数据走**侧输出**（SRS.md:152） | Flink SQL **没有**迟到侧输出（FLINK-10031 / FLINK-20527 均 Open）⇒ 至少一段必须 DataStream（gdd.md:496-498 D11）；落点为「允许延迟内→窗口修正（Doris unique key 覆盖，`revision` 递增）＋超期→迟到计数表＋离线 DWD 加 `is_late`/`late_lag_ms` 标记列」（gdd.md:492-494 D10）；窗口内提前发射仅对 Group Window Agg 生效且标 `@Experimental`（gdd.md:500-502 D12） | 事实 | `覆盖下游` + `补充落点` | SRS `REQ-F-RT-04` 保留「迟到走侧输出」；落点进 gdd §1.4 与本文件 §3.3；**D11/D12 本身待 [08] 一手证实** | **P1 前**（挂 [08]） | 挂起待证 |
+| **C** | `REQ-F-RT-04`：迟到数据走**侧输出**（SRS.md:152） | Flink SQL **没有**迟到侧输出（FLINK-10031 / FLINK-20527 均 Open）⇒ 至少一段必须 DataStream（gdd.md:496-498 D11）；落点为「允许延迟内→窗口修正（Doris unique key 覆盖，`revision` 递增）＋超期→迟到计数表＋离线 DWD 加 `is_late`/`late_lag_ms` 标记列」（gdd.md:492-494 D10）；窗口内提前发射仅对 Group Window Agg 生效且标 `@Experimental`（gdd.md:500-502 D12） | 事实 | `覆盖下游` + `补充落点` | SRS `REQ-F-RT-04` 保留「迟到走侧输出」；落点进 gdd §1.4 与本文件 §3.3；**D11/D12 本身待 [08] 一手证实** | **P1 前**（挂 [08]） | **已证实（[08] 2026-10-20）→ 待执行**：D11 成立且由源码+双 JIRA 现状级证实（FLINK-10031 逐字 "The Table API & SQL drop late events right now."；FLINK-20527 均 Open/Unresolved）；D12 另有更强事实（Group Window Agg 在 2.2 官方文档标 `deprecated`，源码 "will be dropped"；TVF 聚合官方明写 "do not emit intermediate results"）⇒ gdd D12 须补记 |
 | **D** | `REQ-F-GEN-07`：**`--late-ratio`（默认 5%）**（SRS.md:133） | 三个注入器语义互不混用，旧单参数**拆为** `--late-correctable`（默认 0.03，落 2 分钟允许延迟内）与 `--late-expired`（默认 0.02，超期只计数），另加 `--chaos-ratio`（默认 0）；偏移一律**相对水印**而非墙钟（gdd.md:43-47） | 意图 | `改写上游(需签字)` | SRS `REQ-F-GEN-07` | **P1 前** | **已签字**（2026-10-20）→ 待执行 |
 | **E** | `REQ-F-OLAP-03`：DWS/ADS 按分区保留 **30 天**，判据「分区/保留策略配置可见」（SRS.md:180） | 官方 `dynamic_partition.start` 默认 **-2147483648**（历史分区不删除）⇒ 须显式 `start=-30`；★另有 **FE 级总开关 `dynamic_partition_enable` 默认 `false`** ⇒ 表级写 `enable=true` 也不跑调度；另需 `time_unit`/`end`/`prefix` 与 `create_history_partition=true`（gdd.md:484-486 D8；HLD.md:431 G-D8） | 事实 | `改写上游` | SRS `REQ-F-OLAP-03`（判据须含「分区被**实际删除**」） | **P1 前** | 待执行 |
 | **F** | `REQ-NF-REL-03`（SRS.md:244）与 `REQ-F-OLAP-02`（SRS.md:179）把幂等说成**两道独立防线** | Doris 官方自述分工：**label＝单事务、2PC＝跨事务**；UNIQUE MoW 表上 unique key 已是行级幂等 ⇒ 应为「**一层主防 + 一层兜底**」（gdd.md:439-445 D1）；HLD §2.5 横切面④已是「主防 + 兜底，**不是两道并列防线**」（HLD.md:126-133） | 意图 | `覆盖下游` | SRS 原话保留；gdd D1 生效；HLD §2.5 已对齐 | 只登记 | 已收口（下游口径） |
@@ -50,7 +50,7 @@
 | **K** | `REQ-F-VERIFY-01`：`make verify` **五项烟测**，退出码 0 即通过（SRS.md:209、SRS.md:330） | `lint`/`typecheck` **另设目标**（HLD.md:168-182 §3.3-6：「静态检查与运行时烟测分开」，HLD 判定 `verify` 为**冻结目标，一个字不改**） | 意图 | `覆盖下游` | SRS 不动；`lint`/`typecheck` 落 Makefile（**新增目标＝冻结项变更**，见 §4.2） | 只登记 | 已收口（下游口径） |
 | **L** | `REQ-F-ORCH-05`：Kafka/Paimon/Doris/Superset 元数据用 named volume 持久化，判据「`down` 后再 `up`，数据仍在」（SRS.md:200） | ★**挂载 ≠ 数据落在里面**：`apache/kafka:4.3.1` 默认 `log.dirs` = `/tmp/kraft-combined-logs` ⇒ `down`/`up` 后 offsets **全归 0**、卷内容空 `total 4.0K` ⇒ 该需求**真实失效**；修法＝显式设 `KAFKA_LOG_DIRS=/var/lib/kafka/data`，已实测 `down`+`up`→3→3（gdd.md:415-418 §C F16；HLD.md:546 R7-e） | 事实 | `改写上游` + `补充落点` | SRS `REQ-F-ORCH-05`（判据须含「数据落点在卷内」） | **P1 前** | 待执行 |
 
-**状态统计**：待签字 **0**（D、H、I 已于 2026-10-20 全部签字）｜待执行 **9**（A、B、D、E、G、H、I、J、L）｜挂起待证 **1**（C）｜已收口（下游口径）**2**（F、K）。**共 12 条；签字已闭合，剩 10 条待落笔（C 待 [08] 先行证实）。**
+**状态统计**（2026-10-20 更新，[08] 落子后）：待签字 **0**（D、H、I 已于 2026-10-20 全部签字）｜待执行 **10**（A、B、**C**、D、E、G、H、I、J、L）｜已收口（下游口径）**2**（F、K）。**共 12 条；签字已闭合，全部输入已齐备。** ⚠️ **[08] 另产出 14 条副作用面，其中 8 条改变既有设计**，并**建议新增 3 条冲突**（**M**：`REQ-F-LAKE-06` 的 catalog/database 混说；**N**：Paimon 主键表默认 **MOR 而非 MOW**；**O**：Doris `partial_columns` **非表属性**且受 **Batch constraint** 限制）——新增条目待 [09] 落笔时并入本表（见 [08](issues/08-lake-shaping-and-schema-evolution.md#answer) §D）。
 
 ---
 
@@ -195,12 +195,14 @@ DWD 主键表 + 拒绝表 append ⇒ 拒绝表里**会出现与 DWD 主键重复
 
 | 待办 | 归属 | 阻塞的票 |
 | --- | --- | --- |
-| 冲突 C 的 D11/D12 一手证实（FLINK-10031 / FLINK-20527 现状、Group Window Agg 的 `@Experimental` 状态） | [08] | [02] [03] [05] |
+| ~~冲突 C 的 D11/D12 一手证实~~ | **[08] 已闭合（2026-10-20）** | — |
 | 冲突 I 的 P1 **带载后**实测内存（当前只有空载 ≈3.83 GiB） | [07] | [04] [09] |
 | 冲突 A 的快照数具体取值（随五层 DDL 形状） | [05] | [05] [09] |
 | 迟到计数表表名与粒度取值 | [05] | [05] |
 | gdd §1.4 不变量「迟到标记差异」不可加 ⇒ 改写为可判定形式 | [05] | [03] |
 | `schema_version` 铁律的六处落点（SRS §3.3.x 新增小节等） | [09] | [02] [03] |
-| Paimon 对「分区键与主键先后关系」的官方约束、`bucket` 官方建议 | [08] → [05] | [05] |
+| ~~Paimon 对「分区键与主键先后关系」的官方约束、`bucket` 官方建议~~ | **[08] 已闭合（2026-10-20）**：官方**无禁令**，给的是 cross-partition upsert 模式及代价（规避路径＝分区字段进主键）；bucket 官方只给 MOR 口径的 "200 MB–1 GB per bucket" 初始指引，**无主键基数公式** | — |
+| **[08] 新增 3 条建议冲突**（M：catalog/database 混说；N：主键表默认 MOR；O：`partial_columns` 非表属性 + Batch constraint）并入 §1 主表 | [09] | [05] [03] [09] |
+| **[08] 副作用面 D-2/D-5/D-7/D-9 的落笔**（gdd D12 补 deprecated 事实；`research-notes.md` 两处非官方清单订正；HLD §8-R5 空间放大前提重述；gdd §1.5 `partial_columns` 措辞） | [09] | [03] [05] [09] |
 
-**已闭合并从本索引移除**（2026-10-20）：3 条签字（D/H/I）→ 转入 §1「待执行」；2 条冻结项变更批准（FC-1/FC-2）→ 转入 §4.2。
+**已闭合并从本索引移除**（2026-10-20）：3 条签字（D/H/I）→ 转入 §1「待执行」；2 条冻结项变更批准（FC-1/FC-2）→ 转入 §4.2；**[08] 的四组一手事实**（D11/D12 证实、分区键/主键与 bucket 官方约束）→ 见 [08](issues/08-lake-shaping-and-schema-evolution.md#answer) 与 `research/08a·08b·08c`。
