@@ -1,6 +1,5 @@
 # impl-02b: 解超期 sink 阻断，让超期表真正落行
 
-> GitHub: https://github.com/Gaomen-7/eco-d-a-platform/issues/2
 > 父票：impl-02（本地票 `.scratch/ecom-user-behavior-pipeline/issues/impl-02-p1-realtime-closure.md`）
 
 Type: task

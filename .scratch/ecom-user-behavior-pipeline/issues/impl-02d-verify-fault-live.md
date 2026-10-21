@@ -1,6 +1,5 @@
 # impl-02d: make verify-fault 实机跑通 + 反例证伪（验票 6/7/9）
 
-> GitHub: https://github.com/Gaomen-7/eco-d-a-platform/issues/4
 > 父票：impl-02（本地票 `.scratch/ecom-user-behavior-pipeline/issues/impl-02-p1-realtime-closure.md`）
 
 Type: task

@@ -1,6 +1,5 @@
 # impl-02c: 修 kafka-retention 与 doris-ads-rows 两条判据自身的缺陷
 
-> GitHub: https://github.com/Gaomen-7/eco-d-a-platform/issues/3
 > 父票：impl-02（本地票 `.scratch/ecom-user-behavior-pipeline/issues/impl-02-p1-realtime-closure.md`）
 
 Type: task

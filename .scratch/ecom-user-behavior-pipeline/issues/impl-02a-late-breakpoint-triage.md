@@ -1,6 +1,5 @@
 # impl-02a: 超期链断点定位（print 探针 + 可信指标面）
 
-> GitHub: https://github.com/Gaomen-7/eco-d-a-platform/issues/1
 > 父票：impl-02（本地票 `.scratch/ecom-user-behavior-pipeline/issues/impl-02-p1-realtime-closure.md`）
 
 Type: task

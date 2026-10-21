@@ -16,13 +16,13 @@
 
 ### impl-02 的五张副票（2026-10-21 拆，票面 10 条验收仍 0 勾）
 
-| 票 | 文件 | GitHub | Blocked by | 交付 |
-| --- | --- | --- | --- | --- |
-| **impl-02a** | [impl-02a-late-breakpoint-triage.md](impl-02a-late-breakpoint-triage.md) | [#1](https://github.com/Gaomen-7/eco-d-a-platform/issues/1) | — | 超期链断点定位（print 探针 + 可信指标口径） |
-| **impl-02b** | [impl-02b-late-sink-fix.md](impl-02b-late-sink-fix.md) | [#2](https://github.com/Gaomen-7/eco-d-a-platform/issues/2) | impl-02a | 解超期 sink 阻断，超期表落行 |
-| **impl-02c** | [impl-02c-verify-checks-fixes.md](impl-02c-verify-checks-fixes.md) | [#3](https://github.com/Gaomen-7/eco-d-a-platform/issues/3) | —（并行） | 修 kafka-retention / doris-ads-rows 两条判据自身缺陷 |
-| **impl-02d** | [impl-02d-verify-fault-live.md](impl-02d-verify-fault-live.md) | [#4](https://github.com/Gaomen-7/eco-d-a-platform/issues/4) | impl-02b, impl-02c | verify-fault 实机跑通 + 反例证伪（验票 6/7/9） |
-| **impl-02e** | [impl-02e-p1-acceptance-closeout.md](impl-02e-p1-acceptance-closeout.md) | [#5](https://github.com/Gaomen-7/eco-d-a-platform/issues/5) | impl-02b, impl-02c, impl-02d | P1 收口验收 + 勾票 + code-review + commit |
+| 票 | 文件 | Blocked by | 交付 |
+| --- | --- | --- | --- |
+| **impl-02a** | [impl-02a-late-breakpoint-triage.md](impl-02a-late-breakpoint-triage.md) | — | 超期链断点定位（print 探针 + 可信指标口径） |
+| **impl-02b** | [impl-02b-late-sink-fix.md](impl-02b-late-sink-fix.md) | impl-02a | 解超期 sink 阻断，超期表落行 |
+| **impl-02c** | [impl-02c-verify-checks-fixes.md](impl-02c-verify-checks-fixes.md) | —（并行） | 修 kafka-retention / doris-ads-rows 两条判据自身缺陷 |
+| **impl-02d** | [impl-02d-verify-fault-live.md](impl-02d-verify-fault-live.md) | impl-02b, impl-02c | verify-fault 实机跑通 + 反例证伪（验票 6/7/9） |
+| **impl-02e** | [impl-02e-p1-acceptance-closeout.md](impl-02e-p1-acceptance-closeout.md) | impl-02b, impl-02c, impl-02d | P1 收口验收 + 勾票 + code-review + commit |
 
 ## 依赖图
 

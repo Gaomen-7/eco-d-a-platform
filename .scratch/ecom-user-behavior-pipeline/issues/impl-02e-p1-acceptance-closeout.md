@@ -1,6 +1,5 @@
 # impl-02e: P1 收口验收 —— make init/verify 全绿 + 勾票 + code-review + commit
 
-> GitHub: https://github.com/Gaomen-7/eco-d-a-platform/issues/5
 > 父票：impl-02（本地票 `.scratch/ecom-user-behavior-pipeline/issues/impl-02-p1-realtime-closure.md`）
 
 Type: task
