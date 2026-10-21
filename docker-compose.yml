@@ -33,15 +33,28 @@ services:
     mem_limit: 1g
     memswap_limit: 1g
     ports:
+      # ★ 双 listener（2026-10-21 实机证伪后补）：**单 listener 无法同时满足
+      #   容器内与宿主两侧**。原先只有 PLAINTEXT://kafka:9092，端口映射虽在，
+      #   但客户端连上 127.0.0.1:9092 后 broker 回的元数据是 `kafka:9092`，
+      #   宿主解析不了该主机名 ⇒ 实机报：
+      #     %3|FAIL|ecomgen#producer-1| [thrd:kafka:9092/1]:
+      #       Failed to resolve 'kafka:9092': Temporary failure in name resolution
+      #   ⇒ 投递 434 条全部滞留队列，topic offset 恒 0。
+      #   而 Makefile 的 `spike` 目标就是从**宿主**跑 `ecomgen live`，必须有这条路。
+      #   ⇒ 修法：加 HOST listener，advertised 成宿主可达的 127.0.0.1:29092。
       - "127.0.0.1:9092:9092"
+      - "127.0.0.1:29092:29092"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      # INTERNAL=kafka:9092（compose 网内，Flink/init-kafka 用）
+      # HOST=127.0.0.1:29092（宿主 ecomgen live / Makefile spike 用）
+      KAFKA_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093,HOST://:29092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,HOST://127.0.0.1:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,HOST:PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1

@@ -130,6 +130,31 @@
                   </excludes>
                 </filter>
               </filters>
+
+              <!--
+                ★★ ServicesResourceTransformer（P1 实机证伪后补，2026-10-21）★★
+                **不写这一段，Doris connector 在运行时不可见**，实机报：
+                  ValidationException: Could not find any factory for identifier
+                  'doris' that implements 'DynamicTableFactory'
+                  Available factory identifiers are: blackhole datagen
+                  dynamic-kafka filesystem kafka legacy-csv print upsert-kafka
+
+                根因**不是缺依赖**，而是 **shade 对 META-INF/services 的默认行为**：
+                Java 的 ServiceLoader 靠 `META-INF/services/<接口全名>` 发现 SPI 实现，
+                而多个 jar 合并时同名资源**互相覆盖**——shade 默认只留最后处理的那个。
+                实测本 jar 里该文件**只剩 Kafka 的三个工厂**：
+                  KafkaDynamicTableFactory / UpsertKafkaDynamicTableFactory /
+                  DynamicKafkaTableFactory
+                ⇒ Doris 的工厂被静默丢失，且**编译期完全看不出来**（依赖在、类在）。
+
+                `ServicesResourceTransformer` 的职责就是把同名 services 文件**按行合并**
+                而不是覆盖。⚠️ 凡打进 jar 的 Flink connector / format 都必须靠它，
+                这与「用 TABLESAMPLE 拍字节」无关，是 shaded-jar 的通用必修项。
+              -->
+              <transformers>
+                <transformer
+                    implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+              </transformers>
             </configuration>
           </execution>
         </executions>

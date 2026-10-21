@@ -57,9 +57,15 @@ class CheckResult:
 
 @dataclass
 class VerifyReport:
-    """一次 verify / verify-fault 的全部断言结果。"""
+    """一次 verify / verify-fault 的全部断言结果。
+
+    `degradation` 是 **F6 降级阶梯**的实测值（spec 附录 A·Q）：容器被 OOM 杀
+    的次数、阈值、逐容器原始状态。它**不折成一条断言就完事**——阈值 2 次是
+    **设计值**（非官方保证），报告里必须留下实测值供人复核。
+    """
 
     checks: list[CheckResult] = field(default_factory=list)
+    degradation: dict[str, Any] | None = None
 
     def exit_code(self) -> int:
         """有任一 FAIL ⇒ 1；否则 0（SKIP 不影响退出码）。"""
@@ -87,6 +93,7 @@ class VerifyReport:
             "generated_at": datetime.now(UTC).isoformat(),
             "counts": self.counts(),
             "exit_code": self.exit_code(),
+            "degradation": self.degradation,
             "checks": [
                 {
                     "status": c.status.value,

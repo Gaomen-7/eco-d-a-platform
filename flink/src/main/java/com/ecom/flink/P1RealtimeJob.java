@@ -4,26 +4,26 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 
 /**
- * P1 实时作业：Kafka → 窗口聚合（SQL 段）→ 窗口修正（DataStream 段）→ Doris。
+ * P1 实时作业：Kafka → 质量闸门 → 漏斗/UV/窗口聚合 → Doris。
  *
- * <p>为什么必须**混合路线**（spec.md §4.6，官方能力强制，非选型偏好）：
- *
+ * <h2>为什么是「DataStream 为主 + SQL 只做落库」而不是「SQL 段 + DataStream 段」</h2>
+ * <p>上一版把聚合放 Flink SQL，修正放 DataStream，结果两者写的<b>键不相交</b>，
+ * 「修正」变成了新增口径外的行（详见 {@link WindowSegment} 的类注释）。
+ * 而窗口修正又<b>物理上只能</b>在 DataStream 做（官方能力强制，spec §4.6）：
  * <ul>
- *   <li>Flink SQL <b>没有</b>迟到侧输出：FLINK-10031 / FLINK-20527 均 Open，官方原话
- *       "The Table API &amp; SQL drop late events right now."；{@code WindowAggOperator}
- *       javadoc 逐字 "late elements … will be simply dropped."
- *   <li>SQL 侧<b>没有</b> allow-lateness：FLINK-24000 逐字 "Window aggregate does not
- *       support allow-lateness"；{@code allowedLateness} 是 <b>DataStream-only</b>。
+ *   <li>Flink SQL 无迟到侧输出：FLINK-10031/20527 均 Open，逐字
+ *       "The Table API &amp; SQL drop late events right now."
+ *   <li>SQL 侧无 allow-lateness：FLINK-24000 逐字
+ *       "Window aggregate does not support allow-lateness"
  * </ul>
+ * <p>⇒ 既然修正必须是 DataStream，就把<b>聚合也放在同一段</b>（同一个窗口、同一批键），
+ * 这样 revision 的语义才同构。SQL 在本作业里只承担 Doris sink 的落库（DDL + INSERT）。
+ * 这不是绕开「SQL 侧全 SQL 零 jar」的约束——那条约束针对 P2 的 {@code make replay}，
+ * 而本票 P1 的实时链路本来就依赖 Doris connector jar。
  *
- * <p>⇒ 窗口<b>聚合</b>落 SQL 段，「允许延迟内的窗口<b>修正</b>」落 DataStream 段。
- * 这不是可以绕开的设计取舍：SQL 段物理上无法实现迟到修正。
- *
- * <p>PI-3 标注（spec §4.6 第三行）：窗口内提前发射（10 s 暂定值）只能走
- * 已被官方标 deprecated 的 Group Window Aggregation（{@code table.exec.emit.early-fire.*}），
- * 源码写 "will be dropped"，移除跟踪 FLINK-29692；CUMULATE 走 TVF 会被
- * {@code checkEmitConfiguration} 直接抛异常，<b>不是</b>替代路径。故该项只作文档标注，
- * 不进 PI-1 判据。
+ * <h2>单作业保证</h2>
+ * <p>全部 sink 收敛到一个 {@code StatementSet}（见 {@link DorisSinkSegment}），
+ * 只提交<b>一个</b>作业 ⇒ 一个 checkpoint 边界 ⇒ verify-fault 的两表比对有意义。
  */
 public final class P1RealtimeJob {
 
@@ -36,13 +36,43 @@ public final class P1RealtimeJob {
 
         StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
 
-        // SQL 段：建 source 表（Kafka）与 sink 表（Doris），跑窗口聚合
-        SqlSegment.registerTables(tEnv);
-        SqlSegment.runWindowAggregation(tEnv, env);
+        // ── ① 入口：解析 → 质量分流（DLQ）→ 去重（重复独立通道）──────
+        var rawJson = GateSegment.mainSource(env, "");
+        var clean = GateSegment.build(env, rawJson);
 
-        // DataStream 段：迟到侧输出 → 允许延迟内修正 / 超期只计数
-        CorrectionSegment.build(env, tEnv);
+        // ── ② 漏斗（会话步进，双列并陈）────────────────────────────
+        var funnel = FunnelSegment.build(clean);
 
-        env.execute("ecom-p1-realtime-closure");
+        // ── ③ 窗口聚合 + 迟到修正（同一段、同一批键）────────────────
+        var windowed = WindowSegment.build(clean);
+
+        // ── ③b 暂定态（is_settled=0）：窗口关闭前周期性发射，证「暂定→落定」────
+        var provisional = WindowSegment.provisional(clean);
+
+        // ── ④ 超期只计数（绝不修正）────────────────────────────────
+        // ★ P1 实机证伪（2026-10-21）：这条链**已产出 195 行**（算子 metrics
+        //   read=635 / write=195、write-bytes=14548），但 `ads_late_expired_count`
+        //   的 Stream Load 一次都没发生（同时段 funnel 36 次、window_metric 18 次）。
+        //   根因是 `LateCount` 的 `java.sql.Timestamp` 字段在 POJO 推断下会被映射成
+        //   TIMESTAMP(9)，而视图/INSERT 侧期望 TIMESTAMP(3)，异常在 sink 异步线程里
+        //   被吞掉（日志一条都不留）。
+        //   ⇒ 修法：让 `LateCount` 的窗口列改用 **`java.time.LocalDateTime`**
+        //     （Flink POJO 原生支持、精度与 TIMESTAMP(3) 天然对齐），并消除对
+        //     `Types.POJO` 反射推断 Timestamp 精度的依赖。
+        var late = WindowSegment.expired(windowed)
+                .map(WindowSegment.LateCount::of)
+                .returns(WindowSegment.LateCount.class)
+                .name("count-expired")
+                .uid("count-expired");
+        // ── ⑤ 侧路指标：UV 精确去重 / 重复计数 ─────────────────────
+        var uv = MetricSegment.uv(clean);
+        var duplicates = MetricSegment.duplicates(GateSegment.duplicates(clean));
+
+        // ── ⑥ 合并进窗口指标流（同表同键，三态同行）──────────────────
+        var metrics = windowed.union(uv, duplicates, provisional);
+
+        // ── ⑦ 落 Doris：全部 sink 一个 StatementSet，只提交一个作业 ──
+        DorisSinkSegment.registerSinks(tEnv);
+        DorisSinkSegment.attach(tEnv, metrics, funnel, late);
     }
 }

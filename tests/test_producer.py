@@ -89,6 +89,97 @@ def test_event_ids_are_unique() -> None:
     assert len(ids) == len(set(ids))
 
 
+def test_late_expired_events_are_actually_expired_under_flink_watermark() -> None:
+    """超期事件必须在 **Flink 的水位语义**下真的超期，而不只是「偏移大」。
+
+    ★ 这条是 P1 实机证伪后补的（2026-10-21）：旧测试只断言「比例对、偏移为负」，
+    但实机 `ads_late_expired_count` 恒为 **0 行**。根因与偏移无关，是**发送序与
+    水位推进速率**的关系：
+
+    - 生成器按 `_WATERMARK_STEP_MS` 逐事件推进水印（步进 5 ms/条）；
+    - Flink 的窗口只有在 `watermark > windowEnd + allowedLateness` 时才清理，
+      被清理窗口里的事件才走 `sideOutputLateData`；
+    - 一条超期事件的 `event_time = 当前水印 − 130..300 s`，若本批总跨度只有
+      271 s，则**排在该事件之后的事件不足以把水位推到它的窗口之后** ⇒
+      它压根不会被判超期，而是被当普通迟到元素喂给已关闭窗口（或被静默丢弃）。
+
+    ⇒ 判据必须模拟 Flink 语义：对每条超期事件，检查**它之后的发送序**是否把水位
+      推过了「它所属窗口 + 允许延迟」。这才是「超期段确有迟到计数条目」的前提。
+    """
+    from ecomgen.injectors import ALLOWED_LATENESS_MS
+
+    window_ms = 60_000
+    batch = _batch(late_correctable=0.03, late_expired=0.02)
+
+    expired_events = [e for e in batch.events if e.is_late_expired]
+    assert expired_events, "样本未产生超期事件"
+
+    # 重放发送序，用「至今最大 event_time − 允许延迟」作为水位（与 GateSegment 的
+    # forBoundedOutOfOrderness 同构），逐条判定它自己的窗口是否已被清理。
+    sent_max = 0
+    provably_expired = 0
+    for event in batch.events:
+        t = int(event.record["event_time"])
+        watermark = sent_max - ALLOWED_LATENESS_MS
+        if event.is_late_expired:
+            window_end = (t // window_ms) * window_ms + window_ms
+            # 窗口已清理 ⇒ Flink 会把这条走 sideOutputLateData（= 真的超期）
+            if watermark > window_end + ALLOWED_LATENESS_MS:
+                provably_expired += 1
+        sent_max = max(sent_max, t)
+
+    assert provably_expired > 0, (
+        "超期通道在 Flink 水位语义下**不可达**："
+        f"共 {len(expired_events)} 条超期标记事件，但没有一条落在已清理窗口之后。"
+        "这说明生成器的水位推进速率与注入偏移不匹配 —— 实机会表现为 "
+        "ads_late_expired_count 恒 0 行。"
+    )
+
+
+def test_late_expired_reachable_within_single_kafka_partition() -> None:
+    """超期必须在 **单个 Kafka 分区内**可达 —— 分区级才是 Flink 的真实语义。
+
+    ★ P1 实机证伪（2026-10-21）：`ads_late_expired_count` 恒 0 行，DLQ 也恒 0。
+
+    上一版判据只看**全局**发送序，看似可达；但 Flink 的 `KafkaSource` 是
+    **每分区一个 subtask、各自独立算水位**（`WatermarkStrategy` 是 per-subtask 的）。
+    生成器按 `user_id` 分区键打散，同一分区内的事件被抽稀，**分区内乱序幅度
+    远小于全局** ⇒ 分区水位推不过超期事件的「窗口 + 允许延迟」⇒ 该事件不被判超期。
+
+    实测证据（`--seed 7 --sessions 200`，6 分区）：
+      全局重放 expired>0，但逐分区重放 **expired=0 for all 6 partitions**。
+
+    ⇒ 判据必须按「同一 user_id 的发送序」重放，因为那才是同一分区的顺序。
+    """
+    from ecomgen.injectors import ALLOWED_LATENESS_MS
+
+    window_ms = 60_000
+    batch = _batch(late_correctable=0.03, late_expired=0.02)
+
+    # 同 user_id ⇒ 同分区键 ⇒ 同 Flink subtask ⇒ 同一水位推进序列
+    by_user: dict[str, list[tuple[int, bool]]] = {}
+    for event in batch.events:
+        by_user.setdefault(event.session_id, []).append(
+            (int(event.record["event_time"]), event.is_late_expired)
+        )
+
+    provably_expired = 0
+    for events in by_user.values():
+        sent_max = 0
+        for t, is_expired in events:
+            watermark = sent_max - ALLOWED_LATENESS_MS
+            if is_expired:
+                window_end = (t // window_ms) * window_ms + window_ms
+                if watermark > window_end + ALLOWED_LATENESS_MS:
+                    provably_expired += 1
+            sent_max = max(sent_max, t)
+
+    assert provably_expired > 0, (
+        "超期通道在**单分区**内不可达 ⇒ 实机 ads_late_expired_count 必然恒 0 行。"
+        f"本批超期标记 {batch.count_channel('late_expired')} 条，无一落入已清理窗口。"
+    )
+
+
 def test_batch_params_validate_ratios() -> None:
     """参数越界必须尽早报错，而不是产出畸形批次。"""
     import pytest

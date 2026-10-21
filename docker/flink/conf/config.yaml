@@ -28,6 +28,44 @@ jobmanager:
     jvm-overhead:
       fraction: 0.1
 
+# ★★ 必须保留镜像自带的 `env.java.opts.all`（官方 2.2 镜像逐字给出）★★
+#   P1 实机证伪（2026-10-21）：本文件在 `volumes:` 里**整份覆盖**了
+#   `/opt/flink/conf/config.yaml`，而上一版**漏抄**了这一整段 ⇒ 提交作业时：
+#     java.lang.reflect.InaccessibleObjectException: Unable to make field
+#     private final java.util.Map java.util.Collections$UnmodifiableMap.m accessible:
+#     module java.base does not "opens java.util" to unnamed module
+#     Caused by: Can not register process function transformation translator.
+#   ⇒ **作业根本起不来**（`flink run` 退出码 31，`/jobs/overview` 恒为空数组）。
+#   根因不是 JDK 版本，而是 **JDK17 模块系统**：Flink 2.2 的 DataStream V2 转换器
+#   要在静态初始化块里反射改 `Collections$UnmodifiableMap.m`，没有 `--add-opens` 就抛。
+#   官方镜像自带这份 opts 正是为此；整份覆盖 = 静默丢掉它。
+#   ⇒ 修法只有两种：**保留这段原样**（下面逐字抄自镜像），或者改用 config 合并。
+#     选前者：Git 里看得见、可 diff、不依赖镜像内部行为。
+#   ⚠️ 升级 Flink 版本时必须重新比对镜像自带的这份列表，不可当作永久正确。
+env:
+  java:
+    opts:
+      all: >-
+        --add-exports=java.rmi/sun.rmi.registry=ALL-UNNAMED
+        --add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED
+        --add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED
+        --add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED
+        --add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED
+        --add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED
+        --add-exports=java.security.jgss/sun.security.krb5=ALL-UNNAMED
+        --add-opens=java.base/java.lang=ALL-UNNAMED
+        --add-opens=java.base/java.net=ALL-UNNAMED
+        --add-opens=java.base/java.io=ALL-UNNAMED
+        --add-opens=java.base/java.nio=ALL-UNNAMED
+        --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
+        --add-opens=java.base/java.lang.reflect=ALL-UNNAMED
+        --add-opens=java.base/java.text=ALL-UNNAMED
+        --add-opens=java.base/java.time=ALL-UNNAMED
+        --add-opens=java.base/java.util=ALL-UNNAMED
+        --add-opens=java.base/java.util.concurrent=ALL-UNNAMED
+        --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED
+        --add-opens=java.base/java.util.concurrent.locks=ALL-UNNAMED
+
 taskmanager:
   bind-host: 0.0.0.0
   numberOfTaskSlots: 4

@@ -61,6 +61,7 @@ def test_recovery_fails_when_dlq_increased() -> None:
     """★ 反例保护：**条数一致但 DLQ 上升** ⇒ fail（重复被误当脏）。"""
     verdict = judge_recovery(_baseline(), _baseline(dlq_offset=15, duplicate_count=137))
     assert not verdict.passed
+    assert verdict.exit_code() == 1
     assert "dlq" in verdict.reason.lower() or "脏" in verdict.reason
 
 

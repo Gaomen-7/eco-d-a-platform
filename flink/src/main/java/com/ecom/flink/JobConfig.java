@@ -20,6 +20,29 @@ public final class JobConfig {
     /** UV 滚动去重窗口 1 小时（gdd §1.3-6）。 */
     public static final long UV_WINDOW_MS = 3_600_000L;
 
+    /** event_id 去重状态保 1 小时（gdd §A.2「event_id 去重状态保 1 小时」）。 */
+    public static final long DEDUP_TTL_MS = 3_600_000L;
+
+    /**
+     * 暂定值的提前发射周期 = 10 s（gdd §A.2）。
+     *
+     * <p><b>PI-3 标注级</b>（spec §4.6 第三行）：官方唯一支持 early-fire 的
+     * Group Window Aggregation 已被标 deprecated（源码 "will be dropped"，
+     * 移除跟踪 FLINK-29692），CUMULATE 走 TVF 会被 {@code checkEmitConfiguration}
+     * 直接抛异常。故这里**不**用那个语法，改用 DataStream 段按处理时间定时器
+     * 发射暂定行（详见 {@link ProvisionalSegment}），既满足
+     * 「暂定/落定/修正同表同一行」的可观察性，又不押注弃用语法。
+     */
+    public static final long PROVISIONAL_INTERVAL_MS = 10_000L;
+
+    // ── metric_name 取值（与 verify 判据的契约，改则同步 Python 侧）──────
+    /** 重复被幂等吸收的条数（dim_key=''）。**不进脏率分子**（gdd §D D2）。 */
+    public static final String METRIC_DUPLICATE = "duplicate_absorbed";
+    /** 1 小时滚动 UV（dim_key=''，精确去重）。 */
+    public static final String METRIC_UV = "uv";
+    /** 暂定行发出的累计条数（dim_key=''，用于证明「暂定→落定」存在）。 */
+    public static final String METRIC_PROVISIONAL = "provisional_emitted";
+
     // ── Kafka（冻结项，SRS §3.4）────────────────────────────────
     public static final String TOPIC_MAIN = "ecom.behavior.event.v1";
     public static final String TOPIC_DLQ = "ecom.behavior.event.v1.dlq";
@@ -32,6 +55,25 @@ public final class JobConfig {
     public static final String DORIS_TABLE_FUNNEL = "ads_funnel_step";
     public static final String DORIS_TABLE_LATE = "ads_late_expired_count";
     public static final String DORIS_USER = "root";
+
+    // ── Doris sink 的缓冲刷写（设计值，理由见 DorisSinkSegment 类注释）──────
+    /**
+     * 刷写间隔：出厂默认 30 s，降到 1 s（设计值）。
+     *
+     * <p>★ 为什么只调「间隔」不调「行数」：{@code flink-doris-connector} 在
+     * {@code DorisDynamicTableFactory.getDorisExecutionOptions} 里**硬校验**
+     * {@code bufferFlushMaxRows >= 10000}，实机报：
+     * <pre>
+     *   java.lang.IllegalArgumentException:
+     *     bufferFlushMaxRows must be greater than or equal to 10000
+     * </pre>
+     * ⇒ 行数阈值不可下调，「小流量表等不到 flush」只能靠**缩短时间间隔**解决。
+     * 超期通道单批只有几十行，1 s 的间隔足以让它们落库。
+     */
+    public static final String SINK_FLUSH_INTERVAL = "1s";
+
+    /** 单批最大字节：保持出厂默认（100 MB）——它不是小流量表的瓶颈。 */
+    public static final String SINK_FLUSH_MAX_BYTES = "104857600";
 
     /** DLQ 只摘真脏三原因码（票面 ②）。重复**不在**此列。 */
     public static final String REASON_SCHEMA_INVALID = "schema_invalid";

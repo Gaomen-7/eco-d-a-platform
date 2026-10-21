@@ -29,10 +29,29 @@ TIMEOUT_LAG_ZERO_S = 120
 FLINK_UI = "http://127.0.0.1:8081"
 POLL_INTERVAL_S = 4
 
+# 重复通道计数的 SQL（设计约束见 `snapshot_baseline` 的注释）。
+# 为什么是 metric_name 过滤而不是 `SUM(revision)`：`revision` 的语义是
+# **迟到修正次数**（同一行被修正过几回），不是**重放重复条数**；两者是不同事实，
+# 混在一个 SUM 里会让「重复上升」这条子判据失去含义（重放被吸收但没修正 ⇒
+# revision 不动 ⇒ 误判「没有重放」；反之迟到修正会让它假升）。
+# 重复被幂等吸收这件事在 Doris 侧的唯一可机读痕迹是 Flink 侧
+# `MetricSegment.duplicates()` 产出的 `metric_name='duplicate_absorbed'` 行
+# （每吸收一条重复计 metric_value=1），所以只汇总这些行。
+DUPLICATE_COUNT_SQL = (
+    "SELECT COALESCE(SUM(metric_value),0) FROM ecom_ads.ads_window_metric "
+    "WHERE metric_name='duplicate_absorbed';"
+)
+
 
 @dataclass(frozen=True)
 class Baseline:
-    """kill 前的基线快照（输入冻结后为常数）。"""
+    """kill 前的基线快照（输入冻结后为常数）。
+
+    `duplicate_count` 的语义是**被幂等吸收的重放重复条数**（Doris 侧
+    `metric_name='duplicate_absorbed'` 的 `metric_value` 之和），
+    **不是** `revision`（迟到修正次数）之和。字段名沿用旧名是因为
+    `judge_recovery` 与测试已在用，但取值口径以 `DUPLICATE_COUNT_SQL` 为准。
+    """
 
     window_metric_count: int
     window_metric_sum: int
@@ -203,11 +222,12 @@ def snapshot_baseline() -> Baseline | None:
         "SELECT COALESCE(SUM(cnt_inferred),0) FROM ecom_ads.ads_funnel_step;"
     )
     dlq = _dlq_offset()
-    # 重复通道计数：取 ads_window_metric 的 revision 总和作为「被重放/修正过」的
-    # 可机读代理——它与幂等吸收后的重放证据直接相关（spec §4.4 的第三条子判据）。
-    dup = _doris_scalar(
-        "SELECT COALESCE(SUM(revision),0) FROM ecom_ads.ads_window_metric;"
-    )
+    # 重复通道计数：只汇总 `metric_name='duplicate_absorbed'` 行的 metric_value
+    # （每吸收一条重放重复 +1）。
+    # ★ 不是 `SUM(revision)`：`revision` 的语义是**迟到修正次数**，不是**重复
+    #   条数**。混用会让第三条子判据失效——重放被吸收但未触发修正时 revision
+    #   不动（假阴「没有重放」），迟到修正又会让它假升（假阳）。
+    dup = _doris_scalar(DUPLICATE_COUNT_SQL)
 
     if (
         wm_count is None

@@ -56,13 +56,30 @@ RUN set -eux; \
     sed -i 's/-Xmx8192m -Xms8192m/-Xmx1536m -Xms1536m/' "$f"; \
     grep -q 'Xmx1536m' "$f"
 
-# ★ 覆盖 BE 出厂默认 mem_limit（90% → 25%）
+# ★ 覆盖 BE 出厂默认 mem_limit（90% → 80%）
+#
+# ★★ 为什么是 80% 而不是更小的 25%（2026-10-21 实机证伪上一版取值）★★
+#   `mem_limit` 不是「容器内存上限」，而是 **BE 内存准入控制的水位**：
+#     生效值 = 百分比 × min(物理内存, cgroup 限额)
+#   上一版取 25% ⇒ 25% × 3 GiB(compose 的 mem_limit) = **768 MB**。
+#   而 BE **空闲基线**实测约 977 MiB（`docker stats`），**已高于该水位**
+#   ⇒ 任何需要分配查询内存的语句（含 `SELECT COUNT(*)` 这类扫表）直接被拒：
+#     ERROR 1105 ...[MEM_LIMIT_EXCEEDED] process memory used 1.31 GB,
+#     limit 768.00 MB, os physical memory 3.00 GB
+#   ⇒ `make init` 的第四段（经 client 断言 ADS 有行）**必然失败**，判据全部不可达。
+#   这不是「空载看起来很轻」能发现的 —— 空载不分配查询内存，所以 P0 当时「通过」。
+#   HLD §8-R1 原记的「25% 已实测通过」只验了**启动**，没验**查询**，本次已按一手证据订正。
+#
+#   ★ 取值依据：80% × 3 GiB = **2.4 GiB** > 空闲基线 977 MiB，留约 1.4 GiB 查询余量。
+#     上限仍是 compose 的 `mem_limit: 3g`（硬 OOM 边界），故不会击穿 11.68 GiB 天花板。
+#     ⚠️ 80% 是**设计值**，非官方保证：带载（Flink 写入 + compaction）后须复测，
+#        归 impl-05 的容量双口径终验。
 RUN set -eux; \
     b=/opt/apache-doris/be/conf/be.conf; \
     if grep -qE '^[[:space:]]*mem_limit' "$b"; then \
-      sed -i 's/^[[:space:]]*mem_limit.*/mem_limit = 25%/' "$b"; \
+      sed -i 's/^[[:space:]]*mem_limit.*/mem_limit = 80%/' "$b"; \
     else \
-      printf '\n# 本项目覆盖：出厂默认 90%%（天花板下约 10.5 GB）\nmem_limit = 25%%\n' >> "$b"; \
+      printf '\n# 本项目覆盖：出厂默认 90%%（天花板下约 10.5 GB）\nmem_limit = 80%%\n' >> "$b"; \
     fi; \
     grep -E '^[[:space:]]*mem_limit' "$b"
 

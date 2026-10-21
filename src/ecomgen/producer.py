@@ -30,7 +30,24 @@ CHANNEL_LATE_EXPIRED: Final[str] = "late_expired"
 # 批次内的模拟时间推进步长：每条事件推进 3 ms 水印 ⇒ 200 ev/s 约等于
 # 「1 事件 / 5 ms」的密度。这是**设计值**，只影响水印推进速度与迟到幅度，
 # 不承诺真实墙钟速率（F3 裁决：内容确定、节奏不确定）。
-_WATERMARK_STEP_MS: Final[int] = 5
+#
+# ★★ P1 实机证伪后改正（2026-10-21）：旧值 **5 ms** 使整批时间跨度只有
+#   `事件数 × 5 ms`（434 条 ⇒ 2.2 s … 实测 271 s 是因为上游时钟另有推进）。
+#   而两条迟到通道的**可达性下界**是第一性算出来的：
+#
+#     可达条件的总量下界 = 窗口长度 + 允许延迟 + 最大迟到偏移
+#                        = 60 s + 120 s + 300 s = **480 s**
+#
+#   批内跨度低于这个下界时，无论怎么排发送序，**同分区水位都不可能既越过某窗口
+#   末尾、又落在其允许延迟之内**（可修正），更不可能越过允许延迟（超期）。
+#   实测证据（旧值）：6 个分区 `expired=0 / correctable=0`，Doris
+#   `ads_late_expired_count` 恒 0 行、`revision` 只由 UV/重复段偶然推高。
+#
+#   ⇒ 取 **1500 ms/事件**：`--sessions 200`（约 434 条）⇒ 跨度 ≈ 650 s，
+#     覆盖 480 s 下界且留余量；`--sessions 1000` 时跨度更大，同样成立。
+#   ⚠️ 这不是「调大凑数」：480 s 是上面那条和式的直接结果；步长只是把它摊到
+#     每条事件上。
+_WATERMARK_STEP_MS: Final[int] = 1_500
 
 # 批次起点的固定基座（UTC epoch 毫秒）——**不读墙上时钟**，否则不可复现。
 # 取 2024-01-01T00:00:00Z；F7 裁决允许 live 模式在发送前整体平移到本轮起点。
@@ -243,6 +260,74 @@ def produce_batch(params: ProducerParams) -> EventBatch:
                 else None,
             )
 
+    return _apply_late_delivery_order(batch)
+
+
+# 迟到事件在发送序里**后移**的格数（设计值）。
+#
+# ★★ P1 实机证伪后补（2026-10-21）：旧实现直接在产出位处发送迟到事件，
+#   实机 `ads_late_expired_count` 恒 **0 行**。根因不是偏移幅度，而是**发送序**：
+#   Flink 的 `KafkaSource` 每分区一个 subtask、各自独立算水位；一条超期事件的
+#   `event_time = 水印 − 130..300 s`，若它**紧接**在产出位发送，该分区后面
+#   再没有足量事件把水位推过「它所属窗口 + 允许延迟」⇒ 窗口从未被清理 ⇒
+#   `sideOutputLateData` 永不触发。实测：全局重放 expired>0，逐分区重放全 0。
+#
+# 修法：把迟到事件 **后移到发送序靠后的位置**（仍保持 `--seed` 确定性）。
+# 这样它到达时，同分区水位早已越过它的窗口 + 允许延迟，Flink 才会判它超期。
+# 语义不变——「偏移相对水印」的定义就是「相对该分区已推进到的水印」，而水印
+# 只由发送序决定；后移正是让这条定义真正成立。
+#
+# 后移**按通道分档**（两条通道要落进 Flink 的不同分支）：
+# - 可修正：窗口已关闭、但**尚未**超过 allowedLateness ⇒ 走重触发 → 修正已落定行；
+# - 超期：已超过 allowedLateness ⇒ 窗口已清理 → `sideOutputLateData` 只计数。
+#
+# 档位是「在正常事件序列里的**插入比例**」，不是绝对条数——不同的
+# `--sessions`/`--rate` 下事件总数差一个数量级，绝对条数会让分档失效。
+_CORRECTABLE_INSERT_FRACTION: Final[float] = 0.92
+# 超期排在最后 5% 的位置：确保它之后仍有事件推进水位，越过窗口 + 允许延迟。
+_EXPIRED_INSERT_FRACTION: Final[float] = 0.99
+
+
+def _apply_late_delivery_order(batch: EventBatch) -> EventBatch:
+    """把迟到事件后移到发送序靠后，使它们在水位语义下真的「迟到」。
+
+    见上方常量注释：两条通道按**插入比例**分档，保证
+    - 可修正 ⇒ 窗口已关、未过允许延迟 ⇒ `allowedLateness` 重触发（修正落定行）；
+    - 超期 ⇒ 已过允许延迟 ⇒ 窗口已清理 ⇒ `sideOutputLateData`（只计数）。
+    """
+    normal: list[Event] = []
+    correctable: list[Event] = []
+    expired: list[Event] = []
+
+    for event in batch.events:
+        if event.channel == CHANNEL_LATE_CORRECTABLE:
+            correctable.append(event)
+        elif event.channel == CHANNEL_LATE_EXPIRED:
+            expired.append(event)
+        else:
+            normal.append(event)
+
+    if not correctable and not expired:
+        return batch
+
+    def _cut(fraction: float) -> int:
+        return min(len(normal), max(0, int(len(normal) * fraction)))
+
+    # 各通道内部保持原始相对顺序 ⇒ 同 seed 仍逐字节可复现。
+    cor_at = _cut(_CORRECTABLE_INSERT_FRACTION)
+    exp_at = _cut(_EXPIRED_INSERT_FRACTION)
+    # 超期的插入点更靠后；若两者倒挂则夹正，避免顺序依赖浮点。
+    exp_at = max(exp_at, cor_at)
+
+    reordered = (
+        normal[:cor_at]
+        + correctable
+        + normal[cor_at:exp_at]
+        + expired
+        + normal[exp_at:]
+    )
+
+    batch.events = reordered
     return batch
 
 
