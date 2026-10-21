@@ -18,13 +18,14 @@
 | ③ | `docker compose run --rm client /scripts/doris-init.sh` | Doris 建库建表必须从 compose 网内发起（Docker Desktop 两跳约束） |
 | ④ | Superset 初始化：`superset db upgrade` → `fab create-admin` → `superset init` | `SUPERSET_LOAD_EXAMPLES=no` |
 
-**现状（诚实声明）**：`make init` 目前只接好了 ①②；③④ **尚未接线**——Makefile 在此处只打印「待补：Doris 建库/建表、Superset db upgrade + create-admin + init」。四段是冻结的契约，不是已完成的实现。
+**现状（诚实声明）**：`make init` 目前只接好了 ①；②③④ **尚未接线**——`init` 依赖的 `up` 只跑默认 profile 的 `docker compose up -d`，Makefile 中没有任何 `--profile doris`（故 ② 的 Doris 拉起缺失），③④ 仅打印「待补：Doris 建库/建表、Superset db upgrade + create-admin + init」，且该提示亦未提及 ② 缺的 `--profile doris` 一步。四段是冻结的契约，不是已完成的实现。
 
 判据：在已有 Docker + make 的机器上（复现档位 L0），`make init` 后 `make verify` 退出码 0、`docker compose ps` 全 `healthy`。
 
 ## 端口（全部只绑 `127.0.0.1`）
 
-Kafka `9092` · Flink UI `8081` · Doris FE `8030` · Doris MySQL `9030` · Superset `8088`
+全部八个（来源：`docker-compose.yml` 各行内联注释）：
+`8030` Doris FE HTTP（`/api/health`）· `8040` Doris BE webserver（`/metrics`）· `8081` Flink UI · `8088` Superset · `9010` Doris FE edit_log · `9030` Doris FE MySQL 协议 · `9060` Doris BE brpc · `9092` Kafka
 
 ## 八个冻结目标（SRS §3.4，名字不得改）
 
