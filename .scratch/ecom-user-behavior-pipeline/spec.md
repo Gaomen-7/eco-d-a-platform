@@ -377,6 +377,7 @@ SELECT '<断言名>' AS assertion, COUNT(*)>0 AS ok FROM …
 | **8** | `REQ-F-VERIFY-01` | 五项烟测中「Paimon 五层有行」在 **P1 里程碑判定中显式 SKIP、不计入通过条件**；**P2 里程碑判定中该项必须为真断言且退出码参与判定** |
 | **9** | `REQ-F-VERIFY-02` | 幂等验证「**不进 `verify` 每次运行**」，改由离线幂等断言（第 5.4 节）＋ `verify-fault` 恢复重放覆盖 |
 | **10** | `REQ-F-BI-02` | 「观察到数值变化」＝**窗口关闭/修订时刻值确实变化**（非「每次刷新值都变」）；10 s 刷新只证「链路活着」 |
+| **38** | `REQ-F-LAKE-06`（**2026-10-21 签**·附录 A M） | 五层全部落 **单一 Paimon catalog**，该 catalog 下的 **`ecom_lake` database** 承载全部五层表（原文「单一 catalog（库名 `ecom_lake`）」一词混说 catalog 与 database）\| 五层表均存在于该 catalog 的 `ecom_lake` database 内（`SHOW TABLES IN <catalog>.ecom_lake` 逐层可查） |
 
 ### 7.2 gdd 修订
 
@@ -411,6 +412,7 @@ SELECT '<断言名>' AS assertion, COUNT(*)>0 AS ok FROM …
 | **32** | HLD §2.5 横切面① | `schema_version` 语义唯一所有者；规则全文指针 → canonical-truth §3.1（第 2.1 节六处落点之一） |
 | **33** | HLD §5 设计面 | 新增：`paimon-warehouse` named volume、Paimon jar 构建期 COPY、`sql/replay_*.sql` 目录布局、迟到计数表名入冻结面清单（FC-2）、`artifacts/verify/` 报告目录与 JSON 结构 |
 | **34** | HLD §7.1 | 登记偏离行（原口径把「构建 Doris 镜像」隐含在「拉镜像」内，实测 ≈35 min ⇒ 原口径不可达） |
+| **39** | HLD §8-R5 ＋ §7.1（**2026-10-21 签**·附录 A N） | Paimon 主键表**默认 MOR 而非 MOW**（MOW 需显式 `deletion-vectors.enabled`）⇒ §8-R5 的空间放大前提原按 MOW 估算，须**按 MOR 复核**；本仓五张主键表固定 MOR，官方 bucket 指引 "200 MB–1 GB per bucket" 是 MOR 口径。偏离进 §8-R7 登记 |
 
 ### 7.4 冻结项变更（已批准，随本批落笔）
 
@@ -514,12 +516,13 @@ SELECT '<断言名>' AS assertion, COUNT(*)>0 AS ok FROM …
 
 ---
 
-## 附录 A · 冲突待回票（本 spec 汇编中发现、尚未裁决）
+## 附录 A · 冲突待回票（裁决已回写）
 
 > 走 [09] Q10 兜底：**不回开地图**；卡住施工口径时以追加问句请用户裁决，裁决后回写本附录或第 ⑦ 节。
+> ✅ **2026-10-21 用户签字：M / N / O 三条全部批准落笔**，按 G1「事实类可直接改写上游」处置，无需再登记为待回票。
 
 | # | 冲突 | 状态 |
 | --- | --- | --- |
-| **M** | `REQ-F-LAKE-06`「单一 catalog（库名 `ecom_lake`）」**一词混说两事**——Paimon 层级 catalog→database→table，`ecom_lake` 官方对应 **database**；原判据不具区分力 | **建议新增冲突 M**，分档＝事实，处置＝`改写上游`；⚠️ **本 spec 汇编时未取得用户签字 ⇒ 暂不落笔** |
-| **N** | Paimon 主键表默认 **MOR 而非 MOW**（MOW 需显式 `deletion-vectors.enabled`） | 影响 HLD §8-R5 空间放大前提；第 5.2 节已按 MOR 口径记 bucket；**落笔待签字** |
-| **O** | Doris `partial_columns` **非表属性**＋**Batch constraint** 限制 | 第 7.2 节 #18 已按事实类记入 gdd 修订；**是否新增冲突 O 待定** |
+| **M** | `REQ-F-LAKE-06`「单一 catalog（库名 `ecom_lake`）」**一词混说两事**——Paimon 层级 catalog→database→table，`ecom_lake` 官方对应 **database**；原判据不具区分力 | ✅ **已签字（事实类·`改写上游`）**。逐字新句：「五层全部落 **单一 Paimon catalog**，该 catalog 下的 **`ecom_lake` database** 承载全部五层表」\| 判据＝五层表均存在于该 catalog 的 `ecom_lake` database 内（`SHOW TABLES IN <catalog>.ecom_lake` 逐层可查）。**新增为第 ⑦.1 节修订条目 #38** |
+| **N** | Paimon 主键表默认 **MOR 而非 MOW**（MOW 需显式 `deletion-vectors.enabled`） | ✅ **已签字（事实类·`改写上游` ＋ 偏离登记）**。本仓五张主键表（DWD/DIM×5/DWS/ADS）**固定 MOR**，不启用 `deletion-vectors.enabled`；官方 bucket 指引 "200 MB–1 GB per bucket" 是 MOR 口径。**新增为第 ⑦.3 节修订条目 #39**：HLD §8-R5 空间放大前提须按 MOR 复核（原按 MOW 估算），偏离进 §8-R7 登记 |
+| **O** | Doris `partial_columns` **非表属性**＋**Batch constraint** 限制 | ✅ **已签字（事实类·`改写上游`）**。**不新增冲突条目**——第 7.2 节 #18 已逐条记入 gdd 修订（`partial_columns=true` 是导入 header/`sink.properties.*` 而非表属性；普通 `partial_columns` 受 Batch constraint 限制；同批多列组须用 3.1.0+ 灵活列更新，JSON＋`skip_bitmap_column`，**禁用 `sequence_col`**）。施工面按 #18 执行即可 |
