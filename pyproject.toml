@@ -9,9 +9,14 @@ dependencies = [
     "pydantic==2.14.1",
 ]
 
+# console 入口：`uv run ecomgen dump|live`（P1 生成器的调用面）
+[project.scripts]
+ecomgen = "ecomgen.cli:main"
+
 [dependency-groups]
 dev = [
     "basedpyright==1.40.2",
+    "pytest==8.4.2",
     "ruff==0.17.1",
 ]
 

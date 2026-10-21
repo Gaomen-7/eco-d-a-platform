@@ -525,4 +525,7 @@ SELECT '<断言名>' AS assertion, COUNT(*)>0 AS ok FROM …
 | --- | --- | --- |
 | **M** | `REQ-F-LAKE-06`「单一 catalog（库名 `ecom_lake`）」**一词混说两事**——Paimon 层级 catalog→database→table，`ecom_lake` 官方对应 **database**；原判据不具区分力 | ✅ **已签字（事实类·`改写上游`）**。逐字新句：「五层全部落 **单一 Paimon catalog**，该 catalog 下的 **`ecom_lake` database** 承载全部五层表」\| 判据＝五层表均存在于该 catalog 的 `ecom_lake` database 内（`SHOW TABLES IN <catalog>.ecom_lake` 逐层可查）。**新增为第 ⑦.1 节修订条目 #38** |
 | **N** | Paimon 主键表默认 **MOR 而非 MOW**（MOW 需显式 `deletion-vectors.enabled`） | ✅ **已签字（事实类·`改写上游` ＋ 偏离登记）**。本仓五张主键表（DWD/DIM×5/DWS/ADS）**固定 MOR**，不启用 `deletion-vectors.enabled`；官方 bucket 指引 "200 MB–1 GB per bucket" 是 MOR 口径。**新增为第 ⑦.3 节修订条目 #39**：HLD §8-R5 空间放大前提须按 MOR 复核（原按 MOW 估算），偏离进 §8-R7 登记 |
+| **P** | **F3 · live 确定性**（用户 2026-10-21 裁决）：**内容确定，节奏不确定**。事件内容、顺序、注入位置由 `--seed` 决定，哈希判据针对内容序列；墙钟只控制发送速率，不进入内容。 | ✅ **已裁决（施工口径）** |
+| **Q** | **F6 · 降级阶梯触发**（用户 2026-10-21 裁决）：**容器被 OOM 杀两次即降级**。以 `docker inspect` 的 `OOMKilled` / exit 137 计数为机读信号；阈值 2 次为**设计值**，非官方保证。降级后由 verify 把实测值写入报告。 | ✅ **已裁决（施工口径）** |
+| **R** | **F7 · 世界时钟**（用户 2026-10-21 裁决）：**event_time 相对本轮起点平移，墙钟起点**。`--seed` 只决定相对偏移；历史日期不进入 live 流，窗口由 Flink 水印按平移后的时间关闭。 | ✅ **已裁决（施工口径）** |
 | **O** | Doris `partial_columns` **非表属性**＋**Batch constraint** 限制 | ✅ **已签字（事实类·`改写上游`）**。**不新增冲突条目**——第 7.2 节 #18 已逐条记入 gdd 修订（`partial_columns=true` 是导入 header/`sink.properties.*` 而非表属性；普通 `partial_columns` 受 Batch constraint 限制；同批多列组须用 3.1.0+ 灵活列更新，JSON＋`skip_bitmap_column`，**禁用 `sequence_col`**）。施工面按 #18 执行即可 |
