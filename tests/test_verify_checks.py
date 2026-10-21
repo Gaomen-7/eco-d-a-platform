@@ -13,9 +13,14 @@ from pathlib import Path
 
 from ecomgen.verify import Status, VerifyReport
 from ecomgen.verify_runner import (
+    TOPIC_RETENTION_BYTES,
+    TOPIC_RETENTION_MS,
+    check_doris_ads_rows_from_counts,
     check_flink_job_state_from_json,
     check_funnel_monotone_result_from_rows,
+    check_kafka_retention_from_configs,
     check_superset_health_from_body,
+    parse_dynamic_topic_configs,
 )
 
 
@@ -84,3 +89,106 @@ def test_p1_report_shape_is_four_pass_one_skip(tmp_path: Path) -> None:
     counts = report.counts()
     assert counts["SKIP"] >= 1
     assert "PASS" in counts
+
+
+# ── kafka-topic-retention：读法与施加方同源（impl-02c）─────────────────
+# 实测输出格式（Kafka 4.3.1，`kafka-configs.sh --describe --entity-type topics`）
+
+_KAFKA_DESCRIBE_OK = (
+    "Dynamic configs for topic ecom.behavior.event.v1 are:\n"
+    f"  retention.bytes={TOPIC_RETENTION_BYTES} sensitive=false "
+    "synonyms={DYNAMIC_TOPIC_CONFIG:retention.bytes=2147483648, "
+    "DEFAULT_CONFIG:log.retention.bytes=-1}\n"
+    f"  retention.ms={TOPIC_RETENTION_MS} sensitive=false "
+    "synonyms={DYNAMIC_TOPIC_CONFIG:retention.ms=604800000}\n"
+)
+
+
+def test_parse_dynamic_topic_configs_reads_expected_keys() -> None:
+    configs = parse_dynamic_topic_configs(_KAFKA_DESCRIBE_OK)
+    assert configs is not None
+    assert configs["retention.ms"] == TOPIC_RETENTION_MS
+    assert configs["retention.bytes"] == TOPIC_RETENTION_BYTES
+
+
+def test_parse_dynamic_topic_configs_returns_none_without_header() -> None:
+    """没有 `Dynamic configs ... are:` 头 ⇒ 取不到，**不**静默当空配置。"""
+    assert parse_dynamic_topic_configs("") is None
+    assert (
+        parse_dynamic_topic_configs("Topic: x Configs: min.insync.replicas=1") is None
+    )
+
+
+def test_kafka_retention_passes_when_both_keys_match() -> None:
+    """正例：施加方写的两个键都能在**同一配置面**读到。"""
+    result = check_kafka_retention_from_configs(
+        parse_dynamic_topic_configs(_KAFKA_DESCRIBE_OK)
+    )
+    assert result.status is Status.PASS
+
+
+def test_kafka_retention_fails_when_ms_is_wrong() -> None:
+    """反例 1：retention.ms 被改错 ⇒ FAIL（判据真的在断言）。"""
+    result = check_kafka_retention_from_configs(
+        {"retention.ms": "60000", "retention.bytes": TOPIC_RETENTION_BYTES}
+    )
+    assert result.status is Status.FAIL
+    assert "60000" in result.actual
+
+
+def test_kafka_retention_fails_when_bytes_missing() -> None:
+    """反例 2：只施加了 retention.ms、漏了 bytes ⇒ FAIL（不是「有一项对就算过」）。"""
+    result = check_kafka_retention_from_configs({"retention.ms": TOPIC_RETENTION_MS})
+    assert result.status is Status.FAIL
+    assert "缺失" in result.actual
+
+
+def test_kafka_retention_fails_when_configs_unavailable() -> None:
+    """反例 3：命令失败/取不到 ⇒ FAIL，**不是** SKIP（否则又变恒真假通过）。"""
+    result = check_kafka_retention_from_configs(None, raw="boom")
+    assert result.status is Status.FAIL
+    assert not result.is_pass
+
+
+def test_kafka_retention_fails_on_empty_dynamic_block() -> None:
+    """反例 4：topic 存在但没有任何动态配置（retention 未施加）⇒ FAIL。"""
+    result = check_kafka_retention_from_configs(
+        parse_dynamic_topic_configs(
+            "Dynamic configs for topic ecom.behavior.event.v1 are:\n"
+        )
+    )
+    assert result.status is Status.FAIL
+
+
+# ── doris-ads-rows：逐表独立落状态（impl-02c）─────────────────────────
+
+
+def test_doris_ads_rows_passes_when_all_tables_have_rows() -> None:
+    counts = {
+        "ads_window_metric": 757,
+        "ads_funnel_step": 89,
+        "ads_late_expired_count": 157,
+    }
+    result = check_doris_ads_rows_from_counts(counts)
+    assert result.status is Status.PASS
+    assert "ads_late_expired_count=157 PASS" in result.actual
+
+
+def test_doris_ads_rows_fails_naming_only_the_empty_table() -> None:
+    """超期表为空 ⇒ FAIL，但另两张表的行数仍是 PASS 并可见（不再被掩盖）。"""
+    counts = {
+        "ads_window_metric": 757,
+        "ads_funnel_step": 89,
+        "ads_late_expired_count": 0,
+    }
+    result = check_doris_ads_rows_from_counts(counts)
+    assert result.status is Status.FAIL
+    assert "ads_window_metric=757 PASS" in result.actual
+    assert "ads_funnel_step=89 PASS" in result.actual
+    assert "ads_late_expired_count=0 FAIL" in result.actual
+
+
+def test_doris_ads_rows_fails_when_query_fails() -> None:
+    result = check_doris_ads_rows_from_counts(None, raw="connect refused")
+    assert result.status is Status.FAIL
+    assert result.detail == "connect refused"

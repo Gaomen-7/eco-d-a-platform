@@ -49,6 +49,18 @@ KAFKA_TOPIC = "ecom.behavior.event.v1"
 DLQ_TOPIC = "ecom.behavior.event.v1.dlq"
 DIRTY_RATE_BASELINE = "dirty-rate-baseline.json"
 
+# ── topic 配置的期望值：唯一来源 gdd §A.2（与 init-kafka.sh 的两个默认值同源）──
+TOPIC_RETENTION_MS = "604800000"  # 7 天（gdd §A.2 / REQ-F-MQ-03）
+TOPIC_RETENTION_BYTES = "2147483648"  # 2 GB（gdd §A.2；按分区生效，见 gdd §D D3）
+
+DORIS_DB = "ecom_ads"
+# ADS 三张表：与 docker/doris/init.sql 的 DDL 逐字对齐（本判据只读，不改表）。
+ADS_TABLES: tuple[str, ...] = (
+    "ads_window_metric",
+    "ads_funnel_step",
+    "ads_late_expired_count",
+)
+
 
 def _run(cmd: list[str], timeout: int = 60) -> tuple[int, str]:
     """跑一条外部命令，返回 (退出码, 合并输出)。异常也折成非零码。"""
@@ -70,9 +82,15 @@ def _http_get(url: str, timeout: int = 10) -> tuple[int, str]:
 
 
 def check_kafka_topic() -> CheckResult:
-    """1/5 Kafka topic 存在且 retention 与 gdd §A.2 一致。
+    """1/5 Kafka topic 的 retention 与 gdd §A.2 一致。
 
-    注意：**不**用 `--alter`（Kafka 4.3.1 已移除），只 describe 读取。
+    ★ 读法与施加方**必须读同一处**（impl-02c 修的就是这一点）：
+    `docker/scripts/init-kafka.sh` 用 `kafka-configs.sh --alter --entity-type topics`
+    写的是**动态主题配置**，所以判据也用 `kafka-configs.sh --describe` 读同一面。
+
+    旧实现用 `kafka-topics.sh --describe` 读，其 `Configs:` 列在 Kafka 4.3.1
+    **不保证**包含 retention —— P0 实测只有 `min.insync.replicas=1`，
+    于是判据恒假 FAIL（施加明明成功，判据却永远看不到）。
     """
     rc, out = _run(
         [
@@ -81,24 +99,71 @@ def check_kafka_topic() -> CheckResult:
             "exec",
             "-T",
             "kafka",
-            "/opt/kafka/bin/kafka-topics.sh",
+            "/opt/kafka/bin/kafka-configs.sh",
             "--bootstrap-server",
             "localhost:9092",
             "--describe",
-            "--topic",
-            "ecom.behavior.event.v1",
+            "--entity-type",
+            "topics",
+            "--entity-name",
+            KAFKA_TOPIC,
         ]
     )
-    expected = "retention.ms=604800000"
-    if rc != 0:
-        return CheckResult(
-            Status.FAIL, "kafka-topic-retention", "未取到", expected, out
-        )
-    if expected in out:
-        return CheckResult(Status.PASS, "kafka-topic-retention", expected, expected)
-    return CheckResult(
-        Status.FAIL, "kafka-topic-retention", "retention 不匹配", expected, out
+    configs = parse_dynamic_topic_configs(out) if rc == 0 else None
+    return check_kafka_retention_from_configs(configs, raw=out)
+
+
+def parse_dynamic_topic_configs(out: str) -> dict[str, str] | None:
+    """解析 `kafka-configs.sh --describe --entity-type topics` 的**动态**配置。
+
+    Kafka 4.3.1 实测格式：
+    ```
+    Dynamic configs for topic ecom.behavior.event.v1 are:
+      retention.bytes=2147483648 sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:...}
+      retention.ms=604800000 sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:...}
+    ```
+    没有 `Dynamic configs ... are:` 头 ⇒ 取不到，返回 None（**不**当「没有配置」
+    静默通过）；头部存在但块内为空 ⇒ 返回 `{}`，由判定函数判 FAIL。
+    """
+    in_block = False
+    configs: dict[str, str] = {}
+    for line in out.splitlines():
+        token = line.strip()
+        if token.startswith("Dynamic configs"):
+            in_block = True
+            continue
+        if not in_block or not token:
+            continue
+        name, sep, rest = token.partition("=")
+        if not sep:
+            continue
+        configs[name] = rest.split()[0]
+    return configs if in_block else None
+
+
+def check_kafka_retention_from_configs(
+    configs: dict[str, str] | None, raw: str = ""
+) -> CheckResult:
+    """retention 判据（纯函数，可单测）：两个键都必须与 gdd §A.2 全等。
+
+    - 取不到动态配置 ⇒ FAIL（不是 SKIP：topic 存在与配置可读是本判据的前提）；
+    - 任一键缺失或不等于期望值 ⇒ FAIL，`detail` 留原始响应供人对照；
+    - 两者全等 ⇒ PASS。
+    """
+    name = "kafka-topic-retention"
+    expected = (
+        f"retention.ms={TOPIC_RETENTION_MS} 且 "
+        f"retention.bytes={TOPIC_RETENTION_BYTES}（gdd §A.2）"
     )
+    if configs is None:
+        return CheckResult(Status.FAIL, name, "动态配置取不到", expected, raw)
+
+    ms = configs.get("retention.ms")
+    by = configs.get("retention.bytes")
+    actual = f"retention.ms={ms or '缺失'} retention.bytes={by or '缺失'}"
+    if ms == TOPIC_RETENTION_MS and by == TOPIC_RETENTION_BYTES:
+        return CheckResult(Status.PASS, name, actual, expected)
+    return CheckResult(Status.FAIL, name, actual, expected, raw or actual)
 
 
 def check_flink_job_running() -> CheckResult:
@@ -153,11 +218,52 @@ def check_paimon_layers() -> CheckResult:
 
 
 def check_doris_ads_rows() -> CheckResult:
-    """4/5 Doris ADS 真有行 —— **经 client 服务**发起（票面 ③ 第二条）。"""
-    rc, out = _run(["bash", "docker/scripts/doris-assert.sh"], timeout=300)
-    if rc == 0:
-        return CheckResult(Status.PASS, "doris-ads-rows", "全部表 >0", ">0")
-    return CheckResult(Status.FAIL, "doris-ads-rows", "有表为空或不可查", ">0", out)
+    """4/5 Doris ADS 真有行 —— 经 client 服务**逐表**查 COUNT(*)（票面 ③）。
+
+    ★ impl-02c：旧实现把三张表捆成一个 PASS/FAIL，超期表为空时另外两张的
+    好状态被连带掩盖。现在逐表查、逐表判，并在 `actual` 里逐表写
+    `表名=行数 PASS/FAIL`，使「两张绿、一张红」在 stdout 与 JSON 报告里都可见。
+    """
+    counts: dict[str, int] = {}
+    raw_parts: list[str] = []
+    for table in ADS_TABLES:
+        rc, out = _doris_scalar_runner(f"SELECT COUNT(*) FROM {DORIS_DB}.{table};")
+        raw_parts.append(f"--- {table} (rc={rc}) ---\n{out}")
+        value = parse_scalar(out) if rc == 0 else None
+        if value is None:
+            return check_doris_ads_rows_from_counts(None, raw="\n".join(raw_parts))
+        counts[table] = value
+    return check_doris_ads_rows_from_counts(counts, raw="\n".join(raw_parts))
+
+
+def check_doris_ads_rows_from_counts(
+    counts: dict[str, int] | None, raw: str = ""
+) -> CheckResult:
+    """逐表行数判据（纯函数，可单测）：每张表各自 >0 才算 PASS。
+
+    - 查询失败/取不到 ⇒ FAIL（ADS 行数是 P1 的核心判据，不可 SKIP 掉）；
+    - 任一表为 0 ⇒ FAIL，`detail` 保留原始响应、`actual` 已点名是哪张表；
+    - 三张表都 >0 ⇒ PASS。
+    """
+    name = "doris-ads-rows"
+    expected = "每张 ADS 表 COUNT(*)>0（逐表判定）"
+    if counts is None:
+        return CheckResult(Status.FAIL, name, "查询失败", expected, raw)
+
+    parts: list[str] = []
+    for table in ADS_TABLES:
+        value = counts.get(table)
+        if value is None:
+            parts.append(f"{table}=不可查 FAIL")
+        elif value > 0:
+            parts.append(f"{table}={value} PASS")
+        else:
+            parts.append(f"{table}={value} FAIL")
+
+    actual = " ".join(parts)
+    if any(counts.get(t) is None or (counts.get(t) or 0) <= 0 for t in ADS_TABLES):
+        return CheckResult(Status.FAIL, name, actual, expected, raw or actual)
+    return CheckResult(Status.PASS, name, actual, expected)
 
 
 def check_superset_health() -> CheckResult:

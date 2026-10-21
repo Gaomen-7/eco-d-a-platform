@@ -3,8 +3,7 @@
 > 父票：impl-02（本地票 `.scratch/ecom-user-behavior-pipeline/issues/impl-02-p1-realtime-closure.md`）
 
 Type: task
-Status: ready-for-agent
-Blocked by: None（可与 impl-02a 并行开工；但转 PASS 需等 impl-02b）
+Status: resolved（2026-10-21）
 
 **What to build:** 修掉 `make verify` 里两条**与超期阻断无关**的判据缺陷，让判据本身可信——现在它在做「假失败」。
 
@@ -31,12 +30,118 @@ PASS=5  FAIL=2  SKIP=2  ⇒ 退出码 1
 
 ## Acceptance criteria
 
-- [ ] `kafka-topic-retention` 在 retention **正确施加**的前提下判 PASS；先独立证明 retention 真的在 Kafka 侧生效（读施加它的那个配置面），再改判据
-- [ ] 该判据的**反例**成立：把 retention 改成错值时判 FAIL（有单测或实机反例证据，不是只测正例）
-- [ ] `doris-ads-rows` 拆成逐表断言，三张表各自独立落 PASS/FAIL/实际行数，超期表为 0 时另两张仍显示绿
-- [ ] `make verify` 退出码在超期表仍为 0 的情况下，只因超期表而失败（能说清「还差哪一项」）
-- [ ] 判据的期望值来源可追溯（指向 gdd §A.2 或 spec 条目），不是硬编码字面量
-- [ ] 相关单测补齐；全量 pytest 仍全绿
+- [x] `kafka-topic-retention` 在 retention **正确施加**的前提下判 PASS；先独立证明 retention 真的在 Kafka 侧生效（读施加它的那个配置面），再改判据
+- [x] 该判据的**反例**成立：把 retention 改成错值时判 FAIL（有单测或实机反例证据，不是只测正例）
+- [x] `doris-ads-rows` 拆成逐表断言，三张表各自独立落 PASS/FAIL/实际行数，超期表为 0 时另两张仍显示绿
+- [x] `make verify` 退出码在超期表仍为 0 的情况下，只因超期表而失败（能说清「还差哪一项」）
+- [x] 判据的期望值来源可追溯（指向 gdd §A.2 或 spec 条目），不是硬编码字面量
+- [x] 相关单测补齐；全量 pytest 仍全绿
+
+## Answer（2026-10-21 实机取证与修法）
+
+### 缺陷 1：retention 判据读错了配置面 —— 两个错叠在一起
+
+**错一（读法）**：`init-kafka.sh` 用 `kafka-configs.sh --alter --entity-type topics`
+写的是**动态主题配置**；判据却用 `kafka-topics.sh --describe` 读，其 `Configs:` 列在
+Kafka 4.3.1 实测只输出 `min.insync.replicas=1` ⇒ **恒假 FAIL**。
+
+实机证据（施加方与判据读了两份不同的东西）：
+
+```
+$ kafka-topics.sh --describe --topic ecom.behavior.event.v1
+Topic: ... Configs: min.insync.replicas=1          ← 判据读这里
+
+$ kafka-configs.sh --describe --entity-type topics --entity-name ecom.behavior.event.v1
+Dynamic configs for topic ecom.behavior.event.v1 are:        ← 为空
+```
+
+**错二（施加生效性）**：当时动态配置面确实是**空的**——不是判据读法的锅，而是
+topic 在 `kafka-init` 之后被**重建**过。铁证是 TopicId 对不上：
+
+| 来源 | TopicId |
+|---|---|
+| `docker logs eco-kafka-init` 里的 final state | `oo5nJ7cGR-uOMKowE90ckQ` |
+| 当前 topic | `QctlI2_OS9WP6btYGaCE1w` |
+
+⇒ 重建后的新 topic 继承 broker 默认，**没有**主题级 retention 覆盖。
+重新走既有初始化路径（`docker compose run --rm kafka-init`）后：
+
+```
+Dynamic configs for topic ecom.behavior.event.v1 are:
+  retention.bytes=2147483648 ... synonyms={DYNAMIC_TOPIC_CONFIG:retention.bytes=...}
+  retention.ms=604800000 ... synonyms={DYNAMIC_TOPIC_CONFIG:retention.ms=...}
+```
+
+### 修法（`src/ecomgen/verify_runner.py`）
+
+1. `check_kafka_topic()` 改读 `kafka-configs.sh --describe --entity-type topics
+   --entity-name <topic>` —— **与施加方同一配置面**。
+2. 拆成「解析」与「判定」两个纯函数：
+   - `parse_dynamic_topic_configs()`：只认 `Dynamic configs ... are:` 块内的
+     `键=值`；**没有块头 ⇒ 返回 `None`（取不到）**，不把「没配置」静默当空。
+   - `check_kafka_retention_from_configs()`：`retention.ms` 与 `retention.bytes`
+     **两个键都必须全等**才算 PASS（只对一项不算过）。
+3. 期望值来自 `TOPIC_RETENTION_MS = "604800000"` / `TOPIC_RETENTION_BYTES = "2147483648"`，
+   注释指向 **gdd §A.2 / REQ-F-MQ-03**，与 `init-kafka.sh` 的默认值同源。
+4. 取不到动态配置时判 **FAIL 而非 SKIP**：topic 存在且配置可读是本判据的前提，
+   SKIP 会重新打开「恒真假通过」的口子。
+
+### 缺陷 2：`doris-ads-rows` 三表捆成一条
+
+改为**逐表查、逐表判**（`check_doris_ads_rows` + 纯函数
+`check_doris_ads_rows_from_counts`），`actual` 里逐表写 `表名=行数 PASS/FAIL`：
+
+```
+PASS doris-ads-rows ads_window_metric=772 PASS ads_funnel_step=103 PASS
+     ads_late_expired_count=157 PASS vs 每张 ADS 表 COUNT(*)>0（逐表判定）
+```
+
+超期表为 0 时同一行会显示 `ads_window_metric=772 PASS … ads_late_expired_count=0 FAIL`，
+另两张的好状态不再被掩盖，也直接回答了「还差哪一项」。
+查询失败判 FAIL（ADS 行数是 P1 核心判据，不 SKIP 掉）。
+
+`docker/scripts/doris-assert.sh` 保持原样——它仍服务 `make init` 第四段，
+并额外断言 `dynamic_partition_enable`；verify 不再借道它。
+
+### 反例证据（判据真的在断言）
+
+`tests/test_verify_checks.py` 新增 10 条，其中 6 条是**反例**：
+
+| 反例 | 期望 |
+|---|---|
+| `retention.ms=60000` | FAIL，`actual` 里能看到错值 |
+| 只有 `retention.ms`、缺 `retention.bytes` | FAIL（不是「一项对就算过」） |
+| 动态配置取不到（命令失败） | FAIL（不是 SKIP） |
+| 块头存在但块内为空（retention 未施加） | FAIL |
+| `ads_late_expired_count=0` | FAIL，且另两张仍显示 `PASS` 与实际行数 |
+| Doris 查询失败 | FAIL，`detail` 保留原始输出 |
+
+### 验收实测
+
+```
+$ make verify
+PASS kafka-topic-retention retention.ms=604800000 retention.bytes=2147483648 vs ...
+PASS flink-job-running RUNNING vs jobs[].state==RUNNING
+SKIP paimon-five-layers P1 未开离线分层 vs ...
+PASS doris-ads-rows ads_window_metric=772 PASS ads_funnel_step=103 PASS
+                    ads_late_expired_count=157 PASS vs 每张 ADS 表 COUNT(*)>0（逐表判定）
+PASS superset-health OK vs OK
+PASS funnel-cnt-inferred-monotone [30, 28, 25, 20] vs 沿 step 1→4 非增
+PASS dlq-rate-no-increase ...
+PASS is-settled-two-states pending=69 settled=703 vs ...
+PASS degradation-ladder oom_killed=0（阈值 2，设计值） vs ...
+=== verify 完成：PASS=8 FAIL=0 SKIP=1 ⇒ 退出码 0 ===
+```
+
+- 全量 pytest：**98 passed**（原 88 + 新增 10）
+- `make lint` PASS、`make typecheck`（errors=0）
+
+### 遗留提醒
+
+topic 被重建会**静默丢掉**主题级 retention。当前补救路径是重跑 `kafka-init`；
+由于 `make init` 的第一段依赖 compose 的 `kafka-init` 服务，正常流程不会漏。
+若将来有人手工删建 topic，`make verify` 的 `kafka-topic-retention` 会立刻 FAIL 点名，
+这正是本判据现在应有的行为。
 
 ## Notes
 
