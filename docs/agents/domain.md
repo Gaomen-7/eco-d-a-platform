@@ -9,7 +9,7 @@
 - **`GLOSSARY.md`**（仓库根目录）——单一术语表，全仓共用。
 - **`docs/adr/`**——读与你要动的那块区域相关的 ADR。
 
-当前**尚未创建** `GLOSSARY.md` 与 `docs/adr/`，这是预期状态：本次初始化只定下 single-context 布局，不预建空文件。第一次真正写下词条或做出架构决定时，再由 `/domain-modeling`（经 `/grill-with-docs`、`/improve-codebase-architecture` 到达）按需创建。
+`GLOSSARY.md` 于 2026-10-20 创建；`docs/adr/` 于 2026-10-21 随 ADR-0001/0002 创建。二者仍**按需增长**：不为未来词条或决定预建空文件，新词条与新 ADR 由 `/domain-modeling`（经 `/grill-with-docs` 等到达）在结晶时写入。
 
 若这些文件不存在，**静默继续**：不要提示它们缺失，也不要建议先建。
 
