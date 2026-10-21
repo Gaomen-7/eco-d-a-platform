@@ -19,9 +19,10 @@ export PATH := $(HOME)/.local/bin:$(PATH)
 
 COMPOSE      ?= docker compose
 PYBIN        ?= python3
+# uv 只是**引导**（找到工程与 .venv 的那个二进制）；ruff / basedpyright 的
+# 版本唯一权威是 uv.lock（ADR-0001）。**不要**把 lint/typecheck 改回直调
+# ~/.local/bin 下的独立安装——那会重新引入跨机漂移，违背锚点政策（SRS C3）。
 UV           ?= $(HOME)/.local/bin/uv
-RUFF         ?= $(HOME)/.local/bin/ruff
-BASEDPYRIGHT ?= $(HOME)/.local/bin/basedpyright
 
 # 冻结端口（HLD §4.3）
 FLINK_UI   := 8081
@@ -109,17 +110,18 @@ client:
 
 # ── 静态检查（新增，HLD §3.3.6）────────────────────────────────────
 # 与 verify 分开：verify 是运行时烟测（链路必须在跑），这两条只查源码。
+# 一律经 `uv run`：跑的就是 uv.lock 里 pin 住的工具版本（ADR-0001）。
 lint:
 	@echo "=== ruff check（lint）==="
-	$(RUFF) check . || exit $$?
+	$(UV) run ruff check . || exit $$?
 	@echo "=== ruff format --check ==="
-	$(RUFF) format --check . || exit $$?
+	$(UV) run ruff format --check . || exit $$?
 	@echo "lint: PASS"
 
 typecheck:
 	@echo "=== basedpyright（只解析 JSON；--outputjson 与 verbose/stats 互斥）==="
-	@$(BASEDPYRIGHT) --outputjson > .basedpyright.json || true; \
-	$(PYBIN) -c "import json,sys; d=json.load(open('.basedpyright.json')); \
+	@$(UV) run basedpyright --outputjson > .basedpyright.json || true; \
+	$(UV) run python -c "import json,sys; d=json.load(open('.basedpyright.json')); \
 	  s=d['summary']; e=s['errorCount']; w=s['warningCount']; \
 	  print(f\"  errors={e} warnings={w} files={s['filesAnalyzed']}\"); \
 	  print('  typecheck: PASS' if e==0 else '  typecheck: FAIL'); \
