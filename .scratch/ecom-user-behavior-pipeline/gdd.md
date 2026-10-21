@@ -3,9 +3,9 @@
 > **性质**：游戏/产品设计文档（Game/General Design Document）体例的**功能设计文档**。本文回答「每个功能**怎么做**、触发条件与状态怎么变、怎么算做到了」。
 > **日期**：2026-10-19（Asia/Shanghai）
 > **上游**：`SRS.md`（需求权威）｜`FSR.md`（路线冻结）｜`research-notes.md`（一手调研证据）
-> **下游**：`spec.md`（实施规格，另行开会话产出）
+> **下游**：本 spec 施工规格；**收口**：`canonical-truth.md`
 > **术语**：一律以仓库根 `GLOSSARY.md` 为准；本文出现的领域概念均在该表内定义。
-> **权威关系**：本文**不是** spec，也不声明需求。凡与 `SRS.md` 冲突处，本文在 §D 显式列出并说明，**不修改** `SRS.md`。
+> **权威关系**：本文**不是** spec，也不声明需求。凡与 `SRS.md` 冲突处，本文在 §D 显式列出并说明；事实类冲突可直接改写上游（见 `canonical-truth.md` §0 G1），意图类保留原话并登记。
 
 ## 0. 这份文档怎么用
 
@@ -74,7 +74,7 @@
 
 **状态与数据变化**
 - topic 状态：不存在 → 已创建 → 已配置（RF=1、固定分区数）。
-- 【已确认 D3】retention「7 天或 2 GB 取小」在本速率下**实际生效窗约 6 小时**（200 ev/s × ~500 B/条 ≈ 8.05 GB/天）。这是设计值而非缺陷，但**下游必须知情**（见模块④）。
+- 【已确认 D3】retention「7 天或 2 GB 取小」在本速率下的实际生效窗**按配置层级重算**（`retention.bytes` 按分区生效，6 分区下主题级 12 GB，[07] 订正后可能 ≈36 h，见 §D D3）。这是设计值而非缺陷，但**下游必须知情**（见模块④）。
 
 **验收判据**
 - 两 topic 均存在（`REQ-F-MQ-01`）。
@@ -112,6 +112,8 @@
 - DLQ topic 有消息且内容可读（`REQ-F-RT-07`）；并行度 ≤4（`REQ-F-RT-08`）。
 - **GDD 新增判据（替代原「配置可见」）**：
   - **迟到通道可证**：设 `--late-correctable 0.03` 后，Doris 侧出现 `revision > 0` 的窗口；设 `--late-expired 0.02` 后，迟到计数表出现对应条目。**不能**用「Flink UI 里能看到」当判据。
+  - **漏斗修正语义（[03] A①）**：`purchase` 迟到 ≤120 s 落入已落定窗口 ⇒ 重发 ⇒ 该分钟**漏斗客数被修正**、`ads_funnel_step.revision`+1（依据 TTL 32 min＝30 min 会话＋2 min 允许延迟）；`revision` 语义与 `ads_window_metric` 同构；**超期（>120 s）只计数、绝不修正**。漏斗唯一键**不含 revision**（`session_date, step_no, window_start`），单调断言只押 `cnt_inferred` 沿 step 1→4 非增、`cnt_observed` 不押（`--chaos-ratio` 下跳步合法）。
+  - **UV 对账（[03] A③）**：切窗 `window_start = floor(event_time_ms/60000)×60000`；P2 起 `lake_assert.sh` 逐 `metric_name` 比对 Paimon/Doris 两套 `ads_window_metric`，**只比 `is_settled=1`**、逐值严格相等；**P1 显式 SKIP**。
   - **重复与脏可分可证**：故障恢复重放期间，**脏率不得上升**，重复计数上升（D2 见 §D）。原型已实测：若把重复计为脏，重放 5 条合法事件会把脏率从 0% 推到 50%（真脏 0 条）。
   - **漏斗单调且诚实**：`funnel_cnt_observed` 允许非单调（真实跳步），`funnel_cnt_inferred` 必须单调不增。
   - **UV 精确性**：实时滚动 UV 与离线精确 UV **逐窗口相等**（【已确认 Q23】使对账从「误差量化」升级为一致性校验）。
@@ -123,7 +125,7 @@
 **流程**
 1. 【已确认 Q25】**ODS 只落原样字节**：`payload` 原文 + `kafka_partition` / `offset` / `timestamp` 元数据。**一切解析、类型归属、时间单位转换都在 DWD 完成**。
    理由：`REQ-F-LAKE-01` 要求「不做有损加工」；秒→毫秒转换一旦在 ODS 发生便不可回滚，重放会拿到被改过的数据。且同类项目的坑正是「schema 变更炸历史分区」——把解析推迟到 DWD 可让 ODS 完全免疫 schema 演进。
-2. DWD：清洗 + 规范化 + 统一 UTC epoch 毫秒 + 超集 schema；**主键表**（`event_id`）。
+2. DWD：清洗 + 规范化 + 统一 UTC epoch 毫秒 + 超集 schema；**主键表**（`event_id`）＋ `upsert-materialize=NONE`（不设 `sequence.field`，靠重放确定性吸收重复）。
 3. DIM：**时态维表**（商品/品类/用户/地域/渠道），主键表 + 拉链区间。【已确认 Q26】由生成器的维度变更流喂给。
 4. DWS：主题宽表聚合；ADS：应用层指标。
 5. 五层全部落 Paimon 单一 catalog（库名 `ecom_lake`）。
@@ -151,7 +153,8 @@
 - **GDD 升级判据（原判据空表也能通过）**：
   - DIM 判据从「可 join 出结果」升级为「**同一 `item_id` 在不同 `event_time` 下 join 出不同属性值，且拉链区间无重叠无空洞**」（`REQ-F-LAKE-03` 的强化）。
   - 拒绝表判据为「违规样本被正确分流**且有计数**」，且**必须能区分三类原因**（结构/取值、时间范围、重复）。
-  - **GDD 新增判据**：**不变量断言**——`ODS 行数 = DWD 行数 + 拒绝表行数 + 迟到标记差异`（在给定输入下应可逐条对平）。
+  - **不变量断言（[05] Q11 已替换）**：原「ODS = DWD + 拒绝 + 迟到标记差异」**删除**（「迟到标记差异」不是可加项），替换为三条可判断言 **A1（分流完备：ODS/DWD/拒绝表 distinct event_id 闭合）/ A2（重复只记账不断言）/ A3（迟到对账：DWD `is_late=1` 行数 = 迟到计数表 `sum(cnt)`）**，判据见 spec §5.4。
+  - **快照判据（[05] 收口）**：`num-retained.min=5`（显式）＋ `num-retained.max=20`＋`time-retained` 保持 1 h 默认；判据 `SELECT count(*) FROM <t>$snapshots` 落 **[5,20]**；`replay` 末尾 `sys.expire_snapshots(retain_max => 20)` 收上界（`retain_max` 是上界不是「钉住」）。
 
 ### 1.5 模块⑤ OLAP
 
@@ -161,7 +164,7 @@
 - 看板直连库 `ecom_ads`。
 - 【已确认 Q23】表模型**保留 UNIQUE KEY 模型**（Merge-on-Write），写入幂等；滚动 UV 由上游算好以整数写入。
 - 【已确认 Q27】分区保留**必须显式配置**：`dynamic_partition.start = -30`。**官方默认是 -2147483648，语义为「历史分区不删除」**——照默认建表的结果是**永不删除**，与需求**恰好相反**（详见 §D D1）。
-- 覆盖写修正依赖 same-key upsert；如需部分列更新，Doris 对 UNIQUE MoW 支持 `partial_columns=true`，但**默认 INSERT INTO 是整行 UPSERT**，必须显式开启。
+- 覆盖写修正依赖 same-key upsert。如需部分列更新：**`partial_columns=true` 不是表属性**（[08] D-7 官方文档与源码均无此建表属性），它是导入 header / `sink.properties.*` 参数；且普通 `partial_columns` 受 **Batch constraint** 限制（一批内只能更新同一组列）；同批多列组须用 3.1.0+ 灵活列更新（JSON ＋ `skip_bitmap_column`，**禁用 `sequence_col`**）。**默认 INSERT INTO 是整行 UPSERT**。
 
 **状态与数据变化**：窗口行 `写入 → 暂定值 → 落定 → (被修正，revision+1)`。
 
@@ -176,7 +179,8 @@
 
 **流程**
 - 面板：实时 PV / UV、4 步转化漏斗（**步进式**）、实时 GMV、品类分布、地域分布；【SHOULD】脏数据率。
-- 地域与品类**不依赖 GIS/底图**：省份排行横条 + 自绘省份方格地图 + 品类 treemap。
+- 地域与品类**不依赖 GIS/底图**：**地域改横条排行**（[06] Q4 裁决：自绘省份方格地图无内置实现路径——`deck_geojson` 需 GeoJSON 列＋默认 OSM 底图，违背「不依赖 GIS」）＋ 品类 treemap。
+- **三态载体（[06] Q1 裁决）**：**B 单表行内状态为主**——Table ＋ 自定义 SQL `CASE WHEN is_settled=0 THEN '暂定' WHEN revision>0 THEN '已修订' ELSE '落定' END` ＋ 条件格式（[03] Q2「同表同一行」的最直译）；**A 式当前窗口双块补充**——暂定 Big Number 与落定并排。C 单图双色叠加**不实现**（「修订描边」需 DOM 挂钩，CSP 禁自定义 JS；留原型证据）。
 - **实时感**：数值跳动 + 相对基线 delta + sparkline + 阈值带，再加 **as-of / 已修订指示**。
 - 【已确认 Q13】必须**视觉区分暂定值与落定值**（窗口关闭前是暂定），否则是「假实时」。
 - 【已确认】刷新下限：Superset **没有**「不得小于 10 秒」的硬下限（`SUPERSET_DASHBOARD_PERIODICAL_REFRESH_LIMIT = 0` 仅警告阈值，自定义下限 1 s），故 ≤10 s 可实现。
@@ -201,7 +205,8 @@
   ★ **另一条 P0 实测**：`registry-1.docker.io` **不可达**（`docker manifest inspect` 报 `Client.Timeout`）⇒ 必须走中国镜像站；compose 已参数化 `${REGISTRY_MIRROR}`（默认 `docker.m.daocloud.io`），实测 Kafka/Flink/Superset **拉取成功**。
 - 【已确认 G3】Superset 复用官方 `docker/` 骨架（compose + entrypoint + 初始化脚本），但剥离其演示用示例数据。
   **初始化的确切顺序**（官方 `docker-init.sh` 实证）：① `superset db upgrade` → ② `superset fab create-admin` → ③ `superset init`（建默认角色与权限）→ ④ `superset load_examples`（**可选，本项目应关闭**）。密钥由环境变量 `SUPERSET_SECRET_KEY` 提供（官方变量名）。
-  看板交付形式：`superset import-dashboards -p <.zip>`（产物由 `superset export-dashboards` 生成；zip 内含 `metadata.yaml`、`dashboards/*.yaml`、`charts/*.yaml`、`datasets/*.yaml` 等）。⚠️ 该 CLI 的官方原话**只在源码 docstring**（「Export dashboards to ZIP file」），官方文档页未见——故文档引用时注明「源码级证据」。
+  看板交付形式：`superset import-dashboards -p <.zip>`（产物由 `superset export-dashboards` 生成；zip 内含 `metadata.yaml`、`dashboards/*.yaml`、`charts/*.yaml`、`datasets/*.yaml` 等）。⚠️ 该 CLI 的官方原话**只在源码 docstring**（「Export dashboards to ZIP file」），官方文档页未见——故文档引用时注明「源码级证据」。**zip 定位（[06] Q5 裁决）**：zip 保留为 `make init` 的复现**手段**（本节承载），判据归 SRS（浏览器能看能刷）。
+  ★ **`database_uuid` 硬约束（[06] Q5，源码级）**：dashboard importer 逐字 `config["database_id"] = database_ids[config["database_uuid"]]` ⇒ **dataset 经 `database_uuid` 匹配目标实例的 database**；`make init` 建 `ecom_ads` 连接时**必须固定/回填该 UUID**，否则导入后全部图表断链。
 - 逐服务显式 `mem_limit`；`restart: unless-stopped`；端口仅绑 `127.0.0.1`；日志轮转 10 MB × 3。
   - ⚠️ **2026-10-19 补**：`mem_limit` **管不到 swap**（官方：只设 `memory` 不设 `memswap_limit` 时容器可借**等量** swap）⇒ **每个服务同时写 `memswap_limit` ＝ `mem_limit`**，否则 `REQ-F-ORCH-02` 有渗漏点。
   - ⚠️ **不与** `deploy.resources.limits.memory` **并存**（官方：`deploy` 是可选段、未实现即忽略；并存时要求二者一致）。
@@ -225,7 +230,7 @@
 **状态与数据变化**：无自身状态；产出断言结果与退出码。
 
 **验收判据**
-- `make verify` 五项断言全通过、退出码 0（`REQ-F-VERIFY-01`）。**五项的确切断言形式**（据官方接口，避免「配置可见」式空判据）：
+- `make verify` 五项断言**分层进码**（[03] Q5）：P1 里程碑＝4 真断言＋1 显式 SKIP（第三项「Paimon 五层有行」SKIP，不计通过不计 fail）；P2 里程碑＝5 真断言；判定通过即退出码 0。**五项的确切断言形式**（据官方接口，避免「配置可见」式空判据）：
 
 | 烟测项 | 可执行断言 | 出处/接口 |
 | --- | --- | --- |
@@ -235,9 +240,10 @@
 | Doris ADS 有行 | `SELECT COUNT(*) FROM ecom_ads.<ads_table>`；FE 健康 `GET :8030/api/health` 返回 `online_backend_num == total_backend_num` | [FE health-action](https://doris.apache.org/docs/3.x/admin-manual/open-api/fe-http/health-action/) |
 | Superset 健康 | `GET /health` 返回 **200 且响应体为纯文本 `OK`**（⚠️ **不是 JSON**，别按 JSON 解析） | [health.py](https://github.com/apache/superset/blob/master/superset/views/health.py) |
 
-- `REQ-F-VERIFY-02` 幂等：同 `--seed` 同批数据跑两遍，Doris 结果一致。
+- `REQ-F-VERIFY-02` 幂等：同 `--seed` 同批数据跑两遍，Doris 结果一致。**不进 `verify` 每次运行**（全量重放两遍是重操作）：由离线幂等断言（spec §5.4，DWD count + 逐列校验和两次一致）＋ `verify-fault` 恢复重放覆盖。
 - `REQ-F-VERIFY-03` 故障注入：kill TaskManager → 从 checkpoint 自动恢复 → 校验条数一致。
   **前提**：`execution.checkpointing.externalized-checkpoint-retention` 必须**显式设为 `RETAIN_ON_CANCELLATION`/`RETAIN_ON_FAILURE`**（官方默认 `NO_EXTERNALIZED_CHECKPOINTS`，默认值下**无法**从指定点恢复）。
+  **参数化判据（[03] Q6，超时均为设计值）**：输入冻结 → 两表（`ads_window_metric`/`ads_funnel_step`）count+sum 基线 → kill TM → RUNNING 超时 **120 s** → lag 清零＋一次 checkpoint 超时 **300 s** → 两表 count/sum 与基线全等、重复通道计数**上升**（证明重放被幂等吸收）；负断言基线＝kill 前 DLQ 快照（`--seed` 确定性下应等于期望脏数），条数一致但 DLQ 上升 ⇒ fail。
 - **GDD 新增判据（把「配置可见」升级为「行为可证」）**：
   - `verify-fault` 期间**脏率不得上升**（重复与脏必须可分）。
   - UV 对账断言为「实时 == 离线精确」，逐窗口比。
@@ -306,7 +312,7 @@
 | Kafka 分区键 | **`user_id`** | 保每用户有序 |
 | DLQ 分区数 / 键 | 6 / `user_id` | 便于定位哪个用户的数据出问题 |
 | Kafka RF | **1** | 单机 KRaft |
-| Kafka retention | **`retention.ms=604800000`（7 天）或 `retention.bytes=2147483648`（2 GB）取小** | ⚠️ 官方原话「A segment will be deleted whenever **either** of these criteria are met」——即**任一先满足即删**。实测**约 6 小时**触发 2 GB（D3，≈8.05 GB/天）。两键默认值分别为 7 天与 `-1`（无上限），**2 GB 须显式设** |
+| Kafka retention | **`retention.ms=604800000`（7 天）或 `retention.bytes=2147483648`（2 GB）取小** | ⚠️ 官方原话「A segment will be deleted whenever **either** of these criteria are met」——即**任一先满足即删**（逐字在 Kafka **Log 实现页**）。⚠️ **按配置层级重算（[07]）**：`retention.bytes` **按分区**生效 ⇒ 6 分区下主题级实为 12 GB ⇒ 2 GB/分区档可能 ≈36 h 才触发（见 §D D3，勿按 ≈6 h 引用）。`retention.ms`/`retention.bytes` 默认值分别为 7 天与 `-1`（无上限），**2 GB 须显式设** |
 | Flink 并行度 | **≤4** | |
 | checkpoint 间隔 / 最小间隔 / 超时 | **30 s / 10 s / 10 min** | 官方默认：`interval`=(none)、`min-pause`=0 ms、`timeout`=10 min（超时用默认） |
 | checkpoint 语义 | `execution.checkpointing.mode=EXACTLY_ONCE` | 官方默认即 EXACTLY_ONCE；另一合法值 `AT_LEAST_ONCE` |
@@ -412,7 +418,7 @@ pending ──> running ──> published
 | F5 | Schema 变更导致恢复失败 | 从 checkpoint 恢复时 `IllegalStateException`（同类项目实证的坑） | 无自动恢复 | 预留 `ext_field` 列；或从 ODS 重放 | **GDD 新增**：schema 演进演练可跑通 |
 | **F14** | **★ P0 实测新增** 配置格式与镜像内容不符预期 | ①flink-jm 变 `unhealthy`（日志 `The Flink config file '/opt/flink/conf/config.yaml' does not exist`）；②Superset worker 启动即 `ModuleNotFoundError: No module named 'psycopg2'`；③`kafka-init` 退出码 1（`--alter` 报「the kafka-configs tool can be used」） | 三条均已定位并修复（见下） | 无 | 骨架四服务全 healthy + topic 配置与 §A.2 一致 |
 | **F15** | **★ P0 实测新增** 镜像仓库不可达 | `docker manifest inspect` 报 `registry-1.docker.io` `Client.Timeout`；官方标签 `apache/doris:4.1.5` 拉取 `denied` | 走中国镜像站（compose 已参数化 `${REGISTRY_MIRROR}`） | 自建 Doris 镜像 | 四个锚点镜像可拉（Doris 需本地构建） |
-| **F16** | **★ P0 实测新增** named volume 失效致 `REQ-F-ORCH-05` 不成立 | `docker compose down` 后再 `up`，Kafka offsets 由 1 **归 0**（数据丢失）；卷内容为空 | **显式设 `KAFKA_LOG_DIRS`** | — | `down`→`up` 后 offsets 不变（**已证：3→3**） |
+| **F16** | **★ P0 实测新增** named volume 失效致 `REQ-F-ORCH-05` 不成立（引用标注：**gdd §C F16**——gdd 无「D16」，勿再错引） | `docker compose down` 后再 `up`，Kafka offsets 由 1 **归 0**（数据丢失）；卷内容为空 | **显式设 `KAFKA_LOG_DIRS`** | — | `down`→`up` 后 offsets 不变（**已证：3→3**） |
 
 **★ F16 详情（P0 实测，2026-10-19）**：官方 `apache/kafka:4.3.1` 镜像的默认 `log.dirs` 是 **`/tmp/kraft-combined-logs`**（`/opt/kafka/config/server.properties:73` 逐字）——**`/tmp` 是容器内路径，`down/up` 后清空**。因此即使 compose 里挂了 named volume，**数据也从未落进去**（实测卷内容 `total 4.0K`）。修复＝显式 `KAFKA_LOG_DIRS=/var/lib/kafka/data`，复验两条：`restart` → offsets 3→3；**`down`+`up` → offsets 3→3**（后者是 `REQ-F-ORCH-05` 的原文判据），topic 与 retention 配置同样保住。
 **教训**：**named volume 挂上去不等于数据落在里面**——必须核对应用的**实际写入路径**与挂载点是否一致。与「`mem_limit` 管不到 swap」（F9 相关）同类：**约束写了 ≠ 约束生效**。
@@ -422,7 +428,7 @@ pending ──> running ──> published
 2. **`apache/superset:6.1.0` 镜像不含任何 DB 驱动**（psycopg2/psycopg/mysqlclient/pymysql 全 MISSING）⇒ 元数据库改 **SQLite**；`ecom_ads` 所需 MySQL 驱动经官方机制 `/app/docker/requirements-local.txt`（`docker-bootstrap.sh:35`）装 **PyMySQL**。
 3. **Kafka 4.3.1 的 `kafka-topics.sh` 不再支持 `--alter` 改配置**（报错原文指向 `kafka-configs` 工具）⇒ 改用 **`kafka-configs.sh --alter --entity-type topics`**。修复后两 topic 配置为 `retention.ms=604800000,retention.bytes=2147483648`、6 分区、RF=1，与 §A.2 一致。
 | F6 | Kafka 分区空闲致**水印**停滞 | 窗口不关闭、指标不更新 | 空闲超时 `table.exec.source.idle-timeout=30s` 生效 | 手动制造流量 | 停掉部分分区后窗口仍按 60 s 关闭 |
-| F7 | offset 过期（retention 生效） | `auto.offset.reset` 触发；消费从头/从尾 | 依赖配置的下游行为 | **离线回放不得从 Kafka 重读**（D3：实际保留窗约 6 小时），应走 `dump` 文件 | 长回放不静默丢数据 |
+| F7 | offset 过期（retention 生效） | `auto.offset.reset` 触发；消费从头/从尾 | 依赖配置的下游行为 | **离线回放不得从 Kafka 重读**（D3：保留窗按配置层级重算，勿按 ≈6 h 引用），应走 `dump` 文件 | 长回放不静默丢数据 |
 | F8 | Doris FE/BE 容器重启后数据丢失 | 查询空表 | named volume（**必需**） | 重建初始化 | `down` 再 `up` 数据仍在（`REQ-F-ORCH-05`） |
 | F9 | 内存超限 OOM kill | `docker stats` 超预算；容器被杀 | `mem_limit` 硬限 | 按 R3 序列降级（MinIO→文件；Superset→Grafana；**新增：Kafka→原生镜像**） | `docker stats` 总值 ≤8 GB |
 | F10 | 磁盘击穿 20 GB | 卷使用率 | 保留策略生效 | 关注 `REQ-NF-CAP-07` 提示 | 分区保留**行为**可证（D1：须显式 `start=-30`） |
@@ -434,7 +440,7 @@ pending ──> running ──> published
 
 ## D. 对 SRS 的偏离与缺陷
 
-> 本节目的是**暴露**而非覆盖（按 Q8：不改 `SRS.md`，等 `spec.md` 会话统一收口）。不为「文档说错了」开票；只有需要真正施工动作时才开票。
+> 本节目的是**暴露**而非覆盖（收口与上游改写统一走 `canonical-truth.md` §1；事实类可直接改写上游）。不为「文档说错了」开票；只有需要真正施工动作时才开票。
 
 ### D1 · `REQ-NF-REL-03` 与 `REQ-F-OLAP-02` 把一件事说成两道独立防线
 SRS 一边要「end-to-end exactly-once：source offset + checkpoint + sink 2PC 三处对齐」，一边要 unique key 幂等。
@@ -448,9 +454,10 @@ SRS 一边要「end-to-end exactly-once：source offset + checkpoint + sink 2PC 
 `REQ-F-VERIFY-03` 的故障注入**本身就是合法重放**，重放事件**必然重复**。若重复＝脏，则每次演练都会把合法重放倒进 DLQ，并让「脏数据率」面板飙到假值。
 **修正**：重复**摘出为独立通道**（计数、不进 DLQ、不计脏率）；脏通道只保留结构与取值、时间范围两类。**原型已实证**该污染：0% → 50%（真脏 0 条）。
 
-### D3 · `REQ-F-MQ-03`「7 天或 2 GB 取小」的实际生效窗约 6 小时
-算术：200 ev/s × ~500 B ≈ **8.05 GB/天** → 2 GB 上限约 **6 小时**触发。
-**后果**：`REQ-F-GEN-07` 的「离线回放」**不得**从 Kafka 重读超 6 小时的历史（应走 `dump` 文件）；`verify-fault` 的恢复窗口若超 6 小时，offset 可能已过期。
+### D3 · `REQ-F-MQ-03`「7 天或 2 GB 取小」的实际生效窗须按配置层级重算
+算术：200 ev/s × ~500 B ≈ **8.05 GB/天** → 主题级 2 GB 上限约 **6 小时**触发。
+**订正（[07] 一手取证，2026-10-20）**：`retention.bytes` **按分区**生效 ⇒ 6 分区下主题级实际容纳 6 × 2 GB = 12 GB ⇒ 触发窗可能实为 **≈36 h**（精确值须按实配重算，**「≈6 h」勿再直接引用**）。所引 Kafka 官方逐字句在 4.3 官方站未命中（逐字在 **Log 实现页**），引用时须改指该页。
+**后果**：`REQ-F-GEN-07` 的「离线回放」**不得**从 Kafka 重读历史（应走 `dump` 文件——该结论在任一档位下都成立）；`verify-fault` 的恢复窗口若超实际保留窗，offset 可能已过期。
 
 ### D4 · ★致命★ `REQ-F-LAKE-09` 与质量规则①互斥，公开数据集回放会 100% 被判脏
 - `SRS.md` §3.3 规则①：`event_time` **不早于 2020-01-01**。
@@ -467,16 +474,16 @@ SRS 一边要「end-to-end exactly-once：source offset + checkpoint + sink 2PC 
 `REQ-F-GEN-08` 要「维度数据」、`REQ-F-LAKE-03` 要「时态维表」，但 §3.3 **只有事件字段表**，没有任何维度表字段定义；判据「可装载出非空维表」「可 join 出结果」**空维表也能通过**。
 **处置（GDD 补全）**：见 §D6.1 维表字段定义。
 
-#### D6.1 维表字段定义（GDD 补全；【按推荐 Q31】）
+#### D6.1 维表字段定义（GDD 补全；【按推荐 Q31】；拉链字段已按 [05] 改名）
 | 表 | 主键 | 字段 | 拉链 |
 | --- | --- | --- | --- |
-| `dim_item` | `item_id` | `category_id`、`price`、`on_shelf`（上架状态）、`brand` | `start_date` / `end_date` |
-| `dim_category` | `category_id` | `category_name`、`parent_id`、`level` | `start_date` / `end_date` |
-| `dim_user` | `user_id` | `register_channel`、`province`、`level` | `start_date` / `end_date` |
+| `dim_item` | `(item_id, valid_from_ms)` | `category_id`、`price`、`on_shelf`（上架状态）、`brand` | **`valid_from_ms` / `valid_to_ms`**（BIGINT UTC epoch 毫秒；`end_date` 日期精度表达不了同日两次变更；`valid_to_ms = 9999999999999` 表仍有效） |
+| `dim_category` | `(category_id, valid_from_ms)` | `category_name`、`parent_id`、`level` | **`valid_from_ms` / `valid_to_ms`** |
+| `dim_user` | `(user_id, valid_from_ms)` | `register_channel`、`province`、`level` | **`valid_from_ms` / `valid_to_ms`** |
 | `dim_region` | `province` | `region`（华东/华南…）、`city_tier` | 静态（无需拉链） |
 | `dim_channel` | `channel` | `channel_name`、`is_paid` | 静态 |
 **枚举开放性**：`province` / `channel` 取 **封闭但可扩展**——有默认全集、校验非空、允许新增并记录（理由是这两个维度「可枚举但会增长」）。
-**拉链判据**：同一 `item_id` 在不同 `event_time` 下 join 出**不同**属性值，且区间**无重叠无空洞**。
+**拉链判据**：同一 `item_id` 在不同 `event_time` 下 join 出**不同**属性值，且区间**无重叠无空洞**。时态维 join 走 **batch 区间 join**（`event_time_ms BETWEEN valid_from_ms AND valid_to_ms`）——lookup join 被官方逐字否定（processing-time，回放必错）；Paimon 全站**无 zipper/SCD 官方能力**。拉链时间源＝维度变更流 `change_time`（事件时间语义，满足 D-3）。
 
 ### D7 · `REQ-F-LAKE-08` 快照数 5 与官方默认 10 不符
 Paimon `snapshot.num-retained.min` 官方默认 **10**。**处置**：表属性**显式设 5**（见 §A）。
@@ -484,6 +491,7 @@ Paimon `snapshot.num-retained.min` 官方默认 **10**。**处置**：表属性*
 ### D8 · `REQ-F-OLAP-03` 的「30 天保留」默认不生效（**2026-10-19 补第三个前置条件**）
 官方 `dynamic_partition.start` 默认 **-2147483648** ＝「历史分区不删除」。**处置**：**显式设 `start=-30`**（见 §A）。照默认建表的结果与需求**恰好相反**。
 ★ **补充（本轮新发现，原 D8 漏了）**：Doris 动态分区另有 **FE 级总开关 `dynamic_partition_enable`，默认 `false`** ⇒ **即使表上写了 `dynamic_partition.enable=true`，默认配置下分区创建/删除调度根本不跑**。故 §1.5 的判据「`SHOW PARTITIONS` 显示历史分区被**实际删除**」在默认配置下**必然不通过**。初始化脚本必须显式执行 `ADMIN SET FRONTEND CONFIG ("dynamic_partition_enable"="true")`，并补齐另三个必填/关键项：`time_unit`、`end`、`prefix`，以及不出历史分区就不生效的 `create_history_partition=true`。
+⚠️ **事实订正（[07] 一手取证，2026-10-20）**：**本仓跑 4.1.5-release 二进制，以该 tag 源码为权威**——`dynamic_partition_enable` 4.1.5 默认为 **`true`** 而非 `false`，上面「FE 总开关须显式打开」这个前置条件**作废**；且官方两文档页对该默认值本就自相矛盾。真正前置＝**表级四项**：`enable=true`／显式 `start`／`time_unit`+`end`+`prefix`／`create_history_partition=true`。`ADMIN SET FRONTEND CONFIG` 对 `dynamic_partition_enable` 属幂等冗余，且官方明写运行时设置在 FE 重启后失效，**勿再依赖**。`start` 默认 `-2147483648` 的主张经源码复核**证真**。
 
 ### D9 · `REQ-F-RT-03` 的立论前提不成立（**近似算法**降级）
 SRS 称「全量去重状态会顶满天花板」故须近似。**算术核对**：去重基数是**用户池**（10 万）而非事件数（720k/h）；精确去重状态 **MB 级**，前提不成立。
@@ -492,6 +500,7 @@ SRS 称「全量去重状态会顶满天花板」故须近似。**算术核对**
 ### D10 · `REQ-F-RT-04` 的迟到通道在 SRS 中无落点
 SRS 要求迟到走侧输出、判据是「侧输出确有迟到事件」，但**全篇未定义落点**（无 topic、无表、无标记列）。
 **处置**：落点补为「允许延迟内→窗口修正（Doris unique key 覆盖，`revision` 递增）＋超期→迟到计数表＋离线 DWD 加 `is_late` / `late_lag_ms` 标记列」。
+**硬约束（[08] D-11，2026-10-20 补）**：SQL 侧**连 allow-lateness 都没有**（FLINK-24000 逐字 "Window aggregate does not support allow-lateness like Group Window Aggregate."；`allowedLateness` 是 **DataStream-only**）⇒ 上面「允许延迟内→窗口修正」**必须落在 DataStream 段**；官方迟到机制映射：`allowedLateness` → late firing → "multiple results for the same computation … deduplicate them"（幂等吸收有官方依据）。迟到计数表落 **`dwd_late_event_count`**（[05] 收口，FC-2 已入冻结面）、`dt`×60 s 档、append、只存计数。
 
 ### D11 · 作业表达方式受官方能力强制
 Flink SQL **没有**迟到侧输出（FLINK-10031 / FLINK-20527 均 Open）。故「迟到走侧输出」这条 MUST **强制**至少一段必须是 DataStream。
@@ -499,7 +508,8 @@ Flink SQL **没有**迟到侧输出（FLINK-10031 / FLINK-20527 均 Open）。�
 
 ### D12 · 窗口内提前发射的机制约束
 `table.exec.emit.early-fire.*` 只对**旧式 Group Window Aggregation** 生效，**Window TVF 不支持**（官方原话：「window table function based aggregate doesn't support early-fire and late-fire configuration」）；且标 `@Experimental`、有移除跟踪 FLINK-29692。
-**处置**：若采纳窗口内提前发射（Q13），**必须用 Group Window Agg**，并在文档标注 Experimental 风险；若不可接受则降级为「分钟粒度 + as-of 指示」。
+**补记（[08] D-2 一手事实，2026-10-20）**：Group Window Aggregation 在 Flink 2.2 **官方文档已标 `deprecated`**（源码逐字 "will be dropped"）；TVF 聚合官方明写 "do not emit intermediate results"；CUMULATE 走 TVF 会被 `checkEmitConfiguration` **直接抛异常**。
+**处置**：若采纳窗口内提前发射（Q13），**必须用 Group Window Agg**——即**只能走一条正在被官方弃用的语法**，文档标注 Experimental/deprecated 风险（spec PI-3 标注级，非硬条件）；CUMULATE **不是**替代路径；若不可接受则降级为「分钟粒度 + as-of 指示」。
 
 ### D13 · 全链路 JDK 基线未记载
 connector README 版本表：Flink 2.0–2.3 → **JDK 17**（2.1+ 的 JDK 21 experimental）；Flink 2.x artifact 以 `--release 17` 编译。**SRS 与 FSR 都没写。**
@@ -508,8 +518,8 @@ connector README 版本表：Flink 2.0–2.3 → **JDK 17**（2.1+ 的 JDK 21 ex
 ### D14 · R2 的表述可以更精确
 connector **支持** Flink 2.3.x——卡住 2.3 的不是 Doris 侧，只是 Kafka connector 5.0.0 那条线。应表述为**单点断链**而非「全栈不支持」。
 
-### D15 · Doris 部署路径与 SRS 假设不符
-Doris **无官方 docker-compose**（官方仅 `curl | bash` 启动脚本；仓库内 `docker/` 是开发环境；官方明确 Docker 仅限开发测试、容器销毁即丢数据）。故 `REQ-F-ORCH-01` 的「一条命令」要求**自写 compose**，并自担 FE/BE 注册、root 密码、建库（SRS 未列工作量）；`REQ-F-ORCH-05` 的 named volume 是**必需**。
+### D15 · Doris 部署路径与 SRS 假设不符（⚠️ 本条已被 §1.7 G2 部分推翻）
+~~Doris **无官方 docker-compose**~~（**已被 gdd §1.7 G2 推翻**：官方有 `docker/runtime/all-in-one/4.1/compose/` 与 all-in-one 镜像——**勿再引用本条这个说法**）。仍成立的部分：官方明确 Docker 仅限开发测试、容器销毁即丢数据；故 `REQ-F-ORCH-01` 的「一条命令」＝裁剪官方 compose ＋ 自担 `mem_limit`/端口绑定/建库；`REQ-F-ORCH-05` 的 named volume 是**必需**。
 
 ---
 
@@ -531,9 +541,9 @@ Doris **无官方 docker-compose**（官方仅 `curl | bash` 启动脚本；仓�
 
 **已确认**：Q1–Q23（用户逐条裁决）；**Q24–Q31 已于 2026-10-19 全部按推荐裁决**。
 
-**2026-10-19 的修订记录（本文就地修订处，逐条）**：本文以下条目在读一手调研后**已就地修订**（`SRS.md`/`FSR.md` 未动，等 `spec.md` 收口）——
+**2026-10-19 的修订记录（本文就地修订处，逐条）**：本文以下条目在读一手调研后**已就地修订**（`SRS.md`/`FSR.md` 的上游改写统一按 `canonical-truth.md` §1 执行，已于 2026-10-21 由施工票 impl-01 落笔）——
 §1.7 G2/D15（Doris 有官方 compose + all-in-one 镜像；**新增 Stream Load 网内 `client` 硬约束**）、§1.7 的 `mem_limit`/`memswap_limit`/`config` 不报缺、§1.4 快照判据（下限 5 非「=5」；系统表查询须走 Flink SQL）、§C F11（同上）、§D D2 修订、§D D8 补 FE 级总开关 `dynamic_partition_enable`、§A.2 内存与磁盘的偏离登记、§A.3 JDK 17 补记本机缺口与 `start_fe.sh` 源码要求、§A.3 补 Kafka connector **完整坐标 `5.0.0-2.2`**、§A.3 补运行面工具链锚点、§1.1 `REQ-F-GEN-06` 补 Faker pin 补丁号前提。
 → 完整依据与逐条出处见 **`HLD.md`**（同址，2026-10-19）§7.2 与 §9。
 
-**下一层文档**：`spec.md`（实施规格）由你另开会话产出；本 GDD 与 `SRS.md` / `FSR.md` / **`HLD.md`** 同址，便于一次性收口。
+**下一层文档**：本 spec 施工规格；收口产物＝`canonical-truth.md`。本 GDD 与 `SRS.md` / `FSR.md` / **`HLD.md`** 同址，便于一次性收口。
 **推送状态**：本地提交由 agent 完成；**推送由你执行**（2026-10-19 用户明确）。

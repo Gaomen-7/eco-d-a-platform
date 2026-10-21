@@ -3,8 +3,8 @@
 > **性质**：高层设计文档（High-Level Design）。本文回答「**结构怎么分、模块各管什么、技术栈定在哪些版本、运行环境与沙箱有什么约束、最可能在哪里出架构级问题**」。
 > **日期**：2026-10-19（Asia/Shanghai）
 > **上游**：`SRS.md`（需求权威）｜`FSR.md`（路线冻结）｜`GDD.md`（功能设计，文件名 `gdd.md`）｜`GLOSSARY.md`（术语）
-> **下游**：`spec.md`（实施规格，另行会话产出）
-> **权威关系**：`SRS.md` 持「**必须做到什么**」→ `gdd.md` 持「**每个功能怎么做**」→ 本文持「**结构、栈定案、运行约束**」。本文**不覆盖**上游，凡与上游冲突处一律在 §7 显式登记，**不修改** `SRS.md` 与 `FSR.md`（`gdd.md` 中被本文调研证伪的条目已就地修订，见 §7）。
+> **下游**：本 spec 施工规格；**收口**：`canonical-truth.md`
+> **权威关系**：`SRS.md` 持「**必须做到什么**」→ `gdd.md` 持「**每个功能怎么做**」→ 本文持「**结构、栈定案、运行约束**」。本文**不覆盖**上游，凡与上游冲突处一律在 §7 显式登记；事实类冲突可直接改写上游（见 `canonical-truth.md` §0 G1），意图类保留原话并登记（`gdd.md` 中被本文调研证伪的条目已就地修订，见 §7）。
 > **术语**：一律以仓库根 `GLOSSARY.md` 为准。
 
 ## 0. 这份文档怎么用
@@ -32,7 +32,7 @@ gdd.md   每个功能怎么做（触发/流程/状态/判据）
    │
 HLD.md   结构 / 栈定案 / 运行约束        ← 本文
    │
-spec.md  实施规格（另行会话）
+canonical-truth.md  收口  ↔  本 spec 施工规格（spec.md）
 ```
 
 **本文不做三件事**：①不重新声明需求（那是 `SRS.md`）；②不复制功能流程（那是 `gdd.md`，本文只指针）；③不为「文档说错了」开票——只有需要真正施工动作时才开票（沿用 `gdd.md` §D 的既定政策）。
@@ -127,7 +127,7 @@ spec.md  实施规格（另行会话）
 
 | # | 横切面 | 唯一所有者 | 说明 |
 | --- | --- | --- | --- |
-| 1 | **事件契约** | 模块①（生产者）/ 模块③（消费者校验） | 字段名、枚举、`schema_version` 语义；校验结果的**机读原因码** |
+| 1 | **事件契约** | 模块①（生产者）/ 模块③（消费者校验） | 字段名、枚举、`schema_version` 语义；校验结果的**机读原因码**。**`schema_version` 规则语义的唯一所有者＝`canonical-truth.md` §3.1**（四条铁律 S1–S4 的权威全文只在那里；SRS §3.3.1 承载字段语义、gdd 各写本模块义务；本节只持指针，不复制全文，防第二真相源） |
 | 2 | **错误与退出码** | 模块⑧ | 每个脚本的退出码语义；失败必须有痕迹 |
 | 3 | **配置与秘密** | 模块⑦ | `.env` 入 `.gitignore`；秘密不落仓库 |
 | 4 | **幂等与重放** | 模块③⑤（实时）/ 模块④（离线） | 主防 + 兜底，**不是两道并列防线**（见 §7-D1） |
@@ -293,11 +293,11 @@ interface PyrightJsonDiagnostic { file; severity; message; range?; rule? }
 | 不与 `deploy.limits.memory` 并存 | **只写 `mem_limit`** | 官方：`deploy` 是**可选段**（未实现即忽略）；二者并存时官方要求**必须一致**，写错一个即自相矛盾 |
 | 「不允许有服务缺省」 | 由 `make verify` / `config-check` **脚本断言** | ⚠️ **P0 实测确认**：`docker compose config` 能**列出** `mem_limit` 但**不报缺** ⇒ 判据必须脚本化。规则已写进 `Makefile` 的 `config-check` 目标 |
 | 冷启动/体量记账 | **用 `docker image inspect`**，不用 `docker images` | 本机 `UseContainerdSnapshotter=true`，官方警告此时 `docker images` 会**把压缩 blob 叠加进读数、显著虚高**。**实测镜像体积**（`image inspect`）：Kafka 654.1 MiB / Flink 1491.4 MiB / **Superset 1207.8 MiB** / Doris base-latest 1.96 GB / **`eco/doris:4.1.5`（自建）12.60 GiB**（13,526,796,833 B，2026-10-20 实测）/ `mysql:8.0`（`client` 用）1.01 GiB |
-| 常驻预算 | 见下表。**声明的 `mem_limit` 上限合计**：默认 `up` = **5.25 GiB**；`--profile doris` = **10.25 GiB**（10,496 MiB）⇒ **两种场景都在 11.68 GiB 天花板内**（余量 6.43 / **1.43** GiB） | `docker stats --no-stream` 实测；`make config-check` 断言。⚠️ 统计口径见下注 |
+| 常驻预算 | 见下表。**声明的 `mem_limit` 上限合计**：默认 `up` = **5.25 GiB**；`--profile doris` = **10.5 GiB**（10,752 MiB，含 `client` 256m）⇒ **两种场景都在 11.68 GiB 天花板内**（余量 6.43 / **1.18** GiB） | `docker stats --no-stream` 实测；`make config-check` 断言。⚠️ 统计口径见下注 |
 
 > ★ **Doris 自建镜像体积的读法（2026-10-20 实测）**：`eco/doris:4.1.5` = **12.60 GiB**（`image inspect`），是 Kafka+Flink+Superset 三者之和（**3.28 GiB**）的 **3.8 倍**。这是「Doris **必须本地构建**」（官方不发版本化镜像）的体积代价，也是「零状态冷启」档豁免 30 分钟判据的根因之一（另一根因是 ≈35 min 的构建耗时）。详见 [`reproducibility-boundary.md`](reproducibility-boundary.md) §3。
 > ★★ **口径核实已结案（2026-10-20，结论与旧猜测相反）**：U-ν 旧文的 `docker images` = **13.5 GB** 与本次 `image inspect` 的 **12.60 GiB（＝13,526,796,833 B ＝13.53 GB 十进制）** **一致** ⇒ **旧读数不是 containerd snapshotter 造成的虚高**。规则仍照旧（**记账一律用 `image inspect`**），但引用时**必须带单位**（GiB 与 GB 差 7%，这才是本例真正的坑）。
-> ⚠️ **本表「`--profile doris`」一行的数字是旧值，引用时不要抄**：现写 `10.25 GiB` / 余 `1.43 GiB`，那是**漏算 `client` 256m** 的旧数；正确值是 **10.5 GiB** / 余 **1.18 GiB**（见本节上方「★ 口径更正」段与 `canonical-truth.md` §4.3 **F-1**）。按落笔分工该订正由 **[09]** 执行；**本票（[04]）不改这个数字，但任何引用一律用 10.5 / 1.18**。
+> ⚠️ ~~本表「`--profile doris`」一行的数字是旧值~~ **已订正（2026-10-21，施工票 impl-01）**：本表现在写的就是正确值 **10.5 GiB / 余 1.18 GiB**（与上方「★ 口径更正」段及 `canonical-truth.md` §4.3 **F-1** 一致）；全仓**只以本节为该数字的真相源**，旧数 10.25/1.43 已清除。
 
 
 ### 4.3 端口与网络
@@ -396,15 +396,23 @@ WSL 内的 `docker` 有两条路，差别在**路径语义**：
 | 类别 | 冻结值 |
 | --- | --- |
 | Kafka topic | `ecom.behavior.event.v1`；DLQ `ecom.behavior.event.v1.dlq` |
-| 消息格式 | JSON + `schema_version`；字段一律 **`snake_case`** |
-| Paimon | 库 `ecom_lake`；表 `ods_behavior_event` / `dwd_behavior_event` / `dwd_behavior_event_reject` / `dim_*` / `dws_*` / `ads_*` |
+| 消息格式 | JSON + `schema_version`；字段一律 **`snake_case`**；兼容规则见 `SRS.md` §3.3.1（语义唯一所有者＝`canonical-truth.md` §3.1） |
+| Paimon | 单一 Paimon catalog，其下 **`ecom_lake` database**（见 `REQ-F-LAKE-06`，2026-10-21 订正）；表 `ods_behavior_event` / `dwd_behavior_event` / `dwd_behavior_event_reject` / **`dwd_late_event_count`**（FC-2，2026-10-20 已批）/ `dim_*` / `dws_*` / `ads_*` |
 | Doris | 看板直连库 `ecom_ads` |
-| Makefile 目标 | `up` / `down` / `init` / `replay` / `verify` / `spike` / `verify-fault` / `logs` |
+| Makefile 目标 | `up` / `down` / `init` / `replay` / `verify` / `verify-fault` / `spike` / `logs` ＋ **`lint` / `typecheck`**（FC-1，2026-10-20 已批；静态检查与运行时烟测分开，不新增 `check`） |
 | 端口 | 见 §4.3（**全部仅绑 `127.0.0.1`**） |
 | 事件字段与枚举 | `SRS.md` §3.3 字段表；五类枚举 |
 | 参数数值 | **`gdd.md` §A 是唯一权威**（本文不复制，避免第二个真相源） |
 
 **设计面（本文可定）**：目录布局、Flink 作业内部结构、`client` 服务的实现、校验结果结构的**内部形状**、脚本命名。
+
+**P2 设计面新增（[05] 定案，2026-10-21 随 impl-01 落笔）**：
+
+- **`paimon-warehouse` named volume**：Paimon warehouse（`/warehouse`）落具名卷，**同路径挂进 JM 与 TM 两个容器**（本仓 JM/TM 不互通；官方 `file:` 背书仅 "single-machine tutorial"）。检查：`docker compose config` 可见两处同名卷挂载。
+- **Paimon jar 构建期 COPY**：Paimon bundled connector 构建期 `COPY` 进**每个** Flink 进程的 `/opt/flink/lib`（官方逐字 "Install one matching Paimon bundled connector in **each** Flink process."；`ADD JAR` 宿主路径不可用）。检查：JM/TM 容器内 `ls /opt/flink/lib` 均见 jar。
+- **`sql/replay_*.sql` 目录布局**：`sql/replay_00_catalog / 10_ods / 20_dwd / 30_dim / 40_dws / 50_ads / 90_maintain` ＋ `sql/assert_lake.sql`，`sql-client.sh -f` 串联；`LAYER=ods|dwd|dim|dws|ads` 缺省跑全部。检查：文件存在且 `make replay` 依赖序与编号一致。
+- **`artifacts/verify/` 报告目录**：`verify`/`verify-fault` 逐断言状态写 `verify-report-<UTC时间戳>.json`，FAIL 时原始响应快照同目录；目录进 `.gitignore`。检查：跑一次 `verify` 后文件存在。
+- **`scripts/lake_assert.sh`**：Paimon 断言执行面（`sql-client -f` 退出码不可用 ⇒ 解析 stdout 哨兵，判「无 `[ERROR]` 且每条哨兵 `ok=true`」）。检查：人为让一条断言失败时脚本退出码非 0。
 
 ---
 
@@ -419,7 +427,7 @@ WSL 内的 `docker` 有两条路，差别在**路径语义**：
 
 ## 7. 偏离与待收口
 
-> 本节**暴露**而非覆盖：`SRS.md` 与 `FSR.md` **一个字都不改**（等 `spec.md` 统一收口）；被本轮调研**证伪**的 `gdd.md` 条目已**就地修订**。
+> 本节**暴露**而非覆盖：按 `canonical-truth.md` §0 G1，**事实类冲突可直接改写上游**（已于 2026-10-21 由施工票 impl-01 按 spec §⑦ 统一落笔）；意图类保留原话并登记。被本轮调研**证伪**的 `gdd.md` 条目已**就地修订**。
 
 ### 7.1 对 `FSR.md` / `SRS.md` 的偏离登记
 
@@ -432,7 +440,7 @@ WSL 内的 `docker` 有两条路，差别在**路径语义**：
 | **D-E** | `FSR.md` §3 记 ClickHouse「**无 Paimon 支持**」、StarRocks 因「Elastic License」被排除 | ⚠️ 前者**不成立**（官方**有** Paimon 引擎，但**读不了主键表**）；后者许可证**是** Apache-2.0（排除的真实原因是**版本相容性**） | 登记；**弃选理由表已按一手证据重写**（§3.5） |
 | **D-F** | `FSR.md` §3 记 Hudi 为对照、Iceberg 弃选 | ⚠️ Hudi 的**决定性证据**是 **`hudi-flink2.2-bundle` 不存在**（比原表述更硬）；Iceberg **artifact 齐全**（`iceberg-flink-runtime-2.2/1.12.0`）⇒ 弃选理由**不能**是版本缺失 | 登记；§3.5 已重写 |
 | **D-G** | `SRS.md` §2.5 A2 笼统称多家组件「官方未给出最低内存」 | ⚠️ 需**逐组件区分**：Doris**给出了**（见 D-A）；Kafka/Flink/Superset/Paimon 确实未给出（但 Flink 给了**分项默认**，且**不配 `process.size` 则启动失败**） | 登记；§0.3 的参数性质边界即此事的制度化 |
-| **D-H** | `SRS.md` `REQ-NF-CAP-04`：「**冷启动（含拉镜像）≤ 30 分钟**」 | ❌ **原口径不可达**：它把「构建 Doris 镜像」隐含在「拉镜像」内，而 Doris **无官方版本化镜像**（`apache/doris:4.1.5` / `all-in-one-4.1.5` / `base-4.1.5` 全部 `denied`）⇒ 必须本地构建，实测 **≈35 min**，**单构建一步就超 30 min**，还没算拉 Kafka/Flink/Superset | 登记；改写为「**预构建镜像经 `docker save`/`load` 导入后**冷启动 ≤30 min」，构建耗时单独记录、**不设上限**（逐字新句见 [`reproducibility-boundary.md`](reproducibility-boundary.md) §8.3；**已签字**，落笔归 **[09]**） |
+| **D-H** | `SRS.md` `REQ-NF-CAP-04`：「**冷启动（含拉镜像）≤ 30 分钟**」 | ❌ **原口径不可达**：它把「构建 Doris 镜像」隐含在「拉镜像」内，而 Doris **无官方版本化镜像**（`apache/doris:4.1.5` / `all-in-one-4.1.5` / `base-4.1.5` 全部 `denied`）⇒ 必须本地构建，实测 **≈35 min**（`设计值`/实测），**单构建一步就超 30 min**，还没算拉 Kafka/Flink/Superset | 登记；改写为「**预构建镜像经 `docker save`/`load` 导入后**冷启动 ≤30 min」，构建耗时单独记录、**不设上限**（逐字新句见 [`reproducibility-boundary.md`](reproducibility-boundary.md) §8.3；**已签字**，**已于 2026-10-21 落笔进 SRS**）。同批登记：`REQ-NF-CAP-03` 原口径「一条命令到看板出数 ≤15 分钟」把出数隐含在链路 healthy 内，已拆为「到全 healthy ≤15 min（不含出数）＋第二截出数判据转 P1 实测」（逐字新句同上 §8） |
 | **D-I** | `SRS.md` `REQ-F-ORCH-01`：「`docker compose up` 一键拉起整条链路（**含初始化脚本**）」 | ❌ **该「一条命令」在仓库里不存在**：① **无 README**（`REQ-NF-MNT-03` 要求有）；② `docker compose up` **不含 Doris**（在 `profiles: ["doris"]`）；③ `make init` 自己写着「**待补**：Doris 建库/建表、Superset db upgrade + create-admin + init」（`Makefile:51`） | 登记；「一条命令」**具名为 `make init`** 并冻结四段内容（逐字新句见 [`reproducibility-boundary.md`](reproducibility-boundary.md) §8.1；**已签字**，落笔归 **[09]**）。`init` 是冻结目标名 ⇒ 不触发冻结项变更 |
 
 ### 7.2 `gdd.md` 的就地修订（**已证伪，会造成施工错误**）
@@ -531,6 +539,7 @@ apt-get install --print-uris → 取 .deb URL → curl -4 下载 → dpkg-deb -x
 
 ### R5 · 磁盘预算与官方口径冲突 + Paimon `file://` 峰值未实测
 **证据**：Doris 官方 dev/test 磁盘口径 **FE 10 GB+ / BE 50 GB+**，与 `SRS.md` 的 ≤20 GB 正面冲突；Paimon 物理删除**只在快照过期时**发生（默认 `snapshot.time-retained=1h` 内所有历史版本保留），主键表在 compaction 前同一 key 有**多份物理版本** ⇒ **空间放大与写入放大都是真实的**。
+**空间放大前提复核（附录 A·N，2026-10-21 签）**：Paimon **主键表默认 MOR 而非 MOW**（`官方给出`：官方 bucket 指引 "200 MB–1 GB per bucket" 逐字是 **MOR 口径**；MOW 需显式 `deletion-vectors.enabled`）⇒ 本条的空间放大估算**原按 MOW 心智、现按 MOR 复核**：本仓五张主键表（DWD/DIM×3/DWS/ADS）固定 **MOR**，放大来自多版本与 compaction，**无 deletion-vector 副本**；每分区 ≈170 MB 落官方指引量级下沿 ⇒ 主键表固定 `bucket=1` 成立。偏离已进 §8-R7 登记。
 **处置**：容器数据与镜像层**已在 F:**（实测）；须**显式设 `UV_CACHE_DIR`**；20 GB 是**低于官方口径的设计值**。
 **检测信号**：`df` / 卷使用率；Paimon `<table>$snapshots` 与 `$files`（**须走 Flink SQL**，Doris 不在系统表支持列表内）。
 **判定条件**：P1/P2 用**真实写入量**验证磁盘峰值 ≤20 GB——**未实测即未通过**。
@@ -558,6 +567,7 @@ apt-get install --print-uris → 取 .deb URL → curl -4 下载 → dpkg-deb -x
 | **R7-c** | **`apache/superset:6.1.0` 镜像不含任何 DB 驱动**（`psycopg2`/`psycopg`/`mysqlclient`/`pymysql` 全部 MISSING） | ①元数据库**不能**直接用 Postgres（worker 启动即 `ModuleNotFoundError: No module named 'psycopg2'`，**已踩到**）；②`REQ-F-OLAP-01` 的 `ecom_ads`（Doris 走 MySQL 协议）**接不上** | ①元数据库改 **SQLite**（镜像自带 sqlite3 3.40.1，零驱动依赖）；②经**官方机制** `/app/docker/requirements-local.txt`（`docker-bootstrap.sh:35` 逐字确认）在引导时 pip 装 `PyMySQL` |
 | **R7-d** | **Kafka 4.3.1 的 `kafka-topics.sh` 不再支持 `--alter` 改配置** | 建 topic 时施加 retention **直接失败**（报错原文：「To alter topic configurations, the **kafka-configs** tool can be used.」，**已踩到**） | 改用 **`kafka-configs.sh --alter --entity-type topics`**；**已证**：两 topic 最终配置为 `retention.ms=604800000` + `retention.bytes=2147483648` + 6 分区 + RF=1，与 `gdd §A.2` 完全一致 |
 | **R7-e** | ★★ **named volume 挂上去 ≠ 数据落在里面**：官方 `apache/kafka:4.3.1` 镜像的默认 `log.dirs` 是 **`/tmp/kraft-combined-logs`**（`/opt/kafka/config/server.properties:73` 逐字）。`/tmp` 是**容器内路径**，`down/up` 后清空 | **`REQ-F-ORCH-05` 真实失效**（不是理论风险）：down 前 partition 2/3 各有 1 条记录，`down/up` 后 offsets **全归 0**；检查卷内容为 **空（total 4.0K）** | **显式设 `KAFKA_LOG_DIRS=/var/lib/kafka/data`**（与卷挂载点一致）。**已证**：`restart` → offsets 3→3；`down`+`up` → offsets 3→3（即 `REQ-F-ORCH-05` 原文判据），topics 与 retention 配置同样保住 |
+| **R7-f** | **★ 2026-10-21 登记（附录 A·N）**：Paimon **主键表默认 MOR 而非 MOW**（`官方给出`：MOW 需显式 `deletion-vectors.enabled`；官方 bucket 指引 "200 MB–1 GB per bucket" 逐字是 MOR 口径） | R5 的空间放大估算原按 MOW 心智 ⇒ 与实际部署形态不符 | 本仓五张主键表**固定 MOR**；R5 已按 MOR 复核（无 deletion-vector 副本；每分区 ≈170 MB 落 MOR 指引量级下沿 ⇒ `bucket=1` 成立）。**设计面由此变更**：主键表不设 `sequence.field`、`upsert-materialize=NONE`、DWS/ADS 与 Doris `ecom_ads` 键同构 |
 
 **检测信号**：`docker compose up` 后各服务 healthcheck；`kafka-topics.sh --describe` 的 `Configs:` 行；`kafka-get-offsets.sh` 的 offsets；Superset 日志里的 `ModuleNotFoundError`。
 **判定条件**：骨架**四服务全部 healthy**、`config-check` 全 PASS、且 **`down`→`up` 后 Kafka offsets 不变**（**P0 三项均已达成**）。

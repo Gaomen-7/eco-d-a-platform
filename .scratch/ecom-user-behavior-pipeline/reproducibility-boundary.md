@@ -261,7 +261,7 @@ Source: `issues/04-reproducibility-boundary.md` · 裁决全文见该票 `## Ans
 
 | 项 | 内容 |
 | --- | --- |
-| `HLD.md:294` 的 **F-1** | 「10.25 GiB（10,496 MiB）…余量 6.43 / **1.43** GiB」→「**10.5 GiB**（10,752 MiB）…余量 6.43 / **1.18** GiB」；依据 `canonical-truth.md` §4.3 F-1 |
+| `HLD.md:294` 的 **F-1** | 「10.25 GiB（10,496 MiB）…余量 6.43 / **1.43** GiB」→「**10.5 GiB**（10,752 MiB）…余量 6.43 / **1.18** GiB」；依据 `canonical-truth.md` §4.3 F-1。**已于 2026-10-21 由施工票 impl-01 落笔完成**（HLD §4.2 表格现为 10.5/1.18，旧数清除） |
 | `gdd.md:512`「Doris 无官方 compose」 | **已被 `gdd.md:197` 推翻**（官方有 `docker/runtime/all-in-one/4.1/compose/`）；**勿再引用** |
 | `make verify` 第 4/5 项的执行位置 | `Makefile:76-78` 在**宿主侧** `curl :8030`，与 HLD §4.4/§8-R2 的「Doris 断言必须经 `client`」矛盾 ⇒ 待 §8.5 |
 
