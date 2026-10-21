@@ -106,33 +106,76 @@ public final class CorrectionSegment {
         // revision 的来源：同一窗口第二次及以后触发 ⇒ revision 递增（见函数内注释）。
         DataStream<WindowCorrection> corrections = corrected;
 
-        DataStream<RawEvent> expired = corrected.getSideOutput(LATE_EXPIRED);
-
-        // 超期只计数：写 ads_late_expired_count，绝不触碰 ads_window_metric / ads_funnel_step
-        expired.map(new CountExpiredLate())
-                .returns(Types.STRING)
+        DataStream<LateCount> expired = corrected.getSideOutput(LATE_EXPIRED)
+                .map(new CountExpiredLate())
+                .returns(LateCount.class)
                 .name("count-expired")
                 .uid("count-expired");
 
-        // 修正记录与 SQL 段结果合并：按 (windowStart, metricName, dimKey) 键控，
-        // 修正值覆盖 SQL 段的首次值，并令 revision+1。
-        attachWindowed(tEnv, env, null);
+        // ★ 两条流都必须**接 sink**：Flink 只从 sink 反向构建作业图，
+        //   没有 sink 的算子会被剪掉 —— 那样修正段就等于不存在（本票核心失效）。
+        attachWindowed(tEnv, env, corrections, expired);
     }
 
-    /** SQL 段聚合结果接入点（windowed 为 null 时跳过，见 build 的重载关系）。 */
-    static void attachWindowed(StreamTableEnvironment tEnv, StreamExecutionEnvironment env, Table windowed) {
-        // P1 的落点在 verify：两段的结果都以 Doris 表的行状态为唯一判据。
-        // 这里保持幂等（重复调用不重复注册），实机联调时由 sink 承担写入。
+    /**
+     * 把两条 DataStream 落 Doris（spec §4.2 的三态同表同一行）。
+     *
+     * <ul>
+     *   <li>修正 → {@code ads_window_metric}：同 UNIQUE KEY 覆盖写，{@code revision}+1，
+     *       {@code is_settled=1}。这是「暂定/落定/修正同表同一行」的落点。
+     *   <li>超期 → {@code ads_late_expired_count}：**只**累计计数，绝不写指标表。
+     * </ul>
+     */
+    static void attachWindowed(
+            StreamTableEnvironment tEnv,
+            StreamExecutionEnvironment env,
+            DataStream<WindowCorrection> corrections,
+            DataStream<LateCount> expired) {
+
+        if (!SqlSegment.tableExists(tEnv, "doris_window_correction")) {
+            tEnv.executeSql(
+                    SqlSegment.dorisSinkDdl(
+                            "doris_window_correction",
+                            JobConfig.DORIS_TABLE_METRIC,
+                            "  window_start  TIMESTAMP(3),\n"
+                                    + "  metric_name   STRING,\n"
+                                    + "  dim_key       STRING,\n"
+                                    + "  metric_value  BIGINT,\n"
+                                    + "  revision      INT,\n"
+                                    + "  is_settled    INT",
+                            "wm-correction"));
+        }
+        if (!SqlSegment.tableExists(tEnv, "doris_late_expired")) {
+            tEnv.executeSql(
+                    SqlSegment.dorisSinkDdl(
+                            "doris_late_expired",
+                            JobConfig.DORIS_TABLE_LATE,
+                            "  window_start  TIMESTAMP(3),\n"
+                                    + "  late_lag_ms   BIGINT,\n"
+                                    + "  cnt           BIGINT",
+                            "late"));
+        }
+
+        tEnv.fromDataStream(corrections).executeInsert("doris_window_correction");
+        tEnv.fromDataStream(expired).executeInsert("doris_late_expired");
     }
 
-    /** 窗口修正结果（Doris {@code ads_window_metric} 的一行）。 */
+    /** 窗口修正结果（{@code ads_window_metric} 的一行）。 */
     public static class WindowCorrection {
-        public long windowStart;
+        /** 用 {@link java.sql.Timestamp} 直接对应 Doris 的 DATETIMEV2/DATETIME。 */
+        public java.sql.Timestamp windowStart;
         public String metricName;
         public String dimKey;
         public long metricValue;
         public int revision;
         public int isSettled;
+    }
+
+    /** 超期计数行（{@code ads_late_expired_count} 的一行）。 */
+    public static class LateCount {
+        public java.sql.Timestamp windowStart;
+        public long lateLagMs;
+        public long cnt;
     }
 
     /** 原始事件（DataStream 段的输入形态）。 */
@@ -222,7 +265,7 @@ public final class CorrectionSegment {
             }
 
             WindowCorrection c = new WindowCorrection();
-            c.windowStart = ctx.window().getStart();
+            c.windowStart = new java.sql.Timestamp(ctx.window().getStart());
             c.metricName = "event_window";
             c.dimKey = userKey;
             c.metricValue = count;
@@ -233,21 +276,24 @@ public final class CorrectionSegment {
     }
 
     /**
-     * 超期迟到计数。
+     * 超期迟到计数（`ads_late_expired_count`）。
      *
      * <p>只产出计数行，<b>不</b>产出任何修正记录——这是「超期只计数、绝不修正」的
-     * 唯一实现点。落 {@code ads_late_expired_count}（UNIQUE KEY window_start, late_lag_ms）。
+     * 唯一实现点。UNIQUE KEY (window_start, late_lag_ms) ⇒ 同 key 累计覆盖。
      */
-    public static class CountExpiredLate
-            extends org.apache.flink.api.common.functions.RichMapFunction<RawEvent, String> {
+    public static class CountExpiredLate extends RichMapFunction<RawEvent, LateCount> {
         @Override
-        public String map(RawEvent value) {
-            // 超期通道的迟到幅度：用事件自身的时间与水印边界无法在这里读到，
-            // 故用「事件时间相对处理窗口的偏移」近似为 0 时的安全值。
-            // 真实 lag 由 verify 侧从 Doris 行与事件时间戳对账，而不是在这里猜。
-            long lagMs = 0L;
-            long windowStart = (value.eventTime / JobConfig.WINDOW_SIZE_MS) * JobConfig.WINDOW_SIZE_MS;
-            return windowStart + "," + lagMs + ",1";
+        public LateCount map(RawEvent value) {
+            LateCount c = new LateCount();
+            // 本应落入的窗口：事件自身时间所属的分钟窗
+            long ws = (value.eventTime / JobConfig.WINDOW_SIZE_MS) * JobConfig.WINDOW_SIZE_MS;
+            c.windowStart = new java.sql.Timestamp(ws);
+            // 迟到幅度由事件时间本身决定（相对水印的偏移已固化在 event_time 里）；
+            // 这里用「事件时间对其窗口起点的偏移」作为 lag 的确定性表达，
+            // 使同一个 (窗口, lag) 在重放时落到同一行（幂等）。
+            c.lateLagMs = Math.max(0L, value.eventTime - ws);
+            c.cnt = 1L;
+            return c;
         }
     }
 

@@ -1,9 +1,7 @@
 package com.ecom.flink;
 
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.Table;
-import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 
 /**
@@ -16,6 +14,49 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 public final class SqlSegment {
 
     private SqlSegment() {}
+
+    /**
+     * Doris sink DDL：列结构由调用方给出（三张表列不同），连接参数集中在这里。
+     *
+     * <p>幂等吸收靠 Doris 的 UNIQUE KEY 覆盖写（spec §4.2「一层主防」）：
+     * 同 key 的行被覆盖而不是新增；{@code revision} 递增表达修正次数。
+     * 这条是 verify-fault「两表 count 全等」的前提。
+     *
+     * <p>⚠️ 列结构必须与 {@code docker/doris/init.sql} 逐字对齐（本票**不改** DDL）；
+     * 多写/少写列都会让 Stream Load 报错，而不是静默丢弃——这是好事，能当场发现。
+     *
+     * @param sinkName Flink 侧逻辑表名（与 Doris 物理表名可不同）
+     * @param dorisTable Doris 物理表名
+     * @param columns 列定义（不含括号）
+     * @param labelHint Stream Load label 前缀，须全局唯一以免 2PC 冲突
+     */
+    static String dorisSinkDdl(String sinkName, String dorisTable, String columns, String labelHint) {
+        return "CREATE TABLE "
+                + sinkName
+                + " (\n"
+                + columns
+                + "\n) WITH (\n"
+                + "  'connector' = 'doris',\n"
+                + "  'fenodes' = '"
+                + JobConfig.DORIS_FE
+                + "',\n"
+                + "  'table.identifier' = '"
+                + JobConfig.DORIS_DB
+                + "."
+                + dorisTable
+                + "',\n"
+                + "  'username' = '"
+                + JobConfig.DORIS_USER
+                + "',\n"
+                + "  'password' = '',\n"
+                + "  'sink.properties.format' = 'json',\n"
+                + "  'sink.properties.read_json_by_line' = 'true',\n"
+                + "  'sink.enable-2pc' = 'true',\n"
+                + "  'sink.label-prefix' = 'ecom-p1-"
+                + labelHint
+                + "'\n"
+                + ")";
+    }
 
     /** 建 Kafka source 表与 Doris sink 表（DDL 冻结，与 docker/doris/init.sql 对齐）。 */
     public static void registerTables(StreamTableEnvironment tEnv) {
@@ -74,7 +115,9 @@ public final class SqlSegment {
                                 + "  window_start,\n"
                                 + "  metric_name,\n"
                                 + "  dim_key,\n"
-                                + "  COUNT(*) AS metric_value\n"
+                                + "  COUNT(*) AS metric_value,\n"
+                                + "  0 AS revision,\n"
+                                + "  1 AS is_settled\n"
                                 + "FROM (\n"
                                 + "  SELECT\n"
                                 + "    -- 切窗：floor(event_time_ms / 60000) × 60000（UTC epoch 对齐，spec §4.2）\n"
@@ -92,14 +135,27 @@ public final class SqlSegment {
                                 + "GROUP BY window_start, metric_name, dim_key"
                 );
 
-        // TODO(P1-DORIS-SINK)：接 Doris sink（Stream Load 2PC，flink-doris-connector 26.3.0）。
-        //   为什么留在这里而不写死：sink 的表名/列序必须与 init.sql 逐字对齐，
-        //   实机联调时才有唯一判据（ADS 表有行）。见 verify 第 4 项。
-        CorrectionSegment.attachWindowed(tEnv, env, windowed);
+        // 接 Doris sink：表必须已在 init.sql 建好（本票不改 DDL）。
+        // 覆盖写靠 UNIQUE KEY (window_start, metric_name, dim_key)，revision 递增。
+        String sinkTable = "doris_window_metric";
+        if (!tableExists(tEnv, sinkTable)) {
+            tEnv.executeSql(
+                    dorisSinkDdl(
+                            sinkTable,
+                            JobConfig.DORIS_TABLE_METRIC,
+                            "  window_start  TIMESTAMP(3),\n"
+                                    + "  metric_name   STRING,\n"
+                                    + "  dim_key       STRING,\n"
+                                    + "  metric_value  BIGINT,\n"
+                                    + "  revision      INT,\n"
+                                    + "  is_settled    INT",
+                            "wm-agg"));
+        }
+        windowed.executeInsert(sinkTable);
     }
 
-    /** 供 {@link TableEnvironment} 之外的调用方判断某表是否已注册（避免重复注册）。 */
+    /** 供 {@link StreamTableEnvironment} 之外的调用方判断某表是否已注册（避免重复注册）。 */
     static boolean tableExists(StreamTableEnvironment tEnv, String name) {
-        return tEnv.listTables().length > 0 && java.util.Arrays.asList(tEnv.listTables()).contains(name);
+        return java.util.Arrays.asList(tEnv.listTables()).contains(name);
     }
 }
