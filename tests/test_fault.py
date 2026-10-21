@@ -6,6 +6,10 @@
 ★ 关键反例保护（票面明确要求）：**条数一致但 DLQ 上升 ⇒ fail**。
 若把重复误当脏，重放 5 条合法事件就能把脏率从 0% 推到 50%（gdd 原型实测），
 所以这条判据必须真的能证伪。
+
+★ 第三条子判据是 `replay_observed`（源端重读条数 >0），**不是**
+「重复通道计数上升」——后者在实机上已被证伪（impl-02d），理由见
+`ecomgen.fault.judge_recovery` 的 docstring。
 """
 
 from __future__ import annotations
@@ -30,11 +34,11 @@ def _baseline(**overrides: object) -> Baseline:
     return Baseline(**base)  # type: ignore[arg-type]
 
 
-def test_recovery_passes_when_counts_equal_and_dlq_flat_and_duplicates_rose() -> None:
-    """正常恢复：两表 count/sum 与基线全等、DLQ 增量为 0、重复通道上升。"""
+def test_recovery_passes_when_counts_equal_dlq_flat_and_replay_seen() -> None:
+    """正常恢复：两表 count/sum 与基线全等、DLQ 增量为 0、源端确有重读。"""
     before = _baseline()
-    after = _baseline(duplicate_count=137)  # 重复上升 37
-    verdict = judge_recovery(before, after)
+    after = _baseline()
+    verdict = judge_recovery(before, after, replay_observed=True)
 
     assert isinstance(verdict, FaultVerdict)
     assert verdict.passed
@@ -44,7 +48,7 @@ def test_recovery_passes_when_counts_equal_and_dlq_flat_and_duplicates_rose() ->
 def test_recovery_fails_when_row_count_changed() -> None:
     """条数变了 ⇒ 幂等吸收没做到。"""
     verdict = judge_recovery(
-        _baseline(), _baseline(window_metric_count=101, duplicate_count=137)
+        _baseline(), _baseline(window_metric_count=101), replay_observed=True
     )
     assert not verdict.passed
 
@@ -52,31 +56,38 @@ def test_recovery_fails_when_row_count_changed() -> None:
 def test_recovery_fails_when_sum_changed() -> None:
     """和变了（即使条数没变）⇒ 值被重复累加，同样不通过。"""
     verdict = judge_recovery(
-        _baseline(), _baseline(window_metric_sum=5100, duplicate_count=137)
+        _baseline(), _baseline(window_metric_sum=5100), replay_observed=True
     )
     assert not verdict.passed
 
 
 def test_recovery_fails_when_dlq_increased() -> None:
     """★ 反例保护：**条数一致但 DLQ 上升** ⇒ fail（重复被误当脏）。"""
-    verdict = judge_recovery(_baseline(), _baseline(dlq_offset=15, duplicate_count=137))
+    verdict = judge_recovery(
+        _baseline(), _baseline(dlq_offset=15), replay_observed=True
+    )
     assert not verdict.passed
     assert verdict.exit_code() == 1
     assert "dlq" in verdict.reason.lower() or "脏" in verdict.reason
 
 
-def test_recovery_fails_when_duplicates_did_not_rise() -> None:
-    """重复通道没上升 ⇒ 没证据表明「确实发生了重放」（票面验收第 6 条）。"""
-    verdict = judge_recovery(_baseline(), _baseline(duplicate_count=100))
+def test_recovery_fails_when_no_replay_observed() -> None:
+    """源端没有重读 ⇒ 没证据表明「确实发生了重放」（票面验收第 6 条）。
+
+    ★ 这条同时是「kill 没命中在途数据」的保护：此时 count/sum 就算全等，
+    也不能算通过——那只是「什么都没发生」。
+    """
+    verdict = judge_recovery(_baseline(), _baseline(), replay_observed=False)
     assert not verdict.passed
+    assert "重放" in verdict.reason
 
 
 def test_verdict_states_both_conclusions_in_stdout_lines() -> None:
     """stdout 必须**明示**两条结论（票面验收第 6 条）。"""
-    verdict = judge_recovery(_baseline(), _baseline(duplicate_count=140))
+    verdict = judge_recovery(_baseline(), _baseline(), replay_observed=True)
     text = "\n".join(verdict.format_lines())
 
-    assert "重复通道计数上升" in text
+    assert "重放证据" in text
     assert "DLQ 增量==0" in text or "DLQ 增量 == 0" in text
 
 
