@@ -45,11 +45,19 @@ up:
 down:
 	$(COMPOSE) down
 
+# `make init` = 一条命令把环境弄到「能跑 verify」的状态。
+# 四段**冻结**（spec §3.3，票面 ③）：顺序不可交换，缺一段则后续判据无意义。
 init: up
-	@echo "[init] 等待健康检查..."
+	@echo "[init] 第一段：默认 profile up -d"
 	@$(COMPOSE) up -d --wait || true
-	@echo "[init] kafka-init 已由 compose 依赖自动执行（建 topic + retention）"
-	@echo "[init] 待补：Doris 建库/建表、Superset db upgrade + create-admin + init（见 docker/scripts）"
+	@echo "[init] 第一段：kafka-init 已由 compose 依赖自动执行（建 topic + retention）"
+	@echo "[init] 第二段：Doris profile + 初始化脚本"
+	@$(COMPOSE) --profile doris up -d --wait doris-fe doris-be
+	@$(COMPOSE) run --rm client /scripts/doris-init.sh
+	@echo "[init] 第三段：Superset 引导（db upgrade → create-admin → init）"
+	@bash docker/scripts/superset-init.sh
+	@echo "[init] 第四段：断言经 client 查 ADS 真有行（不是查 FE 健康）"
+	@bash docker/scripts/doris-assert.sh
 
 # ── 离线分层 ────────────────────────────────────────────────────────
 replay:
@@ -57,45 +65,24 @@ replay:
 	@echo "  ⚠️ 快照数判据须走 Flink SQL（Doris 不在 Paimon 系统表支持列表内）"
 	@echo "  ⚠️ 不得从 Kafka 重读超 ~6 小时历史（retention 2 GB 先触发，gdd D3）"
 
-# ── 可复现校验（SRS §3.1.8 五项）─────────────────────────────────────
-verify: smoke
+# ── 可复现校验（SRS §3.1.8 五项；spec §4.3 分层）─────────────────────
+# 判据逻辑在 src/ecomgen/verify_runner.py，**不**内嵌 heredoc：
+#   make 会把未缩进的 heredoc 正文当成 makefile 语法（config-check 已踩过）。
+# P1 形态：4 真 + 1 显式 SKIP（第三项「Paimon 五层有行」跳过，不计通过不计 fail）。
+verify:
+	@$(UV) run python -m ecomgen.verify_runner
 
-smoke:
-	@echo "=== make verify：五项运行时烟测 ==="
-	@fail=0; \
-	echo "--- 1/5 Kafka 有数据（topic 配置与 gdd §A.2 一致）"; \
-	$(COMPOSE) exec -T kafka /opt/kafka/bin/kafka-topics.sh \
-	  --bootstrap-server localhost:9092 --describe --topic ecom.behavior.event.v1 \
-	  | grep -q 'retention.ms=604800000' && echo "  PASS" || { echo "  FAIL"; fail=1; }; \
-	echo "--- 2/5 Flink 集群存活（P0 无作业 ⇒ 断言 JM+TM 可见，不断言 job state）"; \
-	curl -sf -m 5 http://127.0.0.1:$(FLINK_UI)/overview \
-	  | grep -q '"taskmanagers"' && echo "  PASS (JM+TM 可见)" || { echo "  FAIL"; fail=1; }; \
-	echo "  ⚠️ P1 起改断言 /jobs/overview 的 jobs[].state==RUNNING —— 该字段**有作业后才存在**（实测 /jobs/overview 现为 {\"jobs\":[]}）"; \
-	echo "--- 3/5 Paimon 五层有行（须走 Flink SQL，COUNT(*) 而非 total_record_count）"; \
-	echo "  PENDING (P2)"; \
-	echo "--- 4/5 Doris ADS 有行 + FE 健康（经 client 服务发起）"; \
-	curl -sf -m 5 http://127.0.0.1:$(DORIS_FE)/api/health \
-	  | grep -q '"online_backend_num"' && echo "  PASS" \
-	  || echo "  PENDING (Doris 镜像须本地构建，见 gdd F15)"; \
-	echo "--- 5/5 Superset 健康（响应体是纯文本 OK，不是 JSON）"; \
-	curl -sf -m 5 http://127.0.0.1:$(SUPERSET)/health \
-	  | grep -q '^OK' && echo "  PASS" || { echo "  FAIL"; fail=1; }; \
-	echo "=== verify 五项完成（fail=$$fail，0=全通过）==="; exit $$fail
-
-# 故障注入：kill TaskManager → 从 checkpoint 恢复 → 校验条数一致（且脏率不得上升）
+# 故障注入：kill TaskManager → 从 checkpoint 恢复 → 证明重放被幂等吸收
+# 判据（spec §4.4）在 src/ecomgen/fault.py；超时 120 s / 300 s 均为**设计值**。
 verify-fault:
-	@echo "[verify-fault] kill TaskManager 并观察从 checkpoint 恢复"
-	@$(COMPOSE) kill flink-tm
-	@echo "  等待作业 RESTARTING → RUNNING..."
-	@for i in $$(seq 1 30); do \
-	  st=$$(curl -sf -m 3 http://127.0.0.1:$(FLINK_UI)/jobs/overview 2>/dev/null | grep -o '"state":"[A-Z]*"' | head -1); \
-	  echo "  $$i: $$st"; sleep 4; \
-	done
-	@echo "  ⚠️ 反例保护：若条数一致但脏率飙升 ⇒ 判不通过（重复被误当脏，gdd D2）"
+	@$(UV) run python -m ecomgen.fault
 
 # ── 尖峰 ────────────────────────────────────────────────────────────
 spike:
-	@echo "[spike] 尖峰模式：短时 ≥1000 events/s（P1 实现）"
+	@echo "[spike] 尖峰模式：短时 ≥1000 events/s"
+	@$(UV) run ecomgen live --seed 1 --sessions 5000 --rate 1000 \
+	  --bootstrap $${KAFKA_BOOTSTRAP:-kafka:9092} --dry-run
+	@echo "  ⚠️ 真发需 compose 网内可达 kafka:9092（宿主跑要改用 127.0.0.1:9092）"
 
 # ── 日志 ────────────────────────────────────────────────────────────
 logs:
