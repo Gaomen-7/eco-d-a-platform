@@ -1,6 +1,6 @@
 # Spec — 仓库骨架搭建（repo-skeleton）
 
-Status: ready-for-agent
+Status: resolved (2026-10-21；三张票全部 resolved，S1–S4 实机全绿)
 Created: 2026-10-21
 决策来源：骨架 grill 会话八问全按推荐（2026-10-21 用户裁决）＋ [ADR-0001](../../docs/adr/0001-uv-lockfile-is-toolchain-authority.md) ＋ [ADR-0002](../../docs/adr/0002-flink-2-2-1-patch-anchor.md)；可执行细节以 `.scratch/handoff/20261021-090134-620-skeleton-decisions.md` §3 施工清单为准。
 
