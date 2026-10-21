@@ -50,15 +50,14 @@ public final class P1RealtimeJob {
         var provisional = WindowSegment.provisional(clean);
 
         // ── ④ 超期只计数（绝不修正）────────────────────────────────
-        // ★ P1 实机证伪（2026-10-21）：这条链**已产出 195 行**（算子 metrics
-        //   read=635 / write=195、write-bytes=14548），但 `ads_late_expired_count`
-        //   的 Stream Load 一次都没发生（同时段 funnel 36 次、window_metric 18 次）。
-        //   根因是 `LateCount` 的 `java.sql.Timestamp` 字段在 POJO 推断下会被映射成
-        //   TIMESTAMP(9)，而视图/INSERT 侧期望 TIMESTAMP(3)，异常在 sink 异步线程里
-        //   被吞掉（日志一条都不留）。
-        //   ⇒ 修法：让 `LateCount` 的窗口列改用 **`java.time.LocalDateTime`**
-        //     （Flink POJO 原生支持、精度与 TIMESTAMP(3) 天然对齐），并消除对
-        //     `Types.POJO` 反射推断 Timestamp 精度的依赖。
+        // ★ impl-02a 取证结论（2026-10-21）：此前的「195 行已到 Writer、sink 异步
+        //   吞错、Timestamp 精度」是**误读**——顶点级 numRecordsOut=195 是窗口
+        //   主输出（落定行去 view_windowed），不是超期行；且旧 topic 在修正版
+        //   水位语义下根本没有会被判超期的行（逐分区重放仅 2 条，keyBy 合并水印
+        //   更保守 ⇒ 实机 0 条）。挂临时探针喂 seed2/seed3 各一轮后实测：
+        //   侧输出→count-expired→view_late→Calc→Writer→flush→Doris 全链路通，
+        //   探针 44 行 == Doris 44 行。断点不存在；超期表恒空是数据侧（topic 无
+        //   运行时超期事件）+ 计数口径误读共同造成的。
         var late = WindowSegment.expired(windowed)
                 .map(WindowSegment.LateCount::of)
                 .returns(WindowSegment.LateCount.class)
