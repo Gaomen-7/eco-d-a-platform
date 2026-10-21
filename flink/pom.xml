@@ -40,6 +40,31 @@
       <scope>provided</scope>
     </dependency>
 
+    <!--
+      ★ Table API / SQL：**provided** —— 理由不是省体积，而是「不许打进去」：
+        Flink 镜像自带 table-api / table-runtime / planner-loader，
+        把 planner 打进用户 jar 会与镜像内的 planner 冲突（官方 inverted
+        classloading 明确要求核心/表运行时用 provided）。HLD §3.3.4。
+    -->
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-table-api-java</artifactId>
+      <version>${flink.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-table-api-java-bridge</artifactId>
+      <version>${flink.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-table-common</artifactId>
+      <version>${flink.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
     <!-- Connector：打进作业 jar（shade） -->
     <dependency>
       <groupId>org.apache.flink</groupId>
@@ -50,6 +75,17 @@
       <groupId>org.apache.doris</groupId>
       <artifactId>flink-doris-connector-2.2</artifactId>
       <version>${flink.connector.doris.version}</version>
+    </dependency>
+
+    <!--
+      JSON format：**required**（不是 provided）——Kafka 表的 'format' = 'json'
+      在运行时由作业 jar 提供；镜像不带 flink-json 工厂时会报
+      "Could not find any factory for identifier 'json'"。
+    -->
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-json</artifactId>
+      <version>${flink.version}</version>
     </dependency>
   </dependencies>
 
