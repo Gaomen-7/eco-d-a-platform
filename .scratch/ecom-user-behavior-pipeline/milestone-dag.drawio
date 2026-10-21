@@ -1,0 +1,183 @@
+<mxfile host="dsh-drawai" agent="dsh-drawai" type="device">
+  <diagram id="dsh-drawai-page-1" name="Page-1">
+    <mxGraphModel dx="0" dy="0" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="n1" value="电商用户行为全链路：现状 → 里程碑完成（DAG）
+粒度＝ask-matt 流（wayfinder · grill-with-docs · to-spec · to-tickets · implement · tdd · code-review · retro）· 2026-10-21" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=none;text=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="560" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n2" value="✅ P0 环境收口
+compose 骨架＋逐服务 mem_limit
+Doris 自建镜像实机跑通 · make verify fail=0
+不删卷重启周期已验收" style="fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="600" y="0" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n3" value="✅ wayfinder 地图完成
+9 票全落子（D1–D12）· frontier 空
+skill: /wayfinder（内驱 /grilling）" style="fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="300" y="150" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n4" value="✅ 文档面
+ADR-0001/0002 · GLOSSARY 增词条
+canonical-truth · reproducibility-boundary
+skill: /domain-modeling" style="fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="145" y="300" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n5" value="✅ repo-skeleton（S1–S4 全绿）
+uv＋ecomgen · Flink pom 2.2.1 · README/sql 占位
+skill: /grill-with-docs → /to-spec → /to-tickets
+→ /implement（＋/tdd）→ /code-review" style="fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="145" y="450" width="260" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n6" value="📘 管线 spec.md 撰写
+九节骨架＋§⑨追溯表逐行命中才算成
+汇编 8 票＋canonical-truth＋research 为自足式正文
+skill: /to-spec（新矛盾当场问用户＝/grilling 兜底）" style="fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="425" y="300" width="270" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n7" value="✏️ spec §⑦ 上游落笔
+SRS/gdd/HLD/init.sql 逐字修订（机械执行）
+skill: /implement" style="fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="445" y="450" width="250" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n8" value="🔀 骨架合流 main
+feat/repo-skeleton → main（本地 merge，不推送）
+skill: 无（git 操作，/pr 不适用）" vertex="1" parent="1">
+          <mxGeometry x="140" y="600" width="250" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n9" value="🎫 P1 切票
+tracer-bullet＋blocking edges
+（生成器 live／Flink 实时作业／Doris 内表＋看板／verify 双靶）
+skill: /to-tickets" style="fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="430" y="600" width="270" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n10" value="🔨 P1 实时闭环施工
+live 生成器 → Kafka → Flink 1min 窗口
+→ Connector 写 Doris 内表 → Superset 看板
+verify / verify-fault 分层判据 · F3/F6/F7 落参数
+skill: /implement（内驱 /tdd，票间 /clear；或 /implement-spec）
+领域: flink · python-programmer" style="fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="275" y="750" width="290" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n11" value="✅ P1 评审＋验收
+判据: 看板持续刷新 · exactly-once 可演示
+make verify＝4 真＋1 SKIP（Paimon 五层显式 SKIP）
+skill: /code-review" style="fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="290" y="900" width="260" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n12" value="🟪 三张实机取证 task
+HOUR 保留演练 · DROP 后回盘实测 · compaction×20GB 对撞
+⚠ 须用户先批准，不可自开；实测回填 HLD「官方未给出」
+skill: /prototype（一次性实验取证）" style="fillColor=#e1d5e7;strokeColor=#9673a6;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="150" y="1050" width="300" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n13" value="🎫 P2 切票
+skill: /to-tickets" style="fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="490" y="1050" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n14" value="🔨 P2 离线分层施工
+dump 门槛批（104 万事件/3 天）→ Flink 批模式
+五层 ODS→DWD→DIM→DWS→ADS（全 SQL 零 jar）
+lake_assert 对账：只比 is_settled=1，逐值全等
+skill: /implement（内驱 /tdd）
+领域: modeling-dimensional-data
+· writing-idempotent-transformations" style="fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="275" y="1200" width="290" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n15" value="✅ P2 评审＋验收
+判据: 五层可查 · 快照数∈[5,20] · 对账全等
+分层理由文档成稿
+skill: /code-review" style="fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="140" y="1350" width="250" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n16" value="🔶 亿级回放（可选，P2 加分项）
+UserBehavior 下载脚本＋抽样回放（全量由用户定）
+skill: designing-backfills-and-replays" style="fillColor=#fff2cc;strokeColor=#d6b656;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="430" y="1350" width="270" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n17" value="📝 P3 文档包
+README 完整化 · 架构图 · 数仓分层文档
+演示 GIF（窗口跳变＋修订变色）· interview-prep 完整化
+skill: /implement（文档票）" style="fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="285" y="1500" width="270" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n18" value="🏁 里程碑完成
+FSR 成功判据 5 条全绿
+（一条命令拉起 · 看板刷新 · 五层可查
+· 建模理由成文 · README＋GIF 佐证）" style="rounded=1;arcSize=50;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="275" y="1650" width="290" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n19" value="🔁 环境复盘（build 后）
+机械错误→确定性检查 · 判断→coding standards
+skill: /retro" style="fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="295" y="1800" width="250" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="rounded=0;html=1;strokeColor=grey;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n2" target="n3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="rounded=0;html=1;strokeColor=grey;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n3" target="n4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="rounded=0;html=1;strokeColor=grey;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n4" target="n5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="rounded=0;html=1;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n3" target="n6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="rounded=0;html=1;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n6" target="n7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="rounded=0;html=1;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n7" target="n9">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" style="rounded=0;html=1;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n5" target="n8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" value="基线含骨架" style="rounded=0;html=1;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n8" target="n10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" style="rounded=0;html=1;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n9" target="n10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" style="rounded=0;html=1;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n10" target="n11">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" value="D9 强序闸门：P1 四项通过才开 P2" style="rounded=0;html=1;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n11" target="n13">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" value="等用户批准（不可自开）" style="rounded=0;html=1;dashed=1;dashPattern=1 2;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n11" target="n12">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" style="rounded=0;html=1;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n13" target="n14">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" style="rounded=0;html=1;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n14" target="n15">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" style="rounded=0;html=1;dashed=1;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n14" target="n16">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e16" style="rounded=0;html=1;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n11" target="n17">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e17" style="rounded=0;html=1;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n15" target="n17">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e18" value="实测数字回填" style="rounded=0;html=1;dashed=1;dashPattern=1 2;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n12" target="n17">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e19" value="加分项，不进判据" style="rounded=0;html=1;dashed=1;dashPattern=1 2;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n16" target="n18">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e20" style="rounded=0;html=1;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n17" target="n18">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e21" style="rounded=0;html=1;edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;endArrow=classic;" edge="1" parent="1" source="n18" target="n19">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
