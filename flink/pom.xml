@@ -51,14 +51,6 @@
       <artifactId>flink-doris-connector-2.2</artifactId>
       <version>${flink.connector.doris.version}</version>
     </dependency>
-
-    <!-- 日志门面：Flink 运行时自带，provided -->
-    <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-api</artifactId>
-      <version>1.7.36</version>
-      <scope>provided</scope>
-    </dependency>
   </dependencies>
 
   <build>

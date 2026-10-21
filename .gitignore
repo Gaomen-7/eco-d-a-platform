@@ -24,7 +24,8 @@
 logs/
 **/logs/
 *.pid
-# 运行产物落点：`make verify` 的报告写到仓库根 `artifacts/`（D10⑨）。
+# 运行产物落点是仓库根 `artifacts/`（D10⑨，L0 起的**设计落点**；当前尚无
+# 任何目标写入，P1+ 的 `make verify` 报告才落此处）。
 # 报告是每次跑出来的，不是源码 ⇒ 不入库；目录保持空占位也可。
 /artifacts/
 

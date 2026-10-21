@@ -20,7 +20,7 @@
 
 **现状（诚实声明）**：`make init` 目前只接好了 ①；②③④ **尚未接线**——`init` 依赖的 `up` 只跑默认 profile 的 `docker compose up -d`，Makefile 中没有任何 `--profile doris`（故 ② 的 Doris 拉起缺失），③④ 仅打印「待补：Doris 建库/建表、Superset db upgrade + create-admin + init」，且该提示亦未提及 ② 缺的 `--profile doris` 一步。四段是冻结的契约，不是已完成的实现。
 
-判据：在已有 Docker + make 的机器上（复现档位 L0），`make init` 后 `make verify` 退出码 0、`docker compose ps` 全 `healthy`。
+判据：在已有 Docker + make 的机器上（复现档位 L0），`make init` 后 `make verify` 退出码 0；`docker compose ps` 中**定义 healthcheck 的服务**（`kafka` / `flink-jm` / `doris-fe` / `doris-be` / `superset`）须 `healthy`，其余无 healthcheck 者（`flink-tm` / `kafka-init` / `client`）只要求 `Up`。
 
 ## 端口（全部只绑 `127.0.0.1`）
 
@@ -35,7 +35,7 @@
 | `down` | 停止并移除容器（不加 `-v`，保留卷） |
 | `init` | 一条命令：四段初始化（见上） |
 | `replay` | 五层离线分层 ODS→DWD→DIM→DWS→ADS（P2 实现） |
-| `verify` | 链路运行时五项烟测（退出码判成败） |
+| `verify` | 链路运行时五项烟测（退出码判成败；其中 3/5 Paimon、4/5 Doris 现仅打印 `PENDING`，P1/P2 前**不参与**判据，故当前实际只有 3 项 gate 退出码） |
 | `spike` | 尖峰模式：短时 ≥1000 events/s（P1 实现） |
 | `verify-fault` | kill TaskManager → 从 checkpoint 恢复 → 校验条数一致 |
 | `logs` | `docker compose ps` + 最近 120 行日志 |
@@ -56,4 +56,4 @@
 - **只本地 commit，绝不 push**。
 - 仓库零原始数据、零密钥：`.env` 是机密面，不入库、勿读勿抄。
 - 八个冻结目标名、端口、库名、topic 名一概不改；上游 `SRS.md` / `gdd.md` / `HLD.md` / `init.sql` 一字不动。
-- 运行产物（`artifacts/` 下的 verify 报告）不入库。
+- 运行产物（`artifacts/`）是 verify 报告的**设计落点**（L0 起约定，P1+ 才真正写入），不入库。
