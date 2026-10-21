@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.ecom</groupId>
+  <artifactId>ecom-flink</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <name>eco-a-d-platform :: flink</name>
+  <description>Flink 作业工程骨架（P1 作业代码的落点；本骨架零 Java 源码）</description>
+
+  <properties>
+    <!-- ADR-0002：补丁锚点 2.2.1（FSR §4 冻结 2.2.x 线，不取 2.3.0） -->
+    <flink.version>2.2.1</flink.version>
+    <!-- HLD §7.1 D-C：坐标必须写全 5.0.0-2.2，不是裸 5.0.0 -->
+    <flink.connector.kafka.version>5.0.0-2.2</flink.connector.kafka.version>
+    <!-- 注意 artifactId 带 -2.2 后缀，裸 flink-doris-connector 在 Central 不存在 -->
+    <flink.connector.doris.version>26.3.0</flink.connector.doris.version>
+
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+  </properties>
+
+  <dependencies>
+    <!-- 核心 API：provided（Flink inverted classloading，HLD §3.3.4） -->
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-streaming-java</artifactId>
+      <version>${flink.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-clients</artifactId>
+      <version>${flink.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Connector：打进作业 jar（shade） -->
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-connector-kafka</artifactId>
+      <version>${flink.connector.kafka.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.doris</groupId>
+      <artifactId>flink-doris-connector-2.2</artifactId>
+      <version>${flink.connector.doris.version}</version>
+    </dependency>
+
+    <!-- 日志门面：Flink 运行时自带，provided -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>1.7.36</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <release>${maven.compiler.release}</release>
+        </configuration>
+      </plugin>
+
+      <!-- shade：HLD §3.3.4 的模板——排 jsr305、排签名文件、不落 dependency-reduced-pom -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <artifactSet>
+                <excludes>
+                  <!-- 只在编译期需要（JSR-305 注解），不进产物 -->
+                  <exclude>com.google.code.findbugs:jsr305</exclude>
+                </excludes>
+              </artifactSet>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <!-- 否则合并后的 jar 校验签名时报 SecurityException -->
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
