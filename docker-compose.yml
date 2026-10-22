@@ -105,7 +105,15 @@ services:
   #    ⚠️ process.size 官方**无默认值**，不配则启动失败（官方明文）
   # ─────────────────────────────────────────────────────────────
   flink-jm:
-    image: ${REGISTRY_MIRROR:-docker.m.daocloud.io}/apache/flink:2.2-java17
+    # ★ 本地构建镜像（impl-03a）：官方 apache/flink:2.2-java17 **不含** Paimon；
+    #   Paimon bundled connector jar 必须在**构建期** COPY 进 /opt/flink/lib
+    #   （官方逐字："Install one matching Paimon bundled connector in **each**
+    #    Flink process."）。改用本地 tag 后，JM/TM **两个进程**都自带 jar。
+    #   ⚠️ `ADD JAR` 指向**宿主**路径不可行（宿主机路径对容器不可见，且 Flink 的
+    #      ADD JAR 只认 Flink 可见的文件系统）⇒ 只能构建期进 lib，**不需要** ADD JAR。
+    #   先例与写法同 doris（${DORIS_IMAGE:-​eco/doris:4.1.5}）。
+    #   构建： docker build -f docker/flink/Dockerfile -t eco/flink:2.2-paimon docker/flink
+    image: ${FLINK_IMAGE:-eco/flink:2.2-paimon}
     container_name: eco-flink-jm
     hostname: flink-jm
     mem_limit: 1g
@@ -121,6 +129,11 @@ services:
     #      导致 "The Flink config file ... does not exist" 启动失败（P0 实测踩到）。
     volumes:
       - ./docker/flink/conf/config.yaml:/opt/flink/conf/config.yaml:ro
+      # ★ /warehouse ＝ 后续 catalog DDL 里要写的那个 warehouse 路径（impl-03a 只钉路径，
+      #   不写 DDL）。**必须与 flink-tm 的容器内路径逐字相同**（同为 /warehouse）：
+      #   Paimon 把绝对路径写进 catalog/表元数据，两侧路径一旦不同即读不到同一份数仓。
+      #   ⚠️ 本行**不得**改成别的容器内路径。
+      - paimon-warehouse:/warehouse
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8081/overview >/dev/null || exit 1"]
       interval: 15s
@@ -131,7 +144,10 @@ services:
     logging: *default-logging
 
   flink-tm:
-    image: ${REGISTRY_MIRROR:-docker.m.daocloud.io}/apache/flink:2.2-java17
+    # ★ 与 flink-jm **同一个本地镜像**：官方逐字要求 Paimon bundled connector 装在
+    #   "each Flink process"；JM 与 TM 不互通 ⇒ 只装一个等于没装（TM 才是真正
+    #   执行批任务、写 warehouse 的那个进程）。构建命令见 flink-jm 上方注释。
+    image: ${FLINK_IMAGE:-eco/flink:2.2-paimon}
     container_name: eco-flink-tm
     hostname: flink-tm
     mem_limit: 2g
@@ -142,6 +158,13 @@ services:
         condition: service_healthy
     volumes:
       - ./docker/flink/conf/config.yaml:/opt/flink/conf/config.yaml:ro
+      # ★ 与 flink-jm **逐字相同**的挂载（paimon-warehouse:/warehouse）：两容器是
+      #   两个独立文件系统，只有「同一具名卷 + 同一容器内路径」才构成 Paimon 需要的
+      #   shared storage（官方把 `file:` warehouse 只背书到 "single-machine tutorial"，
+      #   分布式集群须 shared storage）。JM 提交的批作业在 TM 上执行，两侧都必须
+      #   解析出**同一个绝对路径** /warehouse。
+      #   ⚠️ 本行**不得**改成别的容器内路径（与 flink-jm 那行互为约束）。
+      - paimon-warehouse:/warehouse
     # ★ 健康判据＝TM 进程**真的在**（impl-02e 补）：此前本服务**没有 healthcheck**，
     #   `docker compose ps` 的 HEALTH 列是 `<no value>` ⇒ 票面验收第 1 条
     #   「ps 全 healthy」结构上永远无法成立（不是机器慢，是判据不存在）。
@@ -391,6 +414,14 @@ volumes:
   doris-be-storage:
   doris-be-log:
   superset-home:
+  # ★ Paimon warehouse（impl-03a）：Flink JM 与 TM 是**两个独立容器**，
+  #   彼此的 /opt/flink/... 与容器可写层都**不互通** ⇒ 若各自用容器内临时路径，
+  #   `down`/`up` 一次数据即丢，且两进程根本读不到同一份数仓（正是本票要防的错）。
+  #   故用 **named volume**（与 kafka-data 同理：容器内路径 down/up 即清空）。
+  #   ⚠️ 官方对 `file:` warehouse 的背书**仅限 "single-machine tutorial"** 场景，
+  #      分布式集群（JM/TM 分容器即属此列）须 **shared storage** ⇒ 本仓以
+  #      具名卷充当该 shared storage（单机共享存储的等价物）。
+  paimon-warehouse:
 
 # ★ Bug H（P0 实测，2026-10-20）：把 **default 网络重定义为固定子网**，
 #   以便给 Doris FE/BE 钉死 IP（原因见 doris-fe 服务注释：Doris 把自身 IP

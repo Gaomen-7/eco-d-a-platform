@@ -1,8 +1,32 @@
 # impl-03: P2 离线分层 — 五层建表 · 全 SQL replay · 断言与对账
 
+> **母票**。2026-10-22 拆为六张副票施工，正文保留为**决策档案**（不删改）。开工看副票，收口回这里核对 10 条验收。
+
 Type: task
-Status: ready-for-agent
+Status: ready-for-agent（拆票中，见下）
 Blocked by: impl-02
+
+## 副票（2026-10-22 拆）
+
+| 票 | 文件 | Blocked by | 交付 |
+| --- | --- | --- | --- |
+| **impl-03a** | [impl-03a-p2-deployment-surface.md](impl-03a-p2-deployment-surface.md) | impl-02 | 部署面：warehouse 具名卷同路径挂 JM/TM ＋ Paimon jar 进每个 Flink 进程 |
+| **impl-03b** | [impl-03b-lake-ddl-and-ods-dwd-replay.md](impl-03b-lake-ddl-and-ods-dwd-replay.md) | impl-03a | 门槛批 ＋ 七表 DDL 形状 ＋ `replay` 跑通 ODS→DWD |
+| **impl-03c** | [impl-03c-dim-dws-ads-five-layer-replay.md](impl-03c-dim-dws-ads-five-layer-replay.md) | impl-03b | DIM 拉链 ＋ DWS 区间 join ＋ ADS 五层贯通 |
+| **impl-03d** | [impl-03d-lake-assert-sentinels-and-idempotency.md](impl-03d-lake-assert-sentinels-and-idempotency.md) | impl-03c | 哨兵断言面 ＋ A1/A2/A3 ＋ 幂等 ＋ 快照区间 ＋ 维护段 |
+| **impl-03e** | [impl-03e-lake-assert-counterexample-falsification.md](impl-03e-lake-assert-counterexample-falsification.md) | impl-03d | 反例证伪 F1–F6：断言能判、不是恒真 |
+| **impl-03f** | [impl-03f-paimon-doris-reconciliation-and-verify.md](impl-03f-paimon-doris-reconciliation-and-verify.md) | impl-03e | Paimon↔Doris 对账 ＋ `verify` 第三项转真断言 ＋ 母票收口 |
+
+**切分依据**（各自可单独验证、单独证伪）：
+
+- **03a 单独**：纯部署面，不依赖任何 SQL，且可单独证伪（挂错卷 / jar 只进 JM 都在本票内验完），是 03b 的物理前提。
+- **03b / 03c 切在「能否跑通」**：03b 证明形状与前两层，03c 证明拉链时态 join 与五层贯通。
+- **03d / 03e 切在「写断言 / 证断言」**：这是最要紧的一条。impl-02e 的 Answer 记过判据自身恒真（healthcheck 补成恒真、夹具棘轮把判据推成恒假）。把两者放进同一张票容易**两头都绿**；切开后 03d 的断言在经 03e 证伪前一律不算数。
+- **03f 单独收口**：`verify` 从 4 真 + 1 SKIP 转 5 真只发生在最后，前五张票不得改 `verify_runner.py`，避免 P2 途中把 P1 已验收的判据改坏。
+
+---
+
+## 原票正文（决策档案，2026-10-21）
 
 **What to build:** Paimon 湖仓五层按定案形状建成、能被单目标 `make replay` 全 SQL 零 jar 跑通、并用三条各自可判的断言 + 幂等 + 快照区间 + 对账证明它算成。跑完本票，`make verify` 第三项「Paimon 五层有行」从 impl-02 留下的显式 SKIP 转为**真断言并参与退出码判定**——五项全真。
 
@@ -29,16 +53,18 @@ ODS `ods_behavior_event`（append，`dt`=落地日，`payload` 原文零解析�
 
 ## Acceptance criteria
 
-- [ ] `make replay` 默认跑完五层退出 0；`make replay LAYER=dws` 只跑到 DWS 停住，日志逐层有 `layer=<层> rows=…`
-- [ ] 七张表的分区键、主键、bucket、表属性与形状表逐项一致；DWD/DIM/DWS/ADS 主键表均 `upsert-materialize=NONE` 且未设 `sequence.field`
-- [ ] 拒绝表的 `dt` 取摄入日（处理时间）而非事件日；`reject_reason` 取值域恰为三值，**没有 `duplicate`**
-- [ ] 同批 dump 跑两遍后 DWD 行数与逐列校验和完全一致（幂等成立）
-- [ ] `lake_assert.sh` 在人为破坏一条断言（如改掉 A3 的一侧）时判定失败并返回非 0（证哨兵面真的会判，不是恒真）
-- [ ] 快照 count 落在 [5,20] 内；批读整表时拉链区间在当前快照下自洽，`$audit_log` 能查到变更发生过
-- [ ] Paimon 与 Doris 两套 `ads_window_metric` 在 `is_settled=1` 行上逐值严格相等；人为改动 Doris 侧一个落定值后对账断言失败
-- [ ] `make verify` 第三项在本票完成后由 SKIP 转为真断言，五项全真且退出码 0
-- [ ] 门槛批文件落 `data/` 且被 `.gitignore` 覆盖；仓库内无原始数据（`git check-ignore` 验证）
-- [ ] 官方未给出的清单按 spec §8.3 登记（`sys.compact` 对主键表的逐句适用声明、`file://` compaction 成本数字等）——**遇到就登记，不臆造**
+> **这 10 条由六张副票共同兑现**，收口勾选归 **impl-03f**。括号内是主责票，勾选前先看那张票的验收。
+
+- [ ] `make replay` 默认跑完五层退出 0；`make replay LAYER=dws` 只跑到 DWS 停住，日志逐层有 `layer=<层> rows=…`（**03b / 03c**）
+- [ ] 七张表的分区键、主键、bucket、表属性与形状表逐项一致；DWD/DIM/DWS/ADS 主键表均 `upsert-materialize=NONE` 且未设 `sequence.field`（**03b**）
+- [ ] 拒绝表的 `dt` 取摄入日（处理时间）而非事件日；`reject_reason` 取值域恰为三值，**没有 `duplicate`**（**03b**）
+- [ ] 同批 dump 跑两遍后 DWD 行数与逐列校验和完全一致（幂等成立）（**03d**）
+- [ ] `lake_assert.sh` 在人为破坏一条断言（如改掉 A3 的一侧）时判定失败并返回非 0（证哨兵面真的会判，不是恒真）（**03e**）
+- [ ] 快照 count 落在 [5,20] 内；批读整表时拉链区间在当前快照下自洽，`$audit_log` 能查到变更发生过（**03d**）
+- [ ] Paimon 与 Doris 两套 `ads_window_metric` 在 `is_settled=1` 行上逐值严格相等；人为改动 Doris 侧一个落定值后对账断言失败（**03f**）
+- [ ] `make verify` 第三项在本票完成后由 SKIP 转为真断言，五项全真且退出码 0（**03f**）
+- [ ] 门槛批文件落 `data/` 且被 `.gitignore` 覆盖；仓库内无原始数据（`git check-ignore` 验证）（**03a / 03b**）
+- [ ] 官方未给出的清单按 spec §8.3 登记（`sys.compact` 对主键表的逐句适用声明、`file://` compaction 成本数字等）——**遇到就登记，不臆造**（**03d / 03f**）
 
 ## Notes
 

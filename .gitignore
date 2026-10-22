@@ -49,6 +49,20 @@ build/
 .gradle/
 *.class
 
+# ── 4b. 预取的大体积依赖（Flink/Paimon 等 connector jar）──────────
+# 依据：SRS REQ-F-LAKE-09「仓库零原始数据、零大二进制」（与第 1 节同源）。
+# 落点：docker/flink/lib/ 是 **Docker 构建上下文**，由 scripts/fetch-paimon-jar.sh 预取。
+#   当前内容：paimon-flink-2.2-2.1.0.jar = 57,697,871 B（设计值；实测同值）。
+#   57 MB 二进制不入库：它可从 Maven Central 逐字重建，且脚本钉死了 sha256
+#   43a6416a241ab736fb6ed2b6061a37fc5cca5ba8737d77eac1b977f859107dd1
+#   ⇒ 「可重建 + 已钉死」的东西放仓库只增体积、不增信息。
+# 与第 4 节（JVM 构建产物）的区别：那节是 **target/build 编译中间产物**；
+#   本节是 **外部发布物（artifact）的本地缓存**，性质不同故单列。
+# ⚠️ 同第 7b 节的固有语义：**已被跟踪的文件不受忽略规则影响**。jar 从未 `git add`
+#   （2026-10-22 实测 `git ls-files docker/flink/` 只有 conf/config.yaml），
+#   故本规则对其生效。若将来误 add，需 `git rm --cached` 才能移出。
+docker/flink/lib/
+
 # ── 5. 密钥与环境本地覆盖（REQ-NF-SEC-02 零密钥入仓）────────────
 .env
 .env.*
