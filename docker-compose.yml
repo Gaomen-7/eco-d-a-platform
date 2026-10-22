@@ -114,6 +114,14 @@ services:
     #   先例与写法同 doris（${DORIS_IMAGE:-​eco/doris:4.1.5}）。
     #   构建： docker build -f docker/flink/Dockerfile -t eco/flink:2.2-paimon docker/flink
     image: ${FLINK_IMAGE:-eco/flink:2.2-paimon}
+    # ★ build 段（2026-10-22 code-review 补）：让 `docker compose build` 真的能构建，
+    #   而不是只在注释里写两条手工命令。上下文是 docker/flink/（jar 在 lib/ 下）。
+    #   ⚠️ 干净检出上直接 `docker compose up` 仍会报 image not found —— 因为 jar 需要先由
+    #      scripts/fetch-paimon-jar.sh 预取（构建期不联网，理由见 Dockerfile 注释 3）。
+    #      故请用 `make up`：它依赖 build-flink-image（先取 jar 再 build），顺序已固化。
+    build:
+      context: ./docker/flink
+      dockerfile: Dockerfile
     container_name: eco-flink-jm
     hostname: flink-jm
     mem_limit: 1g
@@ -148,6 +156,7 @@ services:
     #   "each Flink process"；JM 与 TM 不互通 ⇒ 只装一个等于没装（TM 才是真正
     #   执行批任务、写 warehouse 的那个进程）。构建命令见 flink-jm 上方注释。
     image: ${FLINK_IMAGE:-eco/flink:2.2-paimon}
+    # 与 flink-jm 同一镜像；build 段只在 flink-jm 声明一次即可（同 tag，compose 复用）。
     container_name: eco-flink-tm
     hostname: flink-tm
     mem_limit: 2g
@@ -160,9 +169,13 @@ services:
       - ./docker/flink/conf/config.yaml:/opt/flink/conf/config.yaml:ro
       # ★ 与 flink-jm **逐字相同**的挂载（paimon-warehouse:/warehouse）：两容器是
       #   两个独立文件系统，只有「同一具名卷 + 同一容器内路径」才构成 Paimon 需要的
-      #   shared storage（官方把 `file:` warehouse 只背书到 "single-machine tutorial"，
-      #   分布式集群须 shared storage）。JM 提交的批作业在 TM 上执行，两侧都必须
+      #   shared storage。JM 提交的批作业在 TM 上执行，两侧都必须
       #   解析出**同一个绝对路径** /warehouse。
+      #   ⚠️ 关于 `file:` warehouse 的官方口径：本仓**没有**逐字保留原始出处链接，
+      #      故按 HLD §0.3 **不标 `官方给出`**。可确证的一手事实只有：Paimon 官方要求
+      #      connector 装在 "each Flink process."（该句已逐字引用，见 Dockerfile:11-13）；
+      #      而「`file:` 仅适配单机 / 分布式须共享存储」是本仓据该要求 + 两容器不互通
+      #      这一实测事实推得的**工程结论（`设计值` 口径）**，不是官方逐字背书。
       #   ⚠️ 本行**不得**改成别的容器内路径（与 flink-jm 那行互为约束）。
       - paimon-warehouse:/warehouse
     # ★ 健康判据＝TM 进程**真的在**（impl-02e 补）：此前本服务**没有 healthcheck**，
@@ -418,9 +431,14 @@ volumes:
   #   彼此的 /opt/flink/... 与容器可写层都**不互通** ⇒ 若各自用容器内临时路径，
   #   `down`/`up` 一次数据即丢，且两进程根本读不到同一份数仓（正是本票要防的错）。
   #   故用 **named volume**（与 kafka-data 同理：容器内路径 down/up 即清空）。
-  #   ⚠️ 官方对 `file:` warehouse 的背书**仅限 "single-machine tutorial"** 场景，
-  #      分布式集群（JM/TM 分容器即属此列）须 **shared storage** ⇒ 本仓以
-  #      具名卷充当该 shared storage（单机共享存储的等价物）。
+  #   ⚠️ 口径说明（HLD §0.3）：本仓**没有逐字保存** Paimon 关于 `file:` warehouse
+  #      的原文出处链接，故**不标 `官方给出`**。此处「JM/TM 分容器须共享存储」是
+  #      由两个可确证的一手事实推出的**工程结论（`设计值` 口径）**：
+  #        ① 官方逐字 "Install one matching Paimon bundled connector in **each**
+  #           Flink process."（已引，见 docker/flink/Dockerfile:11-13）
+  #        ② 本仓实测：JM 与 TM 是两容器，各自的 /opt/flink/ 与可写层不互通。
+  #      ⇒ 要让两个进程看到同一份数仓，只能给它们**同一个具名卷 + 同一个容器内路径**。
+  #      本仓以具名卷充当该 shared storage（单机共享存储的等价物）。
   paimon-warehouse:
 
 # ★ Bug H（P0 实测，2026-10-20）：把 **default 网络重定义为固定子网**，

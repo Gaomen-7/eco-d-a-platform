@@ -31,14 +31,31 @@ DORIS_FE   := 8030
 DORIS_MYSQL:= 9030
 SUPERSET   := 8088
 
-.PHONY: help up down init replay verify spike verify-fault verify-fault-corrupt logs lint typecheck client smoke config-check
+.PHONY: help up down init replay verify spike verify-fault verify-fault-corrupt logs lint typecheck client smoke config-check build-flink-image
 
 help:
 	@echo "冻结目标：up down init replay verify spike verify-fault logs"
-	@echo "新增目标（设计面）：verify-fault-corrupt lint typecheck client config-check"
+	@echo "新增目标（设计面）：verify-fault-corrupt lint typecheck client config-check build-flink-image"
+	@echo "  build-flink-image：预取 Paimon jar 并构建本地 Flink 镜像（up 之前必须先跑一次）"
 
 # ── 编排 ────────────────────────────────────────────────────────────
-up:
+# ── 本地镜像构建（impl-03a）─────────────────────────────────────────────
+# ★ 为什么必须是 make 目标而不是「注释里写两条手工命令」（2026-10-22 code-review 指出）：
+#   compose 里 flink-jm/flink-tm 的 image 是本地 tag echo/flink:2.2-paimon。
+#   干净检出后直接 `docker compose up` 会以 "image ... not found" 失败，而
+#   「先 fetch-paimon-jar.sh 再 docker build」的顺序此前**只写在注释里** ⇒
+#   部署面不可复现，等于要求人记住两步且顺序正确。
+#   与 doris 同构（DORIS_IMAGE 也要先 docker build），故这里给同一个解法：
+#   把顺序固化成目标，并让 up 依赖它（已构建则秒过）。
+#   jar 已存在且校验通过时 fetch 脚本会 SKIP；docker build 有层缓存，重复跑很快。
+build-flink-image:
+	@echo "[build-flink-image] 第一段：预取 Paimon jar（幂等，已有则 SKIP）"
+	@bash scripts/fetch-paimon-jar.sh
+	@echo "[build-flink-image] 第二段：构建本地 Flink 镜像"
+	@$(COMPOSE) build flink-jm || docker build -f docker/flink/Dockerfile \
+	  -t $${FLINK_IMAGE:-eco/flink:2.2-paimon} docker/flink
+
+up: build-flink-image
 	$(COMPOSE) up -d
 	@echo "[up] 已拉起；用 'make logs' 看启动，用 'make verify' 判链路是否活"
 

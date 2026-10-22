@@ -34,60 +34,80 @@ Blocked by: impl-02
 - **不实现**（spec §8.2）：`minio` / `spark` profile（属未签字意图类 #36，归 impl-05）。
 - 执行面：宿主无 `make`，须在 WSL 下跑；`docker` 命令需 `MSYS_NO_PATHCONV=1`。
 - 反例提醒：本条与 impl-02e §S1 同源 —— **卷/挂载这类判据本身也可能恒真**（如挂了两个同名卷却各自独立）。故第 2 条验收要求的是「跨容器互见」的实证，不是「compose 文件里有这一行」。
+
 ---
 
-## Answer（2026-10-22）
+## Answer（2026-10-22，含 code-review 修正）
 
-**结论：8 条验收全部通过，实证脚本 `scripts/deploy_surface_check.sh` 跑出 `9 PASS / 0 FAIL`（退出码 0），并做了反例证伪。**
+**结论：票面 8 条验收全部通过。实证脚本 `scripts/deploy_surface_check.sh` 共 10 项判据（票面 8 条 + 新增 4b 可写性 + 4c ADR-0002 补丁锚点），本轮实跑 `10 PASS / 0 FAIL`（退出码 0）。**
+
+> ⚠️ **本节证据均取自脚本自身的本次运行**（`bash scripts/deploy_surface_check.sh`，2026-10-22T11:50:46Z，日志见文末复现命令）。
+> 上一版 §A 贴的是更早的手工探针输出，与交付脚本的探针格式不同（脚本用 `stamp=/nonce=/host=`，`WROTE` 标记）——**已按 code-review 意见全部替换**，现在每个数字都可从同一条命令重新产出。
 
 ### 落地物
 
 | 文件 | 动作 | 说明 |
 | --- | --- | --- |
-| [docker/flink/Dockerfile](../../docker/flink/Dockerfile) | 新建 | 官方 flink:2.2-java17 + 构建期 `COPY` Paimon jar 进 `/opt/flink/lib` + **预建 `/warehouse` 并 chown 9999:9999**（实机取证后补，见 §B） |
+| [docker/flink/Dockerfile](../../docker/flink/Dockerfile) | 新建 | 官方 flink:2.2-java17 + 构建期 `COPY` Paimon jar 进 `/opt/flink/lib` + **预建 `/warehouse` 并 chown 9999:9999**（见 §B） |
 | [scripts/fetch-paimon-jar.sh](../../scripts/fetch-paimon-jar.sh) | 新建 | 幂等预取 jar（size + sha256 双校验，`.part`→校验通过才 `mv`） |
-| [docker-compose.yml](../../docker-compose.yml) | 改 | `paimon-warehouse` 具名卷；JM/TM 共用本地镜像 `${FLINK_IMAGE:-eco/flink:2.2-paimon}`，两处 `paimon-warehouse:/warehouse` 逐字相同 |
+| [docker-compose.yml](../../docker-compose.yml) | 改 | `paimon-warehouse` 具名卷；JM/TM 共用本地镜像 + `build:` 段；两处 `paimon-warehouse:/warehouse` 逐字相同 |
+| [Makefile](../../Makefile) | 改 | 新增 `build-flink-image`（取 jar → 构建镜像），且 `up:` 依赖它 ⇒ 构建顺序**固化进代码**而非注释 |
 | [.gitignore](../../.gitignore#L52-L66) | 改 | 新增第 4b 节忽略 `docker/flink/lib/`（57 MB 二进制不入库） |
-| [scripts/deploy_surface_check.sh](../../scripts/deploy_surface_check.sh) | 新建 | 8 条验收 + 4b 可写性的实证脚本（9 项判据，含反例设计说明） |
+| [scripts/deploy_surface_check.sh](../../scripts/deploy_surface_check.sh) | 新建 | 10 项判据的实证脚本，含反例设计说明与 `-v` 自检 |
 
-### §A 实机证据
+### §A 实机证据（本轮脚本原始输出）
 
-**① 具名卷同路径（两层断言：compose 配置 + 实机 inspect）**
+**① 具名卷同路径 —— 两层断言**
+
+compose 配置层：
 ```
-eco-flink-jm  Type=volume Name=eco-a-d-platform_paimon-warehouse Dest=/warehouse
-eco-flink-tm  Type=volume Name=eco-a-d-platform_paimon-warehouse Dest=/warehouse
+flink-jm: 卷条目 2 个, 匹配 source=paimon-warehouse&target=/warehouse 的 1 个
+   - source=paimon-warehouse target=/warehouse type=volume
+flink-tm: 卷条目 2 个, 匹配 source=paimon-warehouse&target=/warehouse 的 1 个
+   - source=paimon-warehouse target=/warehouse type=volume
 ```
-> 为什么两层：只查 compose 文件是**恒真判据**——若两处写的是两个不同卷名，compose 照样打印两行。故再取实机 Mounts 比对 `Name` 与 `Destination` 逐字相等。
+实机层（`docker inspect` 的 Mounts 才是能抓反例的那一半）：
+```
+eco-flink-jm Mounts -> Name=[eco-a-d-platform_paimon-warehouse] Destination=[/warehouse] (rc=0)
+eco-flink-tm Mounts -> Name=[eco-a-d-platform_paimon-warehouse] Destination=[/warehouse] (rc=0)
+=> 两侧 Name 逐字相等，Destination 逐字相等
+```
+> 为什么两层：只查 compose 是**恒真判据**——两处若写两个不同卷名，config 照样打印两行。故再比对实机 Mounts 的 `Name`。
 
 **② 跨容器互见（本票核心）**
 ```
-probe=/warehouse/.probe-20261022T110806Z-1939
-payload=ts=2026-10-22T11:08:06Z rand=858 marker=impl03a
-JM_WRITE_OK
-JM=[ts=2026-10-22T11:08:06Z rand=858 marker=impl03a]
-TM=[ts=2026-10-22T11:08:06Z rand=858 marker=impl03a]
-RESULT: CROSS_CONTAINER_IDENTICAL ✓
+探针路径：/warehouse/.probe-20261022T115046Z-532731433
+JM 侧 stdout/rc=0:
+WROTE
+impl-03a-probe stamp=20261022T115046Z nonce=532731433 host=flink-jm
+TM 侧 stdout/rc=0:
+impl-03a-probe stamp=20261022T115046Z nonce=532731433 host=flink-jm
+逐字比对：
+  JM 行 = [impl-03a-probe stamp=20261022T115046Z nonce=532731433 host=flink-jm]
+  TM 行 = [impl-03a-probe stamp=20261022T115046Z nonce=532731433 host=flink-jm]
 ```
-> 探针名带 UTC 时间戳 + 随机数、内容带时间戳 + 随机数 + 标记，TM 逐字比对。不以「文件存在」为判据。
+> 探针含 stamp + nonce + 主机名（`host=flink-jm` 证明**写入方确实是 JM**），TM 逐字读回。不以「文件存在」为判据。
 
 **③ down（不带 -v）→ up 后数据仍在**
-```
-=== 卷是否仍在 ===  eco-a-d-platform_paimon-warehouse
-BACKUP=[ts=2026-10-22T11:08:06Z rand=858 marker=impl03a]
-AFTER =[ts=2026-10-22T11:08:06Z rand=858 marker=impl03a]
-RESULT: PERSISTED_ACROSS_DOWN_UP ✓
-```
-> down 前先把探针内容备份到宿主（down 后卷内取不到），up 后读同一路径逐字比对。脚本内 `compose_down_preserving_volumes()` 会**逐字扫描参数**，发现 `-v`/`--volumes` 即拒绝执行。
+脚本先把探针备份到宿主，`down` → `up -d --wait` → 读同一路径与备份逐字比对，PASS。
+`compose_down_preserving_volumes()` 在真正执行前**逐字扫描参数**，发现 `-v`/`--volumes` 即拒绝（rc=99）。
 
-**④ jar 在两端**
+**④ jar 在两端（本轮已加体积+sha256 断言）**
 ```
-eco-flink-jm  -rwxr-xr-x 1 root root 57697871 Oct 22 10:00 paimon-flink-2.2-2.1.0.jar
-eco-flink-tm  -rwxr-xr-x 1 root root 57697871 Oct 22 10:00 paimon-flink-2.2-2.1.0.jar
+eco-flink-jm: size=57697871 sha256=43a6416a…f859107dd1
+eco-flink-tm: size=57697871 sha256=43a6416a…f859107dd1
 ```
-镜像内 sha256 与宿主 jar **字节级一致**：`43a6416a…f859107dd1`。
+> 上一版只 `grep` 文件名（code-review 指出那抓不住截断/替换）。现按票面要求的**具体**数字逐字节校验。
+
+**4c ADR-0002 补丁锚点（code-review 后新增）**
+```
+[eco-flink-jm] Version: 2.2.1, Commit ID: 450c63e   → 补丁 = 2.2.1
+[eco-flink-tm] Version: 2.2.1, Commit ID: 450c63e   → 补丁 = 2.2.1
+```
+> ADR-0002 把锚点定为 2.2.1 并要求「核对镜像实际运行补丁」。本地 tag `2.2` 是**浮动**的，故把这次核对机器化：换成 2.2.0 的 FROM 会立刻 FAIL。
 
 **⑤ 无 ADD JAR 指向宿主路径**
-全仓 15 处 `ADD JAR` 字样**全部是注释或检测脚本自身**，零可执行语句。
+全仓 15 处 `ADD JAR` 字样**全部是注释或检测脚本自身**，零可执行语句（脚本已排除注释行与自身）。
 
 **⑥ data/ 被 .gitignore（C5）**
 ```
@@ -97,67 +117,79 @@ eco-flink-tm  -rwxr-xr-x 1 root root 57697871 Oct 22 10:00 paimon-flink-2.2-2.1.
 
 **⑦ 七服务**
 ```
-client|exited|            ← profile 隔离按需容器，不计入
-doris-be|running|healthy
-doris-fe|running|healthy
-flink-jm|running|healthy
-flink-tm|running|healthy
-kafka|running|healthy
-kafka-init|exited|        ← 一次性服务，判 ExitCode=0（实测 State=exited ExitCode=0）
-superset|running|healthy
+doris-be|running|healthy      flink-jm|running|healthy    kafka|running|healthy
+doris-fe|running|healthy      flink-tm|running|healthy    kafka-init|exited| (ExitCode=0)
+superset|running|healthy      client|exited|  ← profile 隔离按需容器，不计入
 ```
-> **判据坑**（impl-02e 踩过，本票复核）：kafka-init 是 `restart: "no"` 的一次性服务、**没有 healthcheck**，要求它 `healthy` 结构性不可能。故拆成两条判据：(i) 常驻且有 healthcheck 的 6 个必须 healthy；(ii) kafka-init 必须已成功退出。
+> **判据坑**：kafka-init 是 `restart:"no"` 的一次性服务、**无 healthcheck**，要求它 healthy 结构性不可能。故拆两条：常驻 6 个须 healthy + kafka-init 须 ExitCode=0。
 
-**⑧ 数字标注**
-compose / Dockerfile 新增处逐条标 `官方给出` / `设计值`：uid/gid `9999` 标 `官方给出`（官方 flink 镜像的 flink 用户，实测 `id` 输出）；权限 `755` 标 `设计值`；jar size/sha256 标「本仓实测钉死的设计值，**非官方保证**」（Paimon 官方未公布该 artifact 校验值）。
+**⑧ 数字标注（本轮已从空转改为真断言）**
+compose 与 `docker/flink/` 两边都有标注词、Dockerfile 有标注、compose 的 flink 段有标注，任一为零即 FAIL；全文照旧打印供人工复核语义。
+逐处标注：uid/gid `9999` = `设计值`（本仓实测，**非**官方逐字声明，见 §B）；`chmod 755` = `设计值`；jar size/sha256 = 本仓实测钉死的设计值（Paimon 官方未公布校验值）。
 
 ### §B 反例证伪（证明判据不是恒真）
 
-**B-1 权限反例**：把 `/warehouse` 改成 `chmod 555` 后重跑脚本：
+**B-1 权限反例**：`chmod 555 /warehouse` 后重跑 → `4b` 两侧与 `②` 均 FAIL，退出码 1；改回 `755` 即恢复 `10 PASS / 0 FAIL`。
+> 上一版此处误记为「6 PASS / 5 FAIL」—— 那是计数重复缺陷（内层循环与末尾各记一次 FAIL）造成的不可能数字。**该缺陷已修**：现在每个判据最多贡献一个 FAIL，总数不会超过判据数。
+
+**B-2 实机发现并修掉的承重缺陷（票面未写）**
+
+首次跑 ② 即撞：`stderr: cannot create /warehouse/.probe-…: Permission denied`。
+
+**根因（两个条件叠加）**：
+1. 官方 flink 镜像以 `uid=9999(flink)` 运行（实测 `id`）；
+2. **镜像内原本没有 `/warehouse`**（实测 `ls: cannot access '/warehouse': No such file or directory`）。
+
+⇒ Docker 创建容器时只能**以 root 新建挂载点**（实测 `drwxr-xr-x 2 0 0`），首次建卷时这份 root 属主留在卷根 ⇒ flink 用户对该卷只有 r-x、没有 w。Paimon 要在此建表目录、写 bucket ⇒ **必然失败**，且失败形态正是「表不存在 / 类找不到」，与票面要防的一模一样。
+
+**修法**：Dockerfile `USER root; mkdir -p /warehouse; chown -R 9999:9999; USER flink`。Docker 对空具名卷的初始化语义会把镜像内该目录的内容与属主复制进卷，故新卷天然可写（实测：全新卷 + 本镜像 → `9999 9999`，写入成功）。
+> ⚠️ **只对新建卷生效**；继承下来的 root 属主卷需手工 `chown` 修一次。P2 首次启用的卷都是新建。
+
+⇒ **「挂对了卷」不等于「能写」**，故新增 ④b 独立判据。
+
+### §C 环境阻塞（如实登记，仍未销项）
+
+**本机 WinNAT 排除 TCP 8024–8123**，覆盖冻结端口 8030/8040/8081/8088；非管理员无法释放，本会话禁止提权。
+
+**已反事实取证**：用**改动前**的 `git show HEAD~:docker-compose.yml` 起 superset，同样报 `8088 ports are not available` ⇒ 与本票改动无关（会话开始时七服务曾全 healthy）。
+
+**处置**：功能性实证经 `COMPOSE_EXTRA_FILES` 叠加**只改宿主侧发布端口**的 override 完成（容器内端口/卷/内存/healthcheck/镜像名一律不动），该 override 落 `.scratch/tmp/`（被 `.gitignore:80` 覆盖）。
+
+> ⚠️ **遗留项（明确不勾销）**：⑦「冻结端口」这半边**尚未**在真实端口上验证过。端口恢复后须**不设** `COMPOSE_EXTRA_FILES` 重跑一次。这是宿主环境问题，不改变本票功能面结论，但必须在 impl-05 终验前补跑。
+
+### §D code-review 修正清单（两轴审查后）
+
+| # | 审查指出 | 处置 |
+| --- | --- | --- |
+| 1 | §A 证据取自**更早的手跑探针**，与交付脚本不符 | **已用本轮脚本真实输出整体重写 §A** |
+| 2 | §B-1「6 PASS / 5 FAIL」算术不可能 | 确认是计数重复缺陷；**已修脚本**，并改正本票记录 |
+| 3 | ⑧ 只 `grep|wc -l > 0`，一条注释即可通过（恒真） | **已改为四部分真断言**（两边须有标注、Dockerfile 须有、flink 段须有） |
+| 4 | 无 `build:`/Makefile 目标，构建顺序只在注释里 ⇒ 干净检出不可复现 | **已加 compose `build:` 段 + Makefile `build-flink-image`，且 `up:` 依赖它** |
+| 5 | ④ 只验 jar 名，未验「57,697,871 B」 | **已加 size + sha256 逐字节断言** |
+| 6 | ADR-0002 补丁锚点 2.2.1 无人核对 | **已加 4c 判据**（两端 `flink --version` 须为 2.2.1），实跑证实镜像正是 2.2.1 |
+| 7 | `.gitignore` 声称 `git ls-files` 只有 config.yaml —— 与 HEAD 不符 | **已改准**：实测返回 Dockerfile + conf/config.yaml |
+| 8 | Dockerfile 卷语义自相矛盾（root:root 建目录 vs 复制镜像元数据） | **已改准**：根因是「镜像内无该路径 ⇒ 以 root 新建挂载点」；引用官方 Volumes 句并明确标注本仓**未逐字留源**故不标 `官方给出` |
+| 9 | compose「`file:` 仅 single-machine tutorial」是无源官方断言 | **已改为可确证事实 + 工程结论（`设计值` 口径）**，不再冒充官方逐字 |
+| 10 | 脚本 section banner 错位（⑤ 压在 4b 上、① 压在 ensure_stack_up 上） | **已重排**，每个函数正上方都有对应标题 |
+| 11 | `uid 9999` 标 `官方给出` 属误标 | **已改 `设计值`**（本仓实测，非官方逐字声明） |
+| 12 | 六个新票 + DAG 推进夹在部署提交里（scope creep） | **承认**：拆票与 DAG 属母票收口动作，与代码同提交不理想；已在提交信息与本票登记，不再扩大。 |
+
+**未采纳（附理由）**：
+- *抽公共 helper 消除 9 个判定函数的 pass/fail 尾巴与两处 grep 排除集* → 保留。两段 grep 判的是**不同对象**（可执行 ADD JAR 语句 vs 宿主路径 jar 引用），排除集必须不同；统一会让判据变糊。每个判据的失败文案都指向**具体病因**（卷名不同/属主不符/写入被拒/状态 MISSING），这是本票的主要价值。
+- *4 处内联 Python JSON 解析器重复* → 暂留。它们是各自判据的取证逻辑，抽出来需同步改 4 处调用约定，收益低于风险；记为后续清理项。
+
+### §E 未验证 / 交接下游
+
+- **未验证** Paimon catalog 的实际 SQL 加载（`CREATE CATALOG … 'connector'='paimon'`）—— 本票明确不建表、不写 DDL，归 **impl-03b**。
+- ⑦ 的**冻结端口**半边待端口恢复后复跑（见 §C 遗留项）。
+- 未实现 `minio`/`spark` profile（spec §8.2，归 impl-05）。
+
+### 复现命令
+
+```bash
+# 1. 取 jar + 构建镜像（顺序已固化，幂等）
+wsl -e bash -lc 'cd "/mnt/f/Anaconda practice project/eco-a-d-platform" && make build-flink-image'
+
+# 2. 跑全部 10 项判据（端口正常时不要设 COMPOSE_EXTRA_FILES）
+bash scripts/deploy_surface_check.sh
 ```
-[FAIL] 4b /warehouse 对 flink 用户可写（eco-flink-jm 侧写入被拒 rc=2 => flink 用户对 /warehouse 不可写）
-[FAIL] 4b /warehouse 对 flink 用户可写（eco-flink-tm 侧写入被拒 rc=2 => flink 用户对 /warehouse 不可写）
-[FAIL] ② 跨容器互见（JM 写 / TM 读）（JM 侧写入失败）
-汇总：6 PASS / 5 FAIL   → 退出码 1
-```
-权限改回后即恢复 `9 PASS / 0 FAIL`。⇒ 4b 与 ② 确实在断言，不是恒真。
-
-**B-2 实机发现并修掉的真实缺陷（票面未写，但会让 03b 起全线失败）**
-
-首次跑 ② 就撞到：
-```
-docker exec eco-flink-jm sh -c 'echo x > /warehouse/probe'
-  → sh: 1: cannot create /warehouse/.probe-...: Permission denied
-```
-**根因**：官方 flink 镜像以 `uid=9999(flink)` 运行，而 Docker **具名卷首次挂载时以 root:root 建目录**（实测 `ls -ldn /warehouse` → `drwxr-xr-x 2 0 0`）⇒ flink 用户只有 r-x、没有 w。**Paimon 要在 `/warehouse` 下建 database/表目录并写 bucket 文件 ⇒ 必然失败**，而且失败形态是「表不存在 / 类找不到」，与本票要防的形态一模一样。
-
-**修法**：Dockerfile 里 `USER root; mkdir -p /warehouse && chown -R 9999:9999 /warehouse; USER flink`。Docker 新建具名卷时会把镜像内该路径的属主/权限复制进卷，故新卷天然可写（实机验证：全新卷 + 本镜像 → `ls -ldn` = `9999 9999`，写入成功）。
-> ⚠️ **只对新建卷生效**；已存在的 root 属主卷不会因重建镜像而改变，需手工 `docker run --rm -v <vol>:/w alpine chown -R 9999:9999 /w` 修一次。本项目 P2 首次启用的卷都是新建，故本条足够。
-
-⇒ **「挂对了卷」不等于「能写」**。故新增 ④b 判据，作为本票的独立验收项。
-
-### §C 环境阻塞（如实登记）
-
-**本机 WinNAT 排除了 TCP 8024–8123 段**，覆盖冻结端口 8030/8040/8081/8088：
-```
-netsh interface ipv4 show excludedportrange protocol=tcp
-      8024        8123
-```
-非管理员无法释放（`Restart-Service winnat` → `Cannot open winnat service`）；本会话禁止提权。
-
-**已做反事实取证，证明与本票改动无关**：用**改动前**的 `git show HEAD:docker-compose.yml` 起 superset，同样报
-```
-Error response from daemon: ports are not available: exposing port TCP 127.0.0.1:8088 ...
-```
-⇒ 环境漂移，不是 impl-03a 引入的回归（会话刚开始时七服务曾全 healthy）。
-
-**处置**：功能性实证通过 `COMPOSE_EXTRA_FILES` 叠加一个**只改宿主侧发布端口**的临时 override 完成（容器内端口、卷挂载、mem_limit、healthcheck、镜像名**一律不动**）。该 override 落在 `.scratch/tmp/`（已被 `.gitignore:80` 覆盖），不随本票入库。
-
-> ⚠️ **遗留项**：端口恢复后须**不设** `COMPOSE_EXTRA_FILES` 重跑一次脚本，让「冻结端口」这条也成立。此为宿主环境问题，不阻塞本票的功能面结论，但必须在 impl-05 终验前复跑。
-
-### §D 未验证 / 交接给下游
-
-- **未验证** JM/TM 实际以 SQL 加载 Paimon（`CREATE CATALOG ... 'connector'='paimon'`）—— 本票明确「不建任何表、不写任何 DDL」，归 **impl-03b**。
-- **未验证** 镜像名与 `${FLINK_IMAGE}` 覆盖路径在本机之外的行为。
-- `sql/` 仍只有 README，未新增任何 DDL（符合票面 Notes）。
-- 未实现 `minio` / `spark` profile（spec §8.2，归 impl-05）。

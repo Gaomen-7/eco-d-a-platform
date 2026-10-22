@@ -58,9 +58,11 @@ build/
 #   ⇒ 「可重建 + 已钉死」的东西放仓库只增体积、不增信息。
 # 与第 4 节（JVM 构建产物）的区别：那节是 **target/build 编译中间产物**；
 #   本节是 **外部发布物（artifact）的本地缓存**，性质不同故单列。
-# ⚠️ 同第 7b 节的固有语义：**已被跟踪的文件不受忽略规则影响**。jar 从未 `git add`
-#   （2026-10-22 实测 `git ls-files docker/flink/` 只有 conf/config.yaml），
-#   故本规则对其生效。若将来误 add，需 `git rm --cached` 才能移出。
+# ⚠️ 同第 7b 节的固有语义：**已被跟踪的文件不受忽略规则影响**。
+#   实测（2026-10-22）：`git ls-files docker/flink/` 返回 Dockerfile 与 conf/config.yaml
+#   —— 即**镜像层文件已入库**；而 57 MB 的 `lib/paimon-flink-2.2-2.1.0.jar` **从未 add**
+#   ⇒ 本规则对 jar 生效（对已入库的 Dockerfile 不生效，也无所谓，它本就该入库）。
+#   若将来误 add 了 jar，需 `git rm --cached` 才能移出。
 docker/flink/lib/
 
 # ── 5. 密钥与环境本地覆盖（REQ-NF-SEC-02 零密钥入仓）────────────

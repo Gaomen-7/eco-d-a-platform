@@ -90,6 +90,10 @@ COMPOSE_FILE="docker-compose.yml"
 VOLUME_NAME="paimon-warehouse"
 WAREHOUSE_PATH="/warehouse"
 PAIMON_JAR="paimon-flink-2.2-2.1.0.jar"
+# jar 钉死值（设计值口径：本仓实测；Paimon 官方未公布该 artifact 校验值）。
+# 与 scripts/fetch-paimon-jar.sh 及 docker/flink/Dockerfile 的 LABEL/RUN 三处一致。
+EXPECTED_JAR_SIZE="57697871"
+EXPECTED_JAR_SHA256="43a6416a241ab736fb6ed2b6061a37fc5cca5ba8737d77eac1b977f859107dd1"
 JM_CONTAINER="eco-flink-jm"
 TM_CONTAINER="eco-flink-tm"
 KAFKA_INIT_CONTAINER="eco-kafka-init"
@@ -172,9 +176,6 @@ fail() { FAIL_COUNT=$((FAIL_COUNT + 1)); FAILED_ITEMS+=("$1"); printf '[FAIL] %s
 raw() { sed 's/^/    │ /'; }
 info() { printf '  · %s\n' "$1"; }
 
-# ══════════════════════════════════════════════════════════════════════════════
-# ① 具名卷同路径挂 JM/TM
-# ══════════════════════════════════════════════════════════════════════════════
 # ==============================================================================
 # ensure_stack_up：保证被测环境处于「已拉起」状态
 # ==============================================================================
@@ -204,6 +205,9 @@ ensure_stack_up() {
   return 0
 }
 
+# ══════════════════════════════════════════════════════════════════════════════
+# ① 具名卷同路径挂 JM/TM
+# ══════════════════════════════════════════════════════════════════════════════
 check_volume_same_path() {
   sec "① 具名卷同路径挂载 JM/TM（compose 断言 + 实机 inspect 比对卷名）"
   local item="① 具名卷同路径挂 JM/TM"
@@ -274,7 +278,9 @@ sys.exit(rc)
     return 1
   fi
   info "实机层：两侧 Name 逐字相等（$jm_name），Destination 逐字相等（$jm_dst）"
-  if [[ $ok -eq 1 ]]; then pass "$item"; else fail "$item"; fi
+  # 不重复计数（2026-10-22 code-review）：失败已在上面各处逐次 fail；
+  # 末尾再 fail 一次会把总数推高到 > 判据条数。
+  if [[ $ok -eq 1 ]]; then pass "$item"; fi
   return $(( 1 - ok ))
 }
 
@@ -461,14 +467,65 @@ check_jar_both_containers() {
     printf '    命中行（%s）：\n' "$c" | raw
     printf '%s\n' "$out" | grep "$PAIMON_JAR" | raw
     info "$c 侧命中 $PAIMON_JAR"
+
+    # ---- 体积 + sha256 逐字节校验（2026-10-22 code-review 指出）：
+    #      此前只 grep 文件名，而票面要求的是「57,697,871 B」这个**具体**事实；
+    #      只认名字抓不住截断、替换或错误版本的 jar。
+    local in_size in_sha
+    in_size="$(dcx exec "$c" stat -c '%s' "/opt/flink/lib/$PAIMON_JAR" 2>&1)"
+    in_sha="$(dcx exec "$c" sha256sum "/opt/flink/lib/$PAIMON_JAR" 2>&1 | cut -d' ' -f1)"
+    printf '    %s: size=%s sha256=%s\n' "$c" "$in_size" "$in_sha" | raw
+    if [[ "$in_size" != "$EXPECTED_JAR_SIZE" ]]; then
+      fail "$item（$c 侧 jar 体积 [$in_size] != 期望 $EXPECTED_JAR_SIZE）"
+      ok=0; continue
+    fi
+    if [[ "$in_sha" != "$EXPECTED_JAR_SHA256" ]]; then
+      fail "$item（$c 侧 jar sha256 不符：[$in_sha]）"
+      ok=0; continue
+    fi
+    info "$c 侧 jar 字节级校验通过（size + sha256 均与钉死值一致）"
   done
 
-  if [[ $ok -eq 1 ]]; then pass "$item"; else fail "$item（至少一端未命中，见上）"; fi
+  # 同 ①：失败已在循环内逐侧计入，末尾不重复计。
+  if [[ $ok -eq 1 ]]; then pass "$item"; fi
   return $(( 1 - ok ))
 }
 
-# ══════════════════════════════════════════════════════════════════════════════
-# ⑤ 无 ADD JAR 指向宿主路径
+# ==============================================================================
+# 4c ADR-0002 补丁锚点：镜像实际运行的 Flink 补丁必须 == 2.2.1
+# ==============================================================================
+# 为什么加这条（2026-10-22 code-review 指出）：
+#   ADR-0002 把 Flink 补丁锚点定为 **2.2.1**，并在 Consequences 里明确要求
+#   「flink/ 工程落地时须核对镜像实际运行补丁与 2.2.1 一致（flink --version）」。
+#   本票把 compose 的镜像从官方 apache/flink:2.2-java17 换成本地 tag
+#   eco/flink:2.2-paimon；本地 tag 里的 2.2 是**浮动**的（不写补丁号），
+#   若哪天基础镜像换成 2.2.0/2.2.2，tag 名字照样成立而锚点已经破了。
+#   故把 ADR 要求的那次核对**机器化**：不靠人记得跑 flink --version。
+# 反例：把 Dockerfile 的 FROM 换成 apache/flink:2.2.0-java17，本条立刻 FAIL。
+# 实测（2026-10-22）：镜像内 `flink --version` -> `Version: 2.2.1, Commit ID: 450c63e`；
+#   /opt/flink/lib 下 flink-dist-2.2.1.jar 等亦印证同一补丁号。
+check_flink_patch_anchor() {
+  sec "4c ADR-0002 补丁锚点：两端 flink --version 须为 2.2.1"
+  local item="4c ADR-0002 补丁锚点 = 2.2.1"
+  local ok=1 c out rc ver
+  for c in "$JM_CONTAINER" "$TM_CONTAINER"; do
+    out="$(dcx exec "$c" sh -c 'flink --version 2>/dev/null || $FLINK_HOME/bin/flink --version' 2>&1)"; rc=$?
+    printf '    [%s] flink --version (rc=%s)：\n' "$c" "$rc" | raw
+    printf '%s\n' "$out" | raw
+    if [[ $rc -ne 0 ]]; then
+      fail "$item（$c 侧 flink --version 失败 rc=$rc）"
+      ok=0; continue
+    fi
+    ver="$(printf '%s\n' "$out" | sed -n 's/^Version: \([^,]*\).*/\1/p' | head -1)"
+    if [[ "$ver" != "2.2.1" ]]; then
+      fail "$item（$c 侧实际补丁 = [$ver]，ADR-0002 锚点是 2.2.1）"
+      ok=0; continue
+    fi
+    info "$c 侧补丁 = $ver（与 ADR-0002 一致）"
+  done
+  if [[ $ok -eq 1 ]]; then pass "$item"; fi
+  return $(( 1 - ok ))
+}
 # ==============================================================================
 # 4b /warehouse 对 flink 用户可写（2026-10-22 实机新增，票面未写但承重）
 # ==============================================================================
@@ -529,9 +586,12 @@ check_warehouse_writable() {
     fi
     info "$c 侧可写（uid 一致 + 写入读回逐字相同）"
   done
-  if [[ $ok -eq 1 ]]; then pass "$item"; else fail "$item（见上）"; fi
+  # 同 ①：见上。
+  if [[ $ok -eq 1 ]]; then pass "$item"; fi
   return $(( 1 - ok ))
 }
+# ══════════════════════════════════════════════════════════════════════════════
+# ⑤ 全仓无 ADD JAR 指向宿主路径
 # ══════════════════════════════════════════════════════════════════════════════
 check_no_add_jar_host_path() {
   sec "⑤ 全仓无 ADD JAR 指向宿主路径"
@@ -784,31 +844,49 @@ check_number_annotations() {
   sec "⑧ 数字标注审查：compose / Dockerfile 里的时间·容量数字须逐处标注"
   local item="⑧ 数字标注审查"
 
-  # 本仓写作风格：凡时间/容量/阈值数字，逐处标 「官方给出」或「设计值」，
-  # **不得把设计值当官方保证**。这里主要做**打印**（供人复核），另加一条弱断言：
-  # docker/flink/ 下若存在数字面却零标注，是明显异常 => FAIL。
-  info "compose 里含时间/容量数字的行（interval/timeout/retries/start_period/mem_limit/大小写容量）："
-  grep -n -E '(interval|timeout|retries|start_period|mem_limit|memswap_limit|max-size|max-file):' "$COMPOSE_FILE" 2>&1 | raw
+  # 断言化（2026-10-22 code-review 修正）：原实现只 grep|wc -l > 0，一条无关注释就能
+  # 通过 —— 属本脚本头部自己点名的恒真判据失败模式；票面要求是「逐处标」不是「至少标一处」。
+  # 改为四部分，缺一即 FAIL：
+  #   (a) compose 与 docker/flink/ 两边都要有标注词；
+  #   (b) Dockerfile（本票新增）带标注行数不得为 0；
+  #   (c) compose 的 flink 段（本票改动处）必须有标注；
+  #   (d) 全文照旧打印，供人复核语义是否正确（机器只保证不会一处不标）。
+  local ok=1 c_annot d_annot f_annot seg_annot
 
-  info "compose / docker 下出现标注词的行（官方给出 / 设计值 / 官方未给出）："
-  grep -rn -E '(官方给出|设计值|官方未给出)' "$COMPOSE_FILE" docker/ 2>/dev/null | raw
+  c_annot="$(grep -c -E '官方给出|设计值|官方未给出' "$COMPOSE_FILE" 2>/dev/null || true)"
+  d_annot="$(grep -rn -E '官方给出|设计值|官方未给出' docker/flink/ 2>/dev/null | wc -l | tr -d ' ')"
+  printf '    标注词出现次数：compose=%s  docker/flink/=%s\n' "${c_annot:-0}" "${d_annot:-0}" | raw
 
-  info "docker/flink/ 下全部文件里的数字行（新增面，重点复核）："
-  if [[ -d docker/flink ]]; then
-    grep -rn -E '[0-9]+(\.[0-9]+)?[[:space:]]*(m|g|GiB|MiB|MB|GB|s|秒|分钟|%)' docker/flink/ 2>/dev/null | raw
-  else
-    info "（docker/flink/ 不存在）"
+  # (a) 两边都要有标注
+  if [[ "${c_annot:-0}" -eq 0 ]]; then
+    fail "$item（compose 里零标注词 —— 票面要求「compose 里新增的时间/容量数字逐处标」）"
+    ok=0
   fi
-
-  local annot_count
-  annot_count="$(grep -rn -E '(官方给出|设计值|官方未给出)' docker/flink/ 2>/dev/null | wc -l | tr -d ' ')"
-  printf '    docker/flink/ 下标注词出现次数 = %s\n' "$annot_count" | raw
-  if [[ -d docker/flink && "$annot_count" == "0" ]]; then
+  if [[ "${d_annot:-0}" -eq 0 ]]; then
     fail "$item（docker/flink/ 下零标注词 —— 新增数字面未按本仓风格标注）"
-    return 1
+    ok=0
   fi
-  pass "$item（已打印全部命中行供人工复核；弱断言：docker/flink/ 下标注词 > 0）"
-  return 0
+
+  # (b) Dockerfile 是本票新增文件，⑧ 的主要对象
+  if [[ -f docker/flink/Dockerfile ]]; then
+    f_annot="$(grep -c -E '官方给出|设计值|官方未给出' docker/flink/Dockerfile 2>/dev/null || true)"
+    printf '    Dockerfile：带标注 %s 行\n' "${f_annot:-0}" | raw
+    if [[ "${f_annot:-0}" -eq 0 ]]; then
+      fail "$item（Dockerfile 零标注 —— 本票新增的数字面未按本仓风格标注）"
+      ok=0
+    fi
+  fi
+
+  # (c) compose 的 flink 段是本票改动处
+  seg_annot="$(awk '/^  flink-jm:/,/^  doris-fe:/' "$COMPOSE_FILE" 2>/dev/null | grep -c -E '官方给出|设计值|官方未给出' || true)"
+  printf '    compose flink 段：带标注 %s 行\n' "${seg_annot:-0}" | raw
+  if [[ "${seg_annot:-0}" -eq 0 ]]; then
+    fail "$item（compose 的 flink 段零标注 —— 本票新增挂载说明缺 设计值/官方给出）"
+    ok=0
+  fi
+
+  if [[ $ok -eq 1 ]]; then pass "$item（compose 与 docker/flink/ 均有标注、新增面无遗漏；全文已打印供人工复核）"; fi
+  return $(( 1 - ok ))
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -835,7 +913,7 @@ preflight() {
 # ══════════════════════════════════════════════════════════════════════════════
 main() {
   echo "════════════════════════════════════════════════════════════════════════════"
-  echo " deploy_surface_check.sh —— impl-03a 部署面验收实证（8 条）"
+  echo " deploy_surface_check.sh —— impl-03a 部署面验收实证（逐条）"
   echo " 时间: $(date -u +%Y-%m-%dT%H:%M:%SZ)  (UTC)"
   echo "════════════════════════════════════════════════════════════════════════════"
   preflight
@@ -852,6 +930,7 @@ main() {
   check_warehouse_writable
   check_cross_container_visibility
   check_jar_both_containers
+  check_flink_patch_anchor
   check_persistence_across_down_up
   check_compose_ps_all_healthy
 

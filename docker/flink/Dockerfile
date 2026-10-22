@@ -80,17 +80,32 @@ RUN set -eux; \
 #   docker exec eco-flink-jm sh -c 'echo x > /warehouse/probe'
 #     → sh: 1: cannot create /warehouse/.probe-...: **Permission denied**
 #
-# 根因：**镜像以非 root 用户运行**。官方 flink:2.2-java17 的 Dockerfile 末尾是
-#   USER flink（实测容器内 `id` → uid=9999(flink) gid=9999(flink)），
-#   而 Docker **具名卷首次挂载时会以 root:root 建立目录**（实测
-#   `ls -ldn /warehouse` → drwxr-xr-x 2 0 0）⇒ flink 用户对 /warehouse 只有 r-x，
+# 根因（两个条件叠加，缺一不成立）：
+#   (1) **镜像以非 root 用户运行**：官方 flink:2.2-java17 的 Dockerfile 末尾是
+#       USER flink（实测容器内 `id` → uid=9999(flink) gid=9999(flink)）。
+#   (2) **镜像内原本不存在 /warehouse**（实测：`docker run --rm --entrypoint sh
+#       eco/flink:2.2-paimon -c 'ls -ld /warehouse'` → `No such file or directory`）。
+#       基础的 apache/flink 镜像**没有**这个目录，是本项目在 compose 里新挂的挂载点。
+#
+#   于是 Docker 在**创建该容器**时，因目标路径在镜像里缺失，只能**以 root:root
+#   新建挂载点目录**（实测 `ls -ldn /warehouse` → `drwxr-xr-x 2 0 0`），
+#   首次创建具名卷时又把这份 root 属主**留在卷根**。⇒ flink 用户对该卷只有 r-x、
 #   没有 w。Paimon 要在该目录下建 database/表目录并写 bucket 文件 ⇒ 必失败。
 #
+#   ⚠️ 上一版注释把这里写成「具名卷首次挂载总会以 root:root 建目录」，**不准确**——
+#      准确的说法是「镜像里没有该路径时，Docker 只能以 root 新建挂载点」。这条区分
+#      正是下面第 ① 条修法能成立的前提，故必须写准。
+#
 # 为什么在**镜像里**预建而不是在 compose 里 chown：
-#   ① Docker 的具名卷在**首次创建**时会把镜像内目标路径的**属主与权限复制进卷**
-#      （官方卷语义：empty volume 被挂载到容器内非空目录时，该目录内容与元数据
-#      会被拷进卷）。故镜像里预建 9999:9999 的 /warehouse ⇒ 新卷天然可写。
-#      实机已验证：全新具名卷 + 本镜像 ⇒ `ls -ldn` = 9999 9999，写入成功。
+#   ① Docker 对**空具名卷**的初始化语义：卷被挂载到容器内一个**已存在且非空**的目录时，
+#      该目录的**内容会被复制进卷**（官方文档 Volumes 一节：
+#      "If you start a container which creates a new volume, and the container has
+#       files or directories in the directory to be mounted, Docker copies the
+#       directory's contents into the volume."）。属主/权限随目录内容一并保留。
+#      ⚠️ 本条只引用官方那句话的**语义**；本仓没有逐字保留该句的原始出处链接，
+#      故按 HLD §0.3 **不标 `官方给出`** —— 它是「官方文档表述 + 本仓实测」的合成结论。
+#      故镜像里预建 9999:9999 的 /warehouse ⇒ 新卷天然可写。
+#      实机已验证：全新具名卷 + 本镜像 ⇒ `ls -ldn` = `9999 9999`，写入成功。
 #   ② compose 侧没有 chown 的声明式入口；用 entrypoint 包装会引入额外 shell 层，
 #      且 JM/TM 两处都要各自处理 ⇒ 不如在镜像里一次性固化。
 #   ⚠️ **只对新建卷生效**：已存在的卷（属主 root）不会因重建镜像而改变属主。
