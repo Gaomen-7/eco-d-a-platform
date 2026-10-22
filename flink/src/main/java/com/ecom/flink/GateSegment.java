@@ -12,6 +12,7 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
+import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
 
@@ -75,17 +76,69 @@ public final class GateSegment {
                         .name("validate-dedup")
                         .uid("validate-dedup");
 
-        // DLQ 必须接 sink，否则会被作业图剪掉（CorrectionSegment 的教训）
+        // ★★ DLQ 必须进 StatementSet（impl-02d 实机证伪，2026-10-22）★★
+        //   旧实现这里是 `dlq.map(...).sinkTo(KafkaSinks.dlq())`，看起来「接了 sink」，
+        //   但作业是**用 StatementSet 提交的**（DorisSinkSegment.attach → statements.execute()），
+        //   而 StatementSet 只执行 addInsertSql 的那几张表 —— 挂在 env 上的
+        //   DataStream sink **根本不进作业图**。
+        //
+        //   实机证据（决定性）：`/jobs/<jid>` 的 plan 里只有 7 个顶点，
+        //   `validate-dedup` 的输出只列出 `count-duplicate` 与 `funnel-only`，
+        //   **没有 dlq**；投 5 条缺 `event_type` 的必脏事件后，
+        //   源端 read-records 268→273（确实读到了），而 DLQ topic 六个分区
+        //   offset 全为 0、`.log` 字节数全为 0。
+        //
+        //   后果比「DLQ 是空的」更严重：verify-fault 的「DLQ 增量==0」因此是
+        //   **恒真的假断言** —— 它断言的是一条根本没接线的通道。票面验收第 7 条
+        //   （改坏输入 ⇒ 退非 0）正是靠这一点发现的。
+        //
+        //   修法：把 DLQ 也变成 StatementSet 的一张 Kafka 表。返回该流，
+        //   由 `P1RealtimeJob` 连同其他 INSERT 一起提交（单作业、单 checkpoint 边界）。
+        return clean;
+    }
+
+    /**
+     * 把入口段的 DLQ 侧输出注册成 Kafka 表（`sink_dlq`）。
+     *
+     * <p>为什么不再是 {@code sinkTo(KafkaSinks.dlq())}：见 {@link #build} 的注释 ——
+     * StatementSet 提交会丢掉 env 上的 DataStream sink。改成 Table 后，
+     * DLQ 与其他三张表在**同一次** {@code statements.execute()} 里提交。
+     *
+     * <p>配套用法：先调本方法建表，再调 {@link #createDlqView} 产出 `view_dlq`，
+     * 最后由 {@code DorisSinkSegment.attach} 里的 {@code INSERT INTO sink_dlq}
+     * 把它纳入 StatementSet。
+     */
+    public static void registerDlqSink(StreamTableEnvironment tEnv) {
+        tEnv.executeSql(
+                "CREATE TABLE IF NOT EXISTS sink_dlq (\n"
+                        + "  payload STRING\n"
+                        + ") WITH (\n"
+                        + "  'connector' = 'kafka',\n"
+                        + "  'topic' = '"
+                        + JobConfig.TOPIC_DLQ
+                        + "',\n"
+                        + "  'properties.bootstrap.servers' = '"
+                        + JobConfig.KAFKA_BOOTSTRAP
+                        + "',\n"
+                        + "  'format' = 'raw'\n"
+                        + ")");
+    }
+
+    /** DLQ 的待插视图：`INSERT INTO sink_dlq SELECT payload FROM view_dlq`。 */
+    public static void createDlqView(
+            StreamTableEnvironment tEnv, SingleOutputStreamOperator<RawEvent> clean) {
         DataStream<RawEvent> dlq = clean.getSideOutput(DLQ);
-        dlq.map(new ToDlqJson())
+        DataStream<String> payload = dlq.map(new ToDlqJson())
                 .returns(Types.STRING)
                 .name("dlq-payload")
-                .uid("dlq-payload")
-                .sinkTo(KafkaSinks.dlq())
-                .name("dlq-sink")
-                .uid("dlq-sink");
-
-        return clean;
+                .uid("dlq-payload");
+        // ★ 必须给列起名（`tEnv.fromDataStream` 的默认列名是 `f0`）：
+        //   直接用 `createTemporaryView(name, stream)` 会让列叫 `f0`，
+        //   而 `INSERT INTO sink_dlq SELECT payload FROM view_dlq` 会报
+        //   实机错误原文：`Column 'payload' not found in any table`。
+        tEnv.createTemporaryView(
+                "view_dlq",
+                tEnv.fromDataStream(payload).as("payload"));
     }
 
     /**

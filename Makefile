@@ -31,11 +31,11 @@ DORIS_FE   := 8030
 DORIS_MYSQL:= 9030
 SUPERSET   := 8088
 
-.PHONY: help up down init replay verify spike verify-fault logs lint typecheck client smoke config-check
+.PHONY: help up down init replay verify spike verify-fault verify-fault-corrupt logs lint typecheck client smoke config-check
 
 help:
 	@echo "冻结目标：up down init replay verify spike verify-fault logs"
-	@echo "新增目标：lint typecheck client config-check"
+	@echo "新增目标（设计面）：verify-fault-corrupt lint typecheck client config-check"
 
 # ── 编排 ────────────────────────────────────────────────────────────
 up:
@@ -76,6 +76,19 @@ verify:
 # 判据（spec §4.4）在 src/ecomgen/fault.py；超时 120 s / 300 s 均为**设计值**。
 verify-fault:
 	@$(UV) run python -m ecomgen.fault
+
+# 反例证伪（票面验收第 7 条）：同一流程 + 同一判据，只是往主流里注入脏数据。
+# **期望退出非 0** —— 若这条返回 0，说明 verify-fault 的判据是恒真的假断言。
+# 判读：看 DLQ 增量必须 != 0、结论必须「不通过」。
+verify-fault-corrupt:
+	@$(UV) run python -m ecomgen.fault artifacts/verify --corrupt; \
+	  rc=$$?; \
+	  if [ $$rc -eq 0 ]; then \
+	    echo "[verify-fault-corrupt] ✗ 反例竟然通过 —— 判据是恒真的，不成立"; \
+	    exit 1; \
+	  fi; \
+	  echo "[verify-fault-corrupt] ✓ 反例按预期失败（退出码 $$rc）—— 判据确实在断言"; \
+	  exit 0
 
 # ── 尖峰 ────────────────────────────────────────────────────────────
 spike:

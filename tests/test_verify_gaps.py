@@ -176,3 +176,60 @@ def test_duplicate_count_sql_uses_metric_name_not_revision() -> None:
     assert "metric_name='duplicate_absorbed'" in DUPLICATE_COUNT_SQL
     assert "SUM(metric_value)" in DUPLICATE_COUNT_SQL
     assert "revision" not in DUPLICATE_COUNT_SQL
+
+
+# ── 5. 脏率判据（票面验收第 9 条）的反例 ──────────────────────────────
+#
+# 这条判据此前**没有任何单测**，而它的历史缺陷正是「恒真」：
+# 旧实现只看 `docker compose exec` 是否成功就 PASS。下面四条把它的
+# 真值表钉死 —— 尤其是「只有 DLQ 涨」必须 FAIL，否则票面第 7 条的
+# 「改坏输入 ⇒ 退非 0」在脏率这条线上就没有落点。
+
+
+def test_dirty_rate_passes_when_rate_does_not_increase() -> None:
+    """分母同步变大（重复投递也会推高输入总量）⇒ 脏率不升 ⇒ PASS。
+
+    这正是票面第 9 条要的形状：同一批数据跑两遍，重复通道上升，
+    而脏率**不升**（分子只含 DLQ，重复不进分子）。
+    """
+    baseline = verify_runner.DirtyRateSample(dlq_offset=10, input_events=10_000)
+    current = verify_runner.DirtyRateSample(dlq_offset=10, input_events=20_000)
+
+    result = verify_runner.check_dlq_rate_not_increased_result(baseline, current)
+
+    assert result.is_pass
+    assert "20_000" in result.actual or "20000" in result.actual
+
+
+def test_dirty_rate_fails_when_only_dlq_grows() -> None:
+    """★ 反例：DLQ 涨而输入不涨 ⇒ 脏率真上升 ⇒ 必须 FAIL。"""
+    baseline = verify_runner.DirtyRateSample(dlq_offset=10, input_events=10_000)
+    current = verify_runner.DirtyRateSample(dlq_offset=15, input_events=10_000)
+
+    result = verify_runner.check_dlq_rate_not_increased_result(baseline, current)
+
+    assert result.is_failure
+    assert result.name == "dlq-rate-no-increase"
+
+
+def test_dirty_rate_is_skip_when_input_is_zero() -> None:
+    """0/0 不是「不升」：脏率无定义 ⇒ SKIP（不能按 PASS 算）。"""
+    baseline = verify_runner.DirtyRateSample(dlq_offset=0, input_events=0)
+    current = verify_runner.DirtyRateSample(dlq_offset=3, input_events=0)
+
+    result = verify_runner.check_dlq_rate_not_increased_result(baseline, current)
+
+    assert result.is_pass is False
+    assert result.is_failure is False
+
+
+def test_dirty_rate_is_skip_when_sample_missing() -> None:
+    """取不到采样 ⇒ SKIP，而不是「没取到就算通过」。"""
+    sample = verify_runner.DirtyRateSample(dlq_offset=1, input_events=100)
+
+    assert (
+        verify_runner.check_dlq_rate_not_increased_result(None, sample).is_pass is False
+    )
+    assert (
+        verify_runner.check_dlq_rate_not_increased_result(sample, None).is_pass is False
+    )

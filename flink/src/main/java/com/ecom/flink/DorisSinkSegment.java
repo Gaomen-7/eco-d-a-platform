@@ -136,6 +136,16 @@ public final class DorisSinkSegment {
                         + "       cnt       AS cnt\n"
                         + "FROM view_late");
 
+        // ★ DLQ 也必须在这里 INSERT（impl-02d 实机证伪）：它是**取证通道**，
+        //   而「DLQ 增量 == 0」是 verify-fault 的第二条判据。若 DLQ sink 不在
+        //   本次提交里，那条判据断言的是一条永远空的通道 —— 恒真，什么也没证。
+        //   ⚠️ 这条 INSERT 名义上属于入口段，但**必须**和其它三条同属一个
+        //   StatementSet（否则又是一个独立作业、一套独立 checkpoint 边界）。
+        //   表的创建与 `view_dlq` 视图在 `GateSegment.registerDlqSink` /
+        //   `createDlqView`，本方法只负责把它挂进同一个提交。
+        statements.addInsertSql(
+                "INSERT INTO sink_dlq\n" + "SELECT payload FROM view_dlq");
+
         statements.execute();
     }
 

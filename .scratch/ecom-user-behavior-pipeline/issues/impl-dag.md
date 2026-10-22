@@ -21,7 +21,7 @@
 | **impl-02a** | [impl-02a-late-breakpoint-triage.md](impl-02a-late-breakpoint-triage.md) | — | 超期链断点定位（print 探针 + 可信指标口径） |
 | **impl-02b** | [impl-02b-late-sink-fix.md](impl-02b-late-sink-fix.md) | impl-02a | 解超期 sink 阻断，超期表落行 |
 | **impl-02c** | [impl-02c-verify-checks-fixes.md](impl-02c-verify-checks-fixes.md) | —（并行） | 修 kafka-retention / doris-ads-rows 两条判据自身缺陷 |
-| **impl-02d** | [impl-02d-verify-fault-live.md](impl-02d-verify-fault-live.md) | impl-02b, impl-02c | verify-fault 实机跑通 + 反例证伪（验票 6/7/9） |
+| **impl-02d** | [impl-02d-verify-fault-live.md](impl-02d-verify-fault-live.md) | impl-02b, impl-02c | verify-fault 实机**两连绿 + 反例证伪**（验票 6/7/9）；定位第 7/8 个判据缺陷（水印 tick、scoped 比对）；code-review 加固的六处假通过路径**已取得实机凭证**（§19） |
 | **impl-02e** | [impl-02e-p1-acceptance-closeout.md](impl-02e-p1-acceptance-closeout.md) | impl-02b, impl-02c, impl-02d | P1 收口验收 + 勾票 + code-review + commit |
 
 ## 依赖图
@@ -45,17 +45,19 @@
 - **当前**：**impl-01**（唯一无阻塞票）
 - **impl-02 解锁后**同时开两张：**impl-03** 与 **impl-04**（二者互不阻塞）
 
-### impl-02 内部的 Frontier（2026-10-21）
+### impl-02 内部的 Frontier（2026-10-22 更新）
 
 ```
-   impl-02a ──► impl-02b ──┬──► impl-02d ──► impl-02e
-   （无阻塞）               │      ▲
+   impl-02a ──► impl-02b ──┬──► impl-02d ✅ ──► impl-02e  ◄── 当前 frontier
+   （已完成）               │      ▲
                            └──────┘
-   impl-02c（无阻塞，可并行）───────┘
+   impl-02c（已完成）──────────────┘
 ```
 
-- **现在可开**：**impl-02a** 与 **impl-02c**（两张都无阻塞，互不依赖）
-- impl-02b 完成后解锁 impl-02d；impl-02d 完成后解锁 impl-02e（收口票）
+- **impl-02a / 02b / 02c / 02d 全部完成**。impl-02d 的加固版（六处假通过路径）已于
+  2026-10-22 最终轮取得实机证据：正例两连绿（`054228Z` / `054701Z`）、反例按预期失败
+  （`055228Z`），详见票面 §19。
+- **impl-02e 可开**（impl-02d 的加固版实机复测已通过）。
 - ⚠️ impl-02e 完成前 **spec §4.3 的 P1 闸门不开**，impl-03/impl-04 不得开工
 
 ## 与 spec 的对应

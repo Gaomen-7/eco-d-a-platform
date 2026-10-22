@@ -39,6 +39,11 @@ public final class P1RealtimeJob {
         // ── ① 入口：解析 → 质量分流（DLQ）→ 去重（重复独立通道）──────
         var rawJson = GateSegment.mainSource(env, "");
         var clean = GateSegment.build(env, rawJson);
+        // ★ DLQ 必须走 StatementSet（impl-02d 实机证伪）：挂在 env 上的 DataStream
+        //   sink 会被 `statements.execute()` 丢掉 ⇒ DLQ 恒空 ⇒ 「DLQ 增量==0」
+        //   成了恒真假断言。改成 Table 后，它与三张 Doris 表同一次提交。
+        GateSegment.registerDlqSink(tEnv);
+        GateSegment.createDlqView(tEnv, clean);
 
         // ── ② 漏斗（会话步进，双列并陈）────────────────────────────
         var funnel = FunnelSegment.build(clean);
