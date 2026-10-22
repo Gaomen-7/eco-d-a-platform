@@ -43,6 +43,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from ecomgen.verify import CheckResult, Status, VerifyReport
+from ecomgen.verify_runner import DirtyRateSample
+
+# 反例注入条数（票面验收第 7 条）：一次 `make verify-fault-corrupt` 投这么多条
+# schema_invalid。它是**设计值**，不是官方保证；同时是「夹具记账」的唯一口径来源
+# （见 `verify_runner.absorb_fixture_dirty`）——所以必须只有一处定义。
+CORRUPT_INJECT_COUNT = 5
 
 # 超时：全部为**设计值**，非官方保证（票面验收第 10 条）
 TIMEOUT_RESTART_S = 120  # 设计值
@@ -694,7 +700,7 @@ def _wait_source_stable(
     return last
 
 
-def _inject_dirty(count: int = 5) -> int:
+def _inject_dirty(count: int = CORRUPT_INJECT_COUNT) -> int:
     """投 `count` 条**必然被判脏**的事件（反例证伪用，票面验收第 7 条）。
 
     为什么选 `schema_invalid`（缺 `event_type`）而不是别的：
@@ -1587,20 +1593,30 @@ def run_verify_fault(
         )
     )
 
+    # 反例注入前的脏率快照（仅 corrupt 模式用）—— 记账要以它为**基线原点**，
+    # 不能以「收尾时的当前值」为原点（那会洗白同窗口内的真实退化）。
+    dirty_before_injection: DirtyRateSample | None = None
+    injected = 0
     if corrupt:
         # ★ 反例证伪（票面验收第 7 条）：故意把**脏数据**投进去，让 DLQ 真的上涨。
         #   判据若仍然 PASS，说明它不是「在断言」而是恒真。
         #   这里必须走**与正常投递同一条路径**（同一 topic、同一分区键语义），
         #   否则证伪不成立：只测一个旁路通道证明不了主判据会 fail。
-        print("--- 5b/9 ⚠️ 反例注入：投 5 条 schema_invalid 事件（缺 event_type）")
-        injected = _inject_dirty(5)
+        from ecomgen.verify_runner import sample_dirty_rate
+
+        dirty_before_injection = sample_dirty_rate()
+        print(
+            "--- 5b/9 ⚠️ 反例注入：投 "
+            f"{CORRUPT_INJECT_COUNT} 条 schema_invalid 事件（缺 event_type）"
+        )
+        injected = _inject_dirty(CORRUPT_INJECT_COUNT)
         print(f"    已投脏数据 {injected} 条")
         checks.append(
             CheckResult(
-                Status.PASS if injected == 5 else Status.FAIL,
+                Status.PASS if injected == CORRUPT_INJECT_COUNT else Status.FAIL,
                 "fault-counterexample-injected",
                 f"injected={injected}",
-                "5",
+                str(CORRUPT_INJECT_COUNT),
             )
         )
 
@@ -1711,6 +1727,59 @@ def run_verify_fault(
                 "DLQ 增量 == 0",
             )
         )
+
+    if corrupt:
+        # ★ 夹具脏数据必须**按注入条数**记账进脏率基线（impl-02e 收口实测的判据死锁）。
+        #   不加这一步，反例注入的 schema_invalid 会永久顶高 DLQ offset，
+        #   而基线只在 PASS 时前推 ⇒ 棘轮被夹具顶住后**再也回不去**，
+        #   此后每次 `make verify` 的 dlq-rate-no-increase 都恒 FAIL。
+        #   实机证据见 `absorb_fixture_dirty` 的 docstring（247→257→267→277 三连注入）。
+        #
+        #   ⚠️ 三条边界（code-review 指出后加固）：
+        #     1. **只记账 injected 条**，不把基线重立到当前值 —— 否则同窗口内的
+        #        真实退化会被洗白进安全上界，判据从「恒假」翻成「恒真」。
+        #     2. 只在**确有注入**时记账（injected > 0）；注入失败就什么都不动。
+        #     3. 只在本次**跑到收尾**时记账（after 已取到，说明流程完整）；中途
+        #        异常退出的环境状态不可信，不该被当成新的安全上界。
+        #   记账结果作为一条 CheckResult 落进 JSON 报告（spec §4.5 三层痕迹），
+        #   不只是 print。
+        from ecomgen.verify_runner import absorb_fixture_dirty
+
+        plan = (
+            absorb_fixture_dirty(
+                dirty_before_injection,
+                after.dlq_offset if after is not None else None,
+                injected,
+                report_dir,
+            )
+            if after is not None
+            else None
+        )
+        if plan is not None:
+            print(
+                f"[verify-fault-corrupt] 反例夹具已记账进脏率基线："
+                f"dlq {plan.absorbed.dlq_offset}/{plan.absorbed.input_events}"
+                f"（观测增量 {plan.observed_delta}，注入 {plan.injected}，"
+                f"可归因上限 {plan.attributable_ceiling}）"
+            )
+            checks.append(
+                CheckResult(
+                    Status.PASS if plan.attributable else Status.FAIL,
+                    "fault-counterexample-absorbed",
+                    f"观测增量 {plan.observed_delta}（注入 {plan.injected}）"
+                    f" vs 可归因上限 {plan.attributable_ceiling}",
+                    "夹具增量须可归因（<= 注入条数 × 重放倍数，设计值）",
+                    None
+                    if plan.attributable
+                    else "增量超出上限：可能有**非夹具**的脏混入，"
+                    "记账已含它，下次 verify 会据此判定",
+                )
+            )
+        else:
+            print(
+                "[verify-fault-corrupt] ⚠️ 夹具未记账（注入=0 或流程未跑完）"
+                "—— 下次 verify 可能误报 FAIL"
+            )
 
     print("--- 写报告")
     report = _finish(checks, report_dir)

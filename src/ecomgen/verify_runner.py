@@ -49,6 +49,11 @@ KAFKA_TOPIC = "ecom.behavior.event.v1"
 DLQ_TOPIC = "ecom.behavior.event.v1.dlq"
 DIRTY_RATE_BASELINE = "dirty-rate-baseline.json"
 
+# 反例夹具的「可归因重放倍数」：注入的那批字节在 failover 后可能被重放，
+# 于是同一份脏能进 DLQ 多次。取 3 = 1 次原始投递 + 至多 2 次重放。
+# **设计值**，非官方保证；实测一轮是 2×（注入 5 → DLQ +10，报告 063129Z）。
+ATTRIBUTABLE_REPLAY_FACTOR = 3
+
 # ── topic 配置的期望值：唯一来源 gdd §A.2（与 init-kafka.sh 的两个默认值同源）──
 TOPIC_RETENTION_MS = "604800000"  # 7 天（gdd §A.2 / REQ-F-MQ-03）
 TOPIC_RETENTION_BYTES = "2147483648"  # 2 GB（gdd §A.2；按分区生效，见 gdd §D D3）
@@ -500,6 +505,120 @@ def save_dirty_rate_baseline(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     return path
+
+
+@dataclass(frozen=True)
+class FixtureAbsorption:
+    """一次夹具记账的结果（含「多出来的脏」以便断言归因）。"""
+
+    absorbed: DirtyRateSample
+    observed_delta: int
+    injected: int
+    attributable_ceiling: int
+
+    @property
+    def attributable(self) -> bool:
+        """观测到的 DLQ 增量是否**全部**可由夹具解释。"""
+        return self.observed_delta <= self.attributable_ceiling
+
+
+def plan_fixture_absorption(
+    before: DirtyRateSample | None,
+    after_dlq_offset: int | None,
+    injected: int,
+    input_events: int | None = None,
+) -> FixtureAbsorption | None:
+    """纯函数：算出「夹具记账后」的基线，并判定增量是否可归因。返回 None＝不可记账。
+
+    <h2>为什么吸收的是**观测增量**而不是恰好 `injected` 条</h2>
+    实机（报告 `063129Z`）：注入 **5** 条，DLQ 却涨了 **10** —— 因为注入发生在
+    kill **之前**，这批字节在 failover 后被**重放**了一次，于是同一份脏进了两遍。
+    `verify-fault` 的重放条数取决于时序（`replay=50`），所以夹具贡献是
+    `injected × (1 + 重放次数)`，**不是**常数 `injected`。
+
+    ⇒ 若死按 `injected` 减法，每轮会留下 `injected` 条无主增量，下一次
+    `make verify` 必然**假 FAIL**。故改为：吸收**观测增量**，另立一条断言
+    `增量 <= 可归因上限` —— 把「这个增量真的是夹具造成的」变成**被检查的命题**，
+    而不是被默默假设掉的前提。
+
+    可归因上限 = `injected × ATTRIBUTABLE_REPLAY_FACTOR`，
+    factor 取 3（=1 次原始投递 + 至多 2 次重放），是**设计值**。
+    """
+    if before is None or injected <= 0:
+        return None
+    observed = after_dlq_offset if after_dlq_offset is not None else before.dlq_offset
+    observed_delta = max(observed - before.dlq_offset, 0)
+    ceiling = injected * ATTRIBUTABLE_REPLAY_FACTOR
+    total = input_events if input_events is not None else before.input_events
+    try:
+        absorbed = DirtyRateSample(
+            dlq_offset=before.dlq_offset + observed_delta, input_events=total
+        )
+    except ValueError:
+        return None
+    return FixtureAbsorption(
+        absorbed=absorbed,
+        observed_delta=observed_delta,
+        injected=injected,
+        attributable_ceiling=ceiling,
+    )
+
+
+def absorb_fixture_dirty(
+    before: DirtyRateSample | None,
+    after_dlq_offset: int | None,
+    injected: int,
+    report_dir: str = REPORT_DIR,
+) -> FixtureAbsorption | None:
+    """把**反例夹具**注入的脏数据记账进基线（不吞有机退化）。返回新基线或 None。
+
+    <h2>为什么需要这个入口（impl-02e 收口实测的判据死锁）</h2>
+    基线只在**判定通过**时前推（见 `check_dlq_rate_not_increased`）。这本身是对的：
+    基线只能当「安全上界」，不能让一次失败把它稀释掉。
+
+    但 `make verify-fault-corrupt`（票面验收第 7 条**要求**的反例模式）会往主流里
+    投**真脏**事件，它们会被正确地判成 `schema_invalid` 进入 DLQ ⇒ DLQ offset 上涨。
+    这批脏是**测试夹具**，不是系统退化；可基线不认这个区别，于是：
+
+    ```
+    05:02 corrupt 注入 → DLQ 247→257 → 基线停在 257（05:07 那次 PASS 前推）
+    05:17 corrupt 注入 → DLQ 257→267
+    05:49 corrupt 注入 → DLQ 267→277
+    之后每次 make verify：0.006709（277/41287） vs 基线 0.006327（257/40620）⇒ 恒 FAIL
+    ```
+
+    实机证据（2026-10-22 06:03Z 收口首跑）：`FAIL dlq-rate-no-increase`。
+
+    <h2>★★ 为什么必须按「注入条数」记账，而不是把基线重立到当前值 ★★</h2>
+    第一版实现写成 `baseline := 当前实测值`，被 code-review 正确指出是**洗白**：
+    那会把「本次注入窗口内积累的**一切**脏」都算成夹具 —— 若同时段有真实退化
+    （重复被误判成脏、生成器注入异常），它们会被永久吸收进安全上界，
+    于是基线只升不降、真实退化再也报不出来（判据从「恒假」翻成「恒真」）。
+
+    ⇒ 口径落在 `plan_fixture_absorption`（纯函数，可单测）：吸收**观测增量**，
+    并用 `增量 <= injected × 3` 的**可归因断言**兜住「这段窗口里有没有别的东西」。
+    超出上限 ⇒ 调用方必须把记账结果标成**不可归因**并报 FAIL，
+    绝不让有机退化悄悄进基线。
+
+    分母取**当前**输入总数（夹具事件本身也计入输入，与判据分母口径一致）。
+
+    仅由 `--corrupt` 分支在**确认注入成功**后调用；正常路径绝不走这里。
+    """
+    current = sample_dirty_rate()
+    after_dlq = None if current is None else current.dlq_offset
+    plan = plan_fixture_absorption(
+        before,
+        after_dlq,
+        injected,
+        input_events=None if current is None else current.input_events,
+    )
+    if plan is None:
+        return None
+    try:
+        save_dirty_rate_baseline(plan.absorbed, report_dir)
+    except OSError:
+        return None
+    return plan
 
 
 def check_dlq_rate_not_increased(report_dir: str = REPORT_DIR) -> CheckResult:

@@ -142,6 +142,28 @@ services:
         condition: service_healthy
     volumes:
       - ./docker/flink/conf/config.yaml:/opt/flink/conf/config.yaml:ro
+    # ★ 健康判据＝TM 进程**真的在**（impl-02e 补）：此前本服务**没有 healthcheck**，
+    #   `docker compose ps` 的 HEALTH 列是 `<no value>` ⇒ 票面验收第 1 条
+    #   「ps 全 healthy」结构上永远无法成立（不是机器慢，是判据不存在）。
+    #   ⚠️ 不能用「TM 已向 JM 注册」当判据：verify-fault 会 kill TM 再 docker start，
+    #      期间 JM 侧注册必然短暂消失；用 JM 当判据会让健康态随故障演练抖动。
+    #   ⇒ 只判**本容器内 TaskManagerRunner 存活**（liveness，不判连接态）。
+    #   pgrep 在镜像内实测存在（/usr/bin/pgrep）；start_period 覆盖 JVM 启动。
+    #   ★★ 模式必须写成 `[T]askManagerRunner`（方括号技巧），**不能**写全名 ★★
+    #   CMD-SHELL 会执行 `/bin/sh -c '<整条 test 字符串>'`，而该 shell 自己的 cmdline
+    #   **逐字包含** test 里的模式 ⇒ `pgrep -f <全名>` 会匹配到 shell 自己，
+    #   于是 TM 进程死了也照样 exit 0 —— 判据**恒真**，正是本票在修的同一个病。
+    #   实机取证（2026-10-22）：
+    #     docker exec eco-flink-tm sh -c 'pgrep -f zzzz_no_such_processor_xyz && echo SELF_MATCH'
+    #     → SELF_MATCH            （不存在的进程名也「匹配成功」＝匹配到了 shell 自己）
+    #     docker exec eco-flink-tm sh -c 'pgrep -f "[z]zzz_no_such_processor_xyz" && echo SELF_MATCH || echo NO_MATCH'
+    #     → NO_MATCH              （方括号让 shell 的 cmdline 不含字面量，只剩真进程）
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f '[T]askManagerRunner' >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 45s
     restart: unless-stopped
     logging: *default-logging
 
@@ -345,6 +367,20 @@ services:
       #     ⇒ 挂到**非嵌套**路径 `/doris`，并把 `doris-init.sh` 的默认值同步改为
       #       `/doris/init.sql`（两处已对账一致）。
       - ./docker/doris:/doris:ro
+    # ★ 健康判据＝mysql 客户端**可用**（impl-02e 补）：此前本服务**没有 healthcheck**，
+    #   ps 的 HEALTH 列是 `<no value>` ⇒ 票面验收第 1 条「ps 全 healthy」结构上不成立。
+    #   判 `mysql --version` 而不是连 FE：本服务是「按需拉起的工具容器」，
+    #   Doris 尚未起来时它仍应算健康（Doris 的健康是 doris-fe/be 自己的事）。
+    #   ⚠️ 镜像内**没有** pgrep（实测 command not found），故不用进程判据。
+    #   ⚠️ 下列数字全为**设计值**（非官方保证）：interval 15 s 与 flink-jm 对齐；
+    #      start_period 10 s 覆盖 `mysql --version` 的冷启动（实测 <1 s，留 10 倍余量）。
+    #      不留 30 s interval：那会让 start_period 形同虚设（首个探针要等 30 s）。
+    healthcheck:
+      test: ["CMD-SHELL", "mysql --version >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     restart: "no"
     logging: *default-logging
 

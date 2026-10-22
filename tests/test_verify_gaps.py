@@ -11,7 +11,11 @@
 3. `run_verify()` 真的把 `degradation` 填进报告、把降级判据追加进 checks
    （用 monkeypatch 隔离全部碰容器的采集器）；
 4. `fault.DUPLICATE_COUNT_SQL` 取的是 `duplicate_absorbed` 的 metric_value，
-   **不是** `SUM(revision)`（防回归）。
+   **不是** `SUM(revision)`（防回归）；
+5. 反例夹具的**记账**口径：按观测增量记账（不是重立到当前值，也不是死按注入条数），
+   且增量超出可归因上限时**必须报 FAIL**；
+6. 夹具记账的**接线**：`fault.run_verify_fault` 的源码里必须仍只在 `corrupt` 分支、
+   且确有注入时调用它 —— 防「逻辑还在但调用点被删」的静默回归。
 """
 
 from __future__ import annotations
@@ -31,6 +35,11 @@ from ecomgen.verify_runner import (
     check_degradation_ladder_result,
     check_is_settled_two_states_from_counts,
 )
+
+
+def _sample(dlq: int, total: int) -> verify_runner.DirtyRateSample:
+    """构造一次脏率采样（分子 DLQ / 分母输入）。"""
+    return verify_runner.DirtyRateSample(dlq_offset=dlq, input_events=total)
 
 
 def _container(
@@ -233,3 +242,127 @@ def test_dirty_rate_is_skip_when_sample_missing() -> None:
     assert (
         verify_runner.check_dlq_rate_not_increased_result(sample, None).is_pass is False
     )
+
+
+
+# ── 7. 夹具记账的**接线**守卫（防调用点被静默删除）────────────────────
+#
+# 上面 §6 的四条测的是 `absorb_fixture_dirty` / `plan_fixture_absorption` 本身。
+# 但 code-review 正确指出：即使把 fault.py 里的调用点整段删掉，那些测试**照样全绿**，
+# 于是死锁会悄悄回来（下一次 `make verify-fault-corrupt` 又把基线顶死）。
+# `run_verify_fault` 需要真 Docker/Kafka，没法在本层端到端跑，
+# ⇒ 退而求其次：把**调用点本身**钉成断言（源码级接线守卫）。
+
+
+def _fault_source() -> str:
+    """读 `ecomgen.fault` 的源码（接线守卫用）。"""
+    from ecomgen import fault
+
+    return Path(fault.__file__).read_text(encoding="utf-8")
+
+
+def test_fault_corrupt_branch_still_calls_fixture_absorption() -> None:
+    """★ 接线守卫：`run_verify_fault` 仍调用夹具记账。
+
+    若这条红了，说明有人删了调用点 —— 那会让「反例夹具顶死脏率基线」的死锁复发。
+    """
+    src = _fault_source()
+
+    assert "absorb_fixture_dirty(" in src, "夹具记账调用点被删：死锁会复发"
+    # 记账必须**受 corrupt 门控**（正常路径绝不重立基线）
+    assert "if corrupt:" in src
+
+
+def test_fault_absorption_is_gated_on_injection_and_completion() -> None:
+    """记账必须同时受「确有注入」与「流程跑完」两个条件约束。
+
+    否则注入失败或中途异常退出时，会把一个不可信的环境状态写成新的安全上界。
+    """
+    src = _fault_source()
+
+    # 注入条数来自唯一常量，且注入前先取快照（记账的基线原点）
+    assert "CORRUPT_INJECT_COUNT" in src
+    assert "dirty_before_injection" in src
+    # 只有跑到收尾（after 已取到）才记账
+    assert "if after is not None" in src
+
+
+# ── 6. 反例夹具不得污染脏率基线（impl-02e 收口实测的死锁）─────────────
+#
+# 实机：`make verify-fault-corrupt`（票面验收第 7 条**要求**的反例）每次注入 10 条
+# 真脏事件，DLQ offset 247→257→267→277，而基线只在 PASS 时前推 ⇒ 基线卡在 257，
+# 此后每次 `make verify` 都 FAIL 0.006709 vs 0.006327。判据从「断言」退化成
+# 「恒假」，与它当年的「恒真」是同一种病，只是方向相反。
+
+
+def test_fixture_absorption_books_observed_delta_not_current_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """夹具记账吸收**观测增量**，且下一次 verify 不再被夹具顶住。
+
+    实机形状（报告 063129Z）：注入 5 条、kill 前在途 ⇒ DLQ +10、重放把它算了两遍。
+    故按「观测增量」记账才是对的；死按 injected 会留 5 条无主增量 ⇒ 下轮假 FAIL。
+    """
+    before = _sample(287, 41_000)
+    monkeypatch.setattr(
+        verify_runner, "sample_dirty_rate", lambda: _sample(297, 41_495)
+    )
+
+    plan = verify_runner.absorb_fixture_dirty(before, 297, 5, str(tmp_path))
+
+    assert plan is not None
+    assert plan.observed_delta == 10
+    assert plan.attributable is True  # 10 <= 5 × 3
+    baseline = verify_runner.load_dirty_rate_baseline(str(tmp_path))
+    assert baseline == _sample(297, 41_495)
+
+    # 记账后立即再判 ⇒ PASS（棘轮回到现实）
+    assert verify_runner.check_dlq_rate_not_increased_result(
+        baseline, _sample(297, 41_495)
+    ).is_pass
+
+
+def test_fixture_absorption_flags_unalttributable_delta() -> None:
+    """★ 反例保护：增量超出 `injected × 倍数` ⇒ 不可归因 ⇒ 调用方必须 FAIL。
+
+    这条防的是「有机退化被当成夹具悄悄吸收」。若它变 PASS，
+    修法就从「恒假」翻成「恒真」，等于没修。
+    """
+    plan = verify_runner.plan_fixture_absorption(
+        _sample(100, 10_000), after_dlq_offset=140, injected=5
+    )
+
+    assert plan is not None
+    assert plan.observed_delta == 40
+    assert plan.attributable_ceiling == 15
+    assert plan.attributable is False
+
+
+def test_fixture_absorption_does_not_mask_later_real_degradation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """重立基线**不削弱**判据：之后的真实上升仍须 FAIL。"""
+    monkeypatch.setattr(
+        verify_runner, "sample_dirty_rate", lambda: _sample(297, 41_495)
+    )
+    verify_runner.absorb_fixture_dirty(_sample(287, 41_000), 297, 5, str(tmp_path))
+    baseline = verify_runner.load_dirty_rate_baseline(str(tmp_path))
+    assert baseline is not None
+
+    degraded = verify_runner.check_dlq_rate_not_increased_result(
+        baseline, _sample(320, 41_495)
+    )
+
+    assert degraded.is_failure
+
+
+def test_fixture_absorption_refuses_without_baseline_or_injection(
+    tmp_path: Path,
+) -> None:
+    """没基线 / 没注入 ⇒ 不记账（None），**不**静默写个假基线。"""
+    assert verify_runner.absorb_fixture_dirty(None, 297, 5, str(tmp_path)) is None
+    assert (
+        verify_runner.absorb_fixture_dirty(_sample(287, 41_000), 297, 0, str(tmp_path))
+        is None
+    )
+    assert not (tmp_path / verify_runner.DIRTY_RATE_BASELINE).exists()

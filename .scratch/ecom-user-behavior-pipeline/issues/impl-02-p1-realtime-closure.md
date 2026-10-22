@@ -1,7 +1,7 @@
 # impl-02: P1 实时闭环 — 链路 + 判据 + `make init` 四段
 
 Type: task
-Status: ready-for-agent
+Status: resolved（2026-10-22，经 impl-02e 收口验收）
 Blocked by: impl-01
 
 **What to build:** 一条能看见的实时链路，加一套骗不过去的判据。跑完本票，`make verify` 在 P1 阶段以「四真断言 + 一显式 SKIP」退出 0，`make verify-fault` 能在 kill TaskManager 后从 checkpoint 恢复并证明确有重放被幂等吸收。
@@ -24,16 +24,19 @@ Blocked by: impl-01
 
 ## Acceptance criteria
 
-- [ ] `make init` 在已有制品的机器上跑完后，`make verify` 退出码 0、`docker compose ps` 全 `healthy`；`make init` 输出里没有「待补」字样
-- [ ] Doris 断言经 compose 网内 `client` 发起，且断言内容是「ADS 表有行」而非「FE 健康」
-- [ ] 设 `--late-correctable 0.03 --late-expired 0.02` 后，实时侧窗口修正段确有迟到事件落入、超期段确有迟到计数条目
-- [ ] `purchase` 迟到 ≤120 s 的事件使对应分钟漏斗客数被修正且 `ads_funnel_step.revision` +1；迟到 >120 s 的事件只增加计数，`revision` 不变
-- [ ] `make verify` 在 P1 阶段打印五项逐条 `PASS/FAIL/SKIP <名> <实测> vs <期望>`，第三项显示 SKIP 且退出码仍为 0；运行一次能观察到「窗口关闭（暂定→落定）与迟到修正时刻 `revision`+1」
-- [ ] `make verify-fault` 全流程可在超时内完成，退出码 0，且 stdout 明示「重复通道计数上升」与「DLQ 增量==0」两条结论
-- [ ] 故意改坏一个输入让 DLQ 上升时，`verify-fault` 退出码非 0（证断言真的在断言，不是恒真）
-- [ ] `artifacts/verify/verify-report-<UTC时间戳>.json` 逐断言落状态；人为制造一次 FAIL 时，同目录出现原始响应快照全文
-- [ ] 脏率分子只含 DLQ 增量；同一批数据跑两遍时重复通道计数上升而脏率不升
-- [ ] 所有超时数字（120 s / 300 s）标注 `设计值`，未标为官方保证
+> 逐条证据与实测输出见 [impl-02e](impl-02e-p1-acceptance-closeout.md) 的 Answer「票面 10 条验收逐条核对」。
+
+- [x] `make init` 在已有制品的机器上跑完后，`make verify` 退出码 0、`docker compose ps` 全 `healthy`；`make init` 输出里没有「待补」字样
+- [x] Doris 断言经 compose 网内 `client` 发起，且断言内容是「ADS 表有行」而非「FE 健康」
+- [x] 设 `--late-correctable 0.03 --late-expired 0.02` 后，实时侧窗口修正段确有迟到事件落入、超期段确有迟到计数条目
+- [x] `purchase` 迟到 ≤120 s 的事件使对应分钟漏斗客数被修正且 `ads_funnel_step.revision` +1；迟到 >120 s 的事件只增加计数，`revision` 不变
+- [x] `make verify` 在 P1 阶段打印五项逐条 `PASS/FAIL/SKIP <名> <实测> vs <期望>`，第三项显示 SKIP 且退出码仍为 0；运行一次能观察到「窗口关闭（暂定→落定）与迟到修正时刻 `revision`+1」
+- [x] `make verify-fault` 全流程可在超时内完成，退出码 0，且 stdout 明示「重复通道计数上升」与「DLQ 增量==0」两条结论
+  - ⚠️ 「重复通道计数上升」措辞已在 impl-02d 实机证伪并改用「源端重读条数 >0」，见 impl-02d §9/§12
+- [x] 故意改坏一个输入让 DLQ 上升时，`verify-fault` 退出码非 0（证断言真的在断言，不是恒真）
+- [x] `artifacts/verify/verify-report-<UTC时间戳>.json` 逐断言落状态；人为制造一次 FAIL 时，同目录出现原始响应快照全文
+- [x] 脏率分子只含 DLQ 增量；同一批数据跑两遍时重复通道计数上升而脏率不升
+- [x] 所有超时数字（120 s / 300 s）标注 `设计值`，未标为官方保证
 
 ## Notes
 
