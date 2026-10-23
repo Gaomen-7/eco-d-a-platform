@@ -24,7 +24,13 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from ecomgen.producer import EventBatch, ProducerParams, produce_batch
+from ecomgen.producer import (
+    EventBatch,
+    ProducerParams,
+    event_dt,
+    plan_threshold_batch,
+    produce_batch,
+)
 
 # live 模式的平移基准取「本轮启动时刻」，故必须在运行时读取墙上时钟。
 # dump 模式**不读**，因此 dump 产出与运行时刻无关（可复现）。
@@ -58,6 +64,25 @@ def _build_parser() -> argparse.ArgumentParser:
     add_common(p_dump)
     p_dump.add_argument("--out", required=True, help="输出 JSONL 路径")
     p_dump.add_argument("--manifest", default=None, help="输出清单 JSON 路径（可选）")
+    # ★ 门槛批（impl-03b）：`--events` 与 `--logical-span` 是**条数与跨度**的表达，
+    #   与 P1 的 `--sessions`（会话数）是两个不同用途的参数
+    #   （spec §5.1：批次密度 ≈4 ev/s 与 REQ-NF-PERF-03 的 200 ev/s **不同源**）。
+    #   给了 `--events` 时以它为准：条数定死，步长由跨度/条数回算
+    #   （推导见 producer.plan_threshold_batch，两个坑都在那里记着）。
+    p_dump.add_argument(
+        "--events",
+        type=int,
+        default=None,
+        help="目标事件条数（门槛批：1048576）。给定即按条数定产，忽略 --sessions 的条数含义",
+    )
+    p_dump.add_argument(
+        "--logical-span",
+        default=None,
+        # ⚠️ 示例里**不要**写 3600s：跨度会被归一到**整天**（dt 按 UTC 日分区），
+        #   3600s 会在 _parse_logical_span 里报错。旧 help 曾举这个例子，
+        #   与 :152-157 的整天校验自相矛盾（impl-03b code-review 指出）。
+        help="逻辑跨度，须为整天（如 3d / 72h / 1440m / 86400s）。给定即按跨度定步长，使 dt 恰为跨度的天数个分区",
+    )
 
     p_live = sub.add_parser("live", help="按速率发往 Kafka")
     add_common(p_live)
@@ -74,16 +99,72 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _params(args: argparse.Namespace) -> ProducerParams:
-    return ProducerParams(
-        seed=args.seed,
-        n_sessions=args.sessions,
-        rate_per_sec=args.rate,
-        late_correctable=args.late_correctable,
-        late_expired=args.late_expired,
-        chaos_ratio=args.chaos_ratio,
-        n_users=args.users,
-        n_items=args.items,
-    )
+    common: dict[str, Any] = {
+        "seed": args.seed,
+        "rate_per_sec": args.rate,
+        "late_correctable": args.late_correctable,
+        "late_expired": args.late_expired,
+        "chaos_ratio": args.chaos_ratio,
+        "n_users": args.users,
+        "n_items": args.items,
+    }
+    if getattr(args, "events", None) is not None:
+        # ★ 门槛批路径的装配**只有一处**：ProducerParams.from_plan
+        #   （impl-03b code-review：三个 plan 派生值此前在这里与测试里各装一遍，
+        #   是 Data Clumps；漂移的症状是「实际条数 < 请求条数」而单测仍绿）。
+        span_days = _parse_logical_span(getattr(args, "logical_span", None))
+        return ProducerParams.from_plan(
+            plan_threshold_batch(args.events, span_days), **common
+        )
+    return ProducerParams(n_sessions=args.sessions, **common)
+
+
+_SPAN_UNIT_MS: dict[str, int] = {
+    "s": 1_000,
+    "m": 60_000,
+    "h": 3_600_000,
+    "d": 86_400_000,
+}
+
+
+def _parse_logical_span(text: str | None) -> int:
+    """把 `3d` / `72h` / `86400s` 解析成**天数**（门槛批按天配额，故归一到天）。
+
+    只接受整单位：门槛批的跨度语义是「几天分区」，`1.5d` 这种会落到半天，
+    与「dt 恰 N 个分区」的判据纠缠不清，直接拒绝比默默取整好。
+    """
+    if text is None:
+        return 3  # 票面默认：3 天跨度
+    raw = str(text).strip().lower()
+    if not raw:
+        return 3
+    unit = raw[-1]
+    if unit not in _SPAN_UNIT_MS:
+        raise ValueError(f"--logical-span 单位须为 s/m/h/d，实得 {text!r}")
+    try:
+        amount = int(raw[:-1])
+    except ValueError as exc:
+        raise ValueError(
+            f"--logical-span 须为整数+单位（如 3d），实得 {text!r}"
+        ) from exc
+    if amount <= 0:
+        raise ValueError(f"--logical-span 须为正，实得 {text!r}")
+    total_seconds = amount * _SPAN_UNIT_MS[unit] // 1_000
+    if total_seconds % 86_400 != 0:
+        raise ValueError(
+            f"--logical-span 须为整天（dt 按 UTC 日分区），实得 {text!r} "
+            f"= {total_seconds} s"
+        )
+    return total_seconds // 86_400
+
+
+def _dt_of(record: dict[str, Any]) -> str:
+    """事件时间的 UTC 日期（`yyyy-MM-dd`）—— 与 DDL 的 dt 口径同源。
+
+    换算本体在 `producer.event_dt`（**唯一权威**）：此前这里与测试各抄一份，
+    口径漂移时测试会拿错误口径验自己的产出、两边一起错。
+    """
+    return event_dt(int(record["event_time"]))
 
 
 def _manifest(batch: EventBatch, params: ProducerParams) -> dict[str, Any]:
@@ -111,9 +192,25 @@ def _dump(args: argparse.Namespace) -> int:
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     # newline="\n" 固定行尾：否则 Windows/WSL 差异会让「同 seed 同哈希」假失败
+    #
+    # ★ 投递偏移 `_src_offset`（impl-03b，2026-10-22）—— 这是**传输元数据**，
+    #   不是事件字段，故以 `_` 前缀与 SRS §3.3 的业务字段区分开。
+    #   为什么必须落进文件：离线重放的「迟到」定义是**到达序**语义 ——
+    #   迟到 ⟺ 事件时间 < 到此行为止已见过的最大事件时间（Flink 水印只由到达序推进）。
+    #   要算这个就必须知道**行序**，而 Flink batch 下 `ROW_NUMBER() OVER ()`
+    #   不可用（实测 ValidationException: "window rank function requires order by
+    #   clause with non-constant fields"）。`_src_offset` 提供了真实的、非常量的序。
+    #   gdd Q25 本就要求 ODS 保留 offset 类元数据，这里是它在文件侧的落点。
     with out.open("w", encoding="utf-8", newline="\n") as handle:
-        for event in batch.events:
-            handle.write(event.to_json())
+        for offset, event in enumerate(batch.events):
+            handle.write(
+                json.dumps(
+                    {"_src_offset": offset, **event.record},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            )
             handle.write("\n")
 
     if args.manifest:
@@ -127,7 +224,15 @@ def _dump(args: argparse.Namespace) -> int:
             encoding="utf-8",
         )
 
-    print(f"[ecomgen] dump 完成：{len(batch.events)} 条 → {out}")
+    # ★ 可解析的完成行（impl-03b）：`make replay` 与判据要能直接读条数与 dt 范围，
+    #   而不是再从文件里数一遍。dt 范围由**事件时间的 UTC 日**算出，
+    #   与 DDL 的 dt 口径同源（ODS 用落地日、DWD 用事件日，此处报的是事件日）。
+    dt_values = sorted({_dt_of(e.record) for e in batch.events})
+    dt_range = f"{dt_values[0]}..{dt_values[-1]}" if dt_values else "-"
+    print(
+        f"[ecomgen] dump 完成：{len(batch.events)} 条 "
+        f"dt=[{dt_range}] dt_count={len(dt_values)} → {out}"
+    )
     print(
         f"[ecomgen] 通道：late_correctable={batch.count_channel('late_correctable')} "
         f"late_expired={batch.count_channel('late_expired')}"

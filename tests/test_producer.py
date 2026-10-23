@@ -7,7 +7,12 @@
 
 from __future__ import annotations
 
-from ecomgen.producer import EventBatch, ProducerParams, produce_batch
+from ecomgen.producer import (
+    EventBatch,
+    ProducerParams,
+    plan_threshold_batch,
+    produce_batch,
+)
 
 
 def _batch(**overrides: object) -> EventBatch:
@@ -188,3 +193,36 @@ def test_batch_params_validate_ratios() -> None:
         ProducerParams(seed=1, n_sessions=10, late_correctable=1.5)
     with pytest.raises(ValueError):
         ProducerParams(seed=1, n_sessions=10, late_expired=-0.1)
+
+
+def test_session_steps_records_only_emitted_steps() -> None:
+    """`max_events` 截停时，`session_steps` 只能报**真的发出去**的步。
+
+    ★ 回归守卫（impl-03b code-review #3）：旧实现把 `generate_session_steps`
+    的**完整步进表**记进来，而 `max_events` 会在会话中途截停 ⇒ 最后那个会话
+    报出「有 purchase 步但没有对应 purchase 事件」，破坏本模块头注第 3 条
+    「会话轨迹可回溯，使 purchase 必有前置步可证」——那条可证性正是靠
+    `session_steps` 与事件流**一一对应**来保证的。
+
+    判据用「每个会话的步数 == 该会话实际发出的事件数 − 1（page_view）」：
+    page_view 在漏斗之外，故步数应等于事件数减一。
+    """
+    plan = plan_threshold_batch(600)
+    # 装配走 from_plan（唯一入口）：手抄 plan 派生值正是这张票要消灭的重复。
+    batch = produce_batch(ProducerParams.from_plan(plan, seed=42))
+
+    emitted = 0
+    for session_id in batch.session_ids_in_order():
+        steps = batch.session_steps(session_id)
+        session_events = [e for e in batch.events if e.record["user_id"] == session_id]
+        # 每条会话至少一条 page_view；步进表里的每一步都必须有对应事件
+        assert len(steps) == len(session_events) - 1, (
+            f"会话 {session_id}：steps={steps} 但只发了 {len(session_events)} 条事件"
+        )
+        emitted += len(steps)
+        # 步进表里出现的每种事件类型，都必须在该会话的事件里真实存在
+        types = {e.record["event_type"] for e in session_events}
+        for step in steps:
+            assert step in types, f"会话 {session_id} 报了未发出的步 {step}"
+
+    assert emitted == len(batch.events) - len(batch.session_ids_in_order())

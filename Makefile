@@ -77,10 +77,19 @@ init: up
 	@bash docker/scripts/doris-assert.sh
 
 # ── 离线分层 ────────────────────────────────────────────────────────
+# 分层重放（spec §5.1 + §5.3）。
+#   LAYER 语义 = **跑到该层为止**（含），不是「只跑该层」：层间有数据依赖
+#   （DWD 读 ODS、DWS 读 DWD），单跑一层拿到的必然是全 0 行。
+#   缺省（不写 LAYER）= 五层全跑。
+#   例：make replay LAYER=dwd
+#
+#   ★ 入口是 `bash scripts/lake_replay.sh` 而**不是**直接执行：本仓不跟踪 exec 位
+#     （core.filemode=false，scripts/ 全部 100644），直接执行在干净检出上会
+#     Permission denied。Makefile 其余脚本调用（:53/:75/:77）同样是 `bash …`。
+#   ★ 退出码是诚实的（见脚本头注）：0=请求范围全跑完 / 3=范围内有未实现的层 /
+#     1=执行失败。故 03c 之前**绿路径只有 LAYER=dwd**；不写 LAYER 会 exit 3。
 replay:
-	@echo "[replay] 五层分层（P2 实现）：ODS → DWD → DIM → DWS → ADS"
-	@echo "  ⚠️ 快照数判据须走 Flink SQL（Doris 不在 Paimon 系统表支持列表内）"
-	@echo "  ⚠️ 不得从 Kafka 重读超 ~6 小时历史（retention 2 GB 先触发，gdd D3）"
+	@LAYER="$(LAYER)" bash scripts/lake_replay.sh
 
 # ── 可复现校验（SRS §3.1.8 五项；spec §4.3 分层）─────────────────────
 # 判据逻辑在 src/ecomgen/verify_runner.py，**不**内嵌 heredoc：

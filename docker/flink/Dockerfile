@@ -53,7 +53,11 @@ LABEL org.opencontainers.image.title="eco/flink" \
       eco.paimon.jar="paimon-flink-2.2-2.1.0.jar" \
       eco.paimon.jar.sha256="43a6416a241ab736fb6ed2b6061a37fc5cca5ba8737d77eac1b977f859107dd1" \
       eco.paimon.jar.size="57697871" \
-      eco.paimon.jar.source="https://repo1.maven.org/maven2/org/apache/paimon/paimon-flink-2.2/2.1.0/paimon-flink-2.2-2.1.0.jar"
+      eco.paimon.jar.source="https://repo1.maven.org/maven2/org/apache/paimon/paimon-flink-2.2/2.1.0/paimon-flink-2.2-2.1.0.jar" \
+      eco.paimon.hadoop_uber.jar="paimon-hadoop-uber-2.1.0.jar" \
+      eco.paimon.hadoop_uber.jar.sha256="54290a429afd0a5c106ea285dc4c5c1bc2376d11f911b149d143e5ecca1fa004" \
+      eco.paimon.hadoop_uber.jar.size="50615937" \
+      eco.paimon.hadoop_uber.jar.reason="apache/paimon#6654 (Open): file: warehouse still needs hadoop Configuration classes; supplied via official paimon-hadoop-uber 2.1.0"
 
 # ★ 构建期 COPY（不是 ADD JAR，不是 mount，不是 RUN curl）。
 #   上下文 = docker/flink/（见构建命令），故源路径是 lib/... 而非 docker/flink/lib/...
@@ -72,6 +76,51 @@ RUN set -eux; \
     jar=/opt/flink/lib/paimon-flink-2.2-2.1.0.jar; \
     test -s "$jar"; \
     echo "43a6416a241ab736fb6ed2b6061a37fc5cca5ba8737d77eac1b977f859107dd1  $jar" | sha256sum -c -; \
+    ls -l "$jar"
+
+# ★★ paimon-hadoop-uber（**impl-03b 新增**，2026-10-22）★★
+#
+# 症状（impl-03b 实机）：Paimon 的元数据面全通，但**实际读写表**时炸：
+#   INSERT INTO ... → java.lang.ClassNotFoundException: org.apache.hadoop.conf.Configuration
+#   SELECT count(*) FROM <paimon表> → 同上
+#   而 CREATE CATALOG / CREATE TABLE / SHOW DATABASES / SHOW TABLES **全部成功**。
+#
+# 为什么 bundled connector 自己不够：paimon-flink-2.2-2.1.0.jar 里**零** org/apache/hadoop/**
+# （解包 27 319 entries 实测），只有它自己的包装类 org/apache/paimon/fs/hadoop/HadoopFileIO。
+# 而 Paimon 在 file: warehouse 上仍会解析 hadoop 的 Configuration 类。
+#
+# ★ 这是**上游缺陷，不是官方要求**（取证见 .scratch/.../impl-03b §C）：
+#   - 官方 Filesystems 表把「ensure that the cluster is in the hadoop environment」
+#     **只写给 hdfs:// 那一行**；file:// 一行写的是 "Built-in Support"。
+#   - apache/paimon#6654（**Open**，2026-10-22 读取时仍未关）标题逐字
+#     "[common] CatalogContext requires Hadoop dependency even in non-Hadoop environments"，
+#     正文称其 "causing NoClassDefFoundError in environments where Hadoop is not needed"。
+#   ⇒ 所以这是 Paimon 的 hadoop 未解耦缺陷，补给方式正是官方自己写的用法（见下一段）。
+#
+# ★ 为什么是这个 jar：官方文档逐字
+#   "If you want to read from and write to Paimon tables on a Hadoop cluster within an
+#    application that has no Hadoop dependencies, you can use the Paimon Hadoop uber jar."
+#   即「应用侧没有 hadoop 依赖」正是本仓的形态，官方为此提供了 uber 包。
+#
+# ★ 版本必须 **2.1.0**（与 paimon-flink 同版本，不是近版本）。
+# ★ 类冲突已实测（2026-10-22），不是推断：两 jar 的 .class 重叠**仅 1 个**
+#   （META-INF/versions/9/module-info.class，非业务类）；org/apache/paimon/fs、/catalog
+#   关键类**零重叠** —— uber 的 hadoop 类走 paimon/fs/shade/hadoop3/ 影子路径，
+#   故可安全共存于同一 /opt/flink/lib。
+#
+# ★ 票面口径的调整（已获用户 2026-10-22 裁决「选 A」）：
+#   票面第 8 条「全 SQL、零 jar」原意是**业务侧零 jar**（不新增业务连接器、无需 JDK/Maven）；
+#   本 jar 属**环境/部署面依赖**，归 impl-03a 的部署约束管理，不是业务 jar。
+#   ⇒ 仍满足「ADD JAR 一条也没有」「不重读 Kafka」「不需要 JDK/Maven」。
+#
+# 期望值（本仓钉死的**设计值**，非官方保证；官方未公布校验值）：
+#   size   = 50615937 B  （Central 页面 Content-Length，实测一致）
+#   sha256 = 54290a429afd0a5c106ea285dc4c5c1bc2376d11f911b149d143e5ecca1fa004（本仓实测）
+COPY lib/paimon-hadoop-uber-2.1.0.jar /opt/flink/lib/
+RUN set -eux; \
+    jar=/opt/flink/lib/paimon-hadoop-uber-2.1.0.jar; \
+    test -s "$jar"; \
+    echo "54290a429afd0a5c106ea285dc4c5c1bc2376d11f911b149d143e5ecca1fa004  $jar" | sha256sum -c -; \
     ls -l "$jar"
 
 # ★★ 预建 /warehouse 并交给 flink 用户（impl-03a 实机取证后补，票面未写但**承重**）★★

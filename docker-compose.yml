@@ -142,6 +142,22 @@ services:
       #   Paimon 把绝对路径写进 catalog/表元数据，两侧路径一旦不同即读不到同一份数仓。
       #   ⚠️ 本行**不得**改成别的容器内路径。
       - paimon-warehouse:/warehouse
+      # ★ 门槛批只读挂载（impl-03b）：ODS 的输入是**生成器现产的 dump 文件**，不是
+      #   Kafka topic（票面「不重读 Kafka」）。该文件落宿主 ./data/（被 .gitignore 覆盖），
+      #   而 Flink 容器**看不到**宿主目录（impl-03b 实测：容器内无 /data）⇒ 必须 bind。
+      #   只读（:ro）：replay 全链对门槛批**只读**，写权一律留在宿主生成器一侧；
+      #   给 rw 只会扩大误写面，无任何收益。
+      #   ⚠️ 路径 /data 是 replay_10_ods.sql 里 'path'='file:///data/threshold/raw.jsonl'
+      #      的对应面，两处**互为约束**，改一处必改另一处。
+      - ./data:/data:ro
+      # ★ SQL 脚本只读挂载（impl-03b）：`make replay` 用 `sql-client.sh -f /sql/<file>` 逐个跑
+      #   本仓的编排链，故脚本必须**在容器内可达**。挂载而非 COPY 进镜像的理由：
+      #   改 SQL 不该触发重建镜像，且脚本本身是**编排定义**（与 compose 同为部署面），
+      #   让它留在宿主版本控制下更符合「脚本即规格落点」。
+      #   只读（:ro）：容器只执行 SQL，不回写脚本。
+      #   ⚠️ 路径 /sql 是 scripts/lake_replay.sh 里 `/sql/$file` 的对应面，
+      #      两处**互为约束**，改一处必改另一处（与上面 /data 同构）。
+      - ./sql:/sql:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8081/overview >/dev/null || exit 1"]
       interval: 15s
@@ -178,6 +194,14 @@ services:
       #      这一实测事实推得的**工程结论（`设计值` 口径）**，不是官方逐字背书。
       #   ⚠️ 本行**不得**改成别的容器内路径（与 flink-jm 那行互为约束）。
       - paimon-warehouse:/warehouse
+      # ★ 门槛批只读挂载（impl-03b）：与 flink-jm **逐字相同**。批作业真正读文件的是
+      #   **TM**（JM 只提交），故这一侧缺了会在 TM 上报 FileNotFoundException；
+      #   两侧都挂才是「同一份输入」。理由与 :ro 取舍见 flink-jm 上方同段注释。
+      - ./data:/data:ro
+      # ★ SQL 脚本只读挂载（impl-03b）：与 flink-jm **逐字相同**。
+      #   理由同 flink-jm 那行（`sql-client.sh -f` 要能读到 /sql/<file>）；
+      #   两侧同路径是「同一份编排定义」的直接保证。只读：容器只执行不写回。
+      - ./sql:/sql:ro
     # ★ 健康判据＝TM 进程**真的在**（impl-02e 补）：此前本服务**没有 healthcheck**，
     #   `docker compose ps` 的 HEALTH 列是 `<no value>` ⇒ 票面验收第 1 条
     #   「ps 全 healthy」结构上永远无法成立（不是机器慢，是判据不存在）。

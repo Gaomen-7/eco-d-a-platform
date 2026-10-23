@@ -244,7 +244,6 @@ def test_dirty_rate_is_skip_when_sample_missing() -> None:
     )
 
 
-
 # ── 7. 夹具记账的**接线**守卫（防调用点被静默删除）────────────────────
 #
 # 上面 §6 的四条测的是 `absorb_fixture_dirty` / `plan_fixture_absorption` 本身。

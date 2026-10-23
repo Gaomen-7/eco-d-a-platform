@@ -40,13 +40,38 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-JAR_NAME="paimon-flink-2.2-2.1.0.jar"
 DEST_DIR="$REPO_ROOT/docker/flink/lib"
-DEST="$DEST_DIR/$JAR_NAME"
-URL="https://repo1.maven.org/maven2/org/apache/paimon/paimon-flink-2.2/2.1.0/$JAR_NAME"
 
-EXPECTED_SIZE=57697871
-EXPECTED_SHA256="43a6416a241ab736fb6ed2b6061a37fc5cca5ba8737d77eac1b977f859107dd1"
+# ── 要预取的 jar 清单（一行一条）────────────────────────────────────────────
+# 字段：<文件名> <Maven 相对路径> <期望 size> <期望 sha256>
+#
+# ① paimon-flink：Paimon bundled connector，impl-03a 定的那个（57,697,871 B）。
+# ② paimon-hadoop-uber（**impl-03b 新增**，2026-10-22）：Paimon bundled jar **不含**
+#    hadoop 类，而 Paimon 2.1.0 在 file: warehouse 上**实际读写**时会去解析
+#    org.apache.hadoop.conf.Configuration ⇒ 抛 ClassNotFoundException。
+#
+#    这是**上游缺陷**，不是官方要求：官方 Filesystems 表把「ensure that the cluster is
+#    in the hadoop environment」**只写给 hdfs:// 那一行**，file:// 写的是 Built-in Support；
+#    而 apache/paimon#6654（Open，2026-10-22 仍开）标题逐字
+#    "[common] CatalogContext requires Hadoop dependency even in non-Hadoop environments"
+#    并称其 "causing NoClassDefFoundError in environments where Hadoop is not needed"。
+#    ⇒ 补给方式是官方自己写的用法：官方文档逐字
+#      "If you want to read from and write to Paimon tables on a Hadoop cluster within an
+#       application that has no Hadoop dependencies, you can use the Paimon Hadoop uber jar."
+#
+#    ★ 版本必须 **2.1.0**（与 paimon-flink 同版本），不是近版本。
+#    ★ 类冲突实测（2026-10-22）：两 jar 的 .class 重叠**仅 1 个**
+#      （META-INF/versions/9/module-info.class，非业务类）；org/apache/paimon/fs/catalog
+#      关键类**零重叠**（uber 的 hadoop 类走 paimon/fs/shade/hadoop3/ 影子路径）。
+#      ⇒ 两 jar 可共存于同一 /opt/flink/lib。
+#
+# 期望值口径 = 本仓钉死的**设计值**，非官方保证：size 取自 Central 页面 Content-Length
+# （实测一致），sha256 为本仓下载后实测。Paimon 官方**未公布**该 artifact 的校验值。
+JAR_TABLE="
+paimon-flink-2.2-2.1.0.jar|org/apache/paimon/paimon-flink-2.2/2.1.0|57697871|43a6416a241ab736fb6ed2b6061a37fc5cca5ba8737d77eac1b977f859107dd1
+paimon-hadoop-uber-2.1.0.jar|org/apache/paimon/paimon-hadoop-uber/2.1.0|50615937|54290a429afd0a5c106ea285dc4c5c1bc2376d11f911b149d143e5ecca1fa004
+"
+MAVEN_BASE="https://repo1.maven.org/maven2"
 
 # sha256sum 在 Git Bash / WSL 都有（coreutils）。没有就直接失败，不要静默降级成"只查大小"。
 if ! command -v sha256sum >/dev/null 2>&1; then
@@ -57,57 +82,75 @@ fi
 actual_size() { wc -c < "$1" | tr -d ' \r'; }
 actual_sha256() { sha256sum "$1" | cut -d' ' -f1; }
 
-# ── 幂等快路径：已存在且 size + sha256 都匹配 ⇒ SKIP ─────────────────────────
-if [ -f "$DEST" ]; then
-  size="$(actual_size "$DEST")"
-  sha="$(actual_sha256 "$DEST")"
-  if [ "$size" = "$EXPECTED_SIZE" ] && [ "$sha" = "$EXPECTED_SHA256" ]; then
-    echo "SKIP: $DEST 已存在且校验通过"
-    echo "  size   = $size  (期望 $EXPECTED_SIZE)"
-    echo "  sha256 = $sha"
-    exit 0
-  fi
-  echo "WARN: $DEST 已存在但校验不符，将重新下载" >&2
-  echo "  size   = $size  (期望 $EXPECTED_SIZE)" >&2
-  echo "  sha256 = $sha" >&2
-fi
-
-# ── 下载到 .part，校验通过后才 mv 到目标名 ──────────────────────────────────
+# ── 逐个 jar：幂等快路径（size + sha256 都匹配即 SKIP）→ 下载 .part → 校验 → mv
 mkdir -p "$DEST_DIR"
-PART="$DEST.part"
-# 上一次异常退出可能留下 .part；显式删掉，避免把旧字节续进新文件。
-rm -f "$PART"
 
-echo "GET $URL"
-echo " -> $PART"
-# -f：HTTP 4xx/5xx 直接失败（否则会把错误页写成 jar）
-# -L：跟随重定向（Maven Central 有时重定向到 CDN）
-# -S：失败时打印错误
-# -s：静默进度条
-# -4：强制 IPv4（理由见文件头注释）
-# --retry：网络抖动重试（repo1 偶发 5xx），5 次 + 指数退避
-if ! curl -fsSL -4 --retry 5 --retry-delay 3 --retry-all-errors -o "$PART" "$URL"; then
-  echo "ERROR: 下载失败：$URL" >&2
-  rm -f "$PART"
-  exit 1
-fi
+fetch_one() {
+  # $1=文件名 $2=Maven 相对目录 $3=期望 size $4=期望 sha256
+  local name="$1" rel="$2" esize="$3" esha="$4"
+  local dest="$DEST_DIR/$name"
+  local url="$MAVEN_BASE/$rel/$name"
 
-size="$(actual_size "$PART")"
-sha="$(actual_sha256 "$PART")"
+  if [ -f "$dest" ]; then
+    local size sha
+    size="$(actual_size "$dest")"
+    sha="$(actual_sha256 "$dest")"
+    if [ "$size" = "$esize" ] && [ "$sha" = "$esha" ]; then
+      echo "SKIP: $dest 已存在且校验通过"
+      echo "  size   = $size  (期望 $esize)"
+      echo "  sha256 = $sha"
+      return 0
+    fi
+    echo "WARN: $dest 已存在但校验不符，将重新下载" >&2
+    echo "  size   = $size  (期望 $esize)" >&2
+    echo "  sha256 = $sha" >&2
+  fi
 
-if [ "$size" != "$EXPECTED_SIZE" ]; then
-  echo "ERROR: size 不符 —— 期望 $EXPECTED_SIZE，实际 $size" >&2
-  rm -f "$PART"
-  exit 1
-fi
-if [ "$sha" != "$EXPECTED_SHA256" ]; then
-  echo "ERROR: sha256 不符 —— 期望 $EXPECTED_SHA256，实际 $sha" >&2
-  rm -f "$PART"
-  exit 1
-fi
+  # ── 下载到 .part，校验通过后才 mv 到目标名 ──────────────────────────────
+  local part="$dest.part"
+  # 上一次异常退出可能留下 .part；显式删掉，避免把旧字节续进新文件。
+  rm -f "$part"
 
-mv -f "$PART" "$DEST"
+  echo "GET $url"
+  echo " -> $part"
+  # -f：HTTP 4xx/5xx 直接失败（否则会把错误页写成 jar）
+  # -L：跟随重定向（Maven Central 有时重定向到 CDN）
+  # -S：失败时打印错误
+  # -s：静默进度条
+  # -4：强制 IPv4（理由见文件头注释）
+  # --retry：网络抖动重试（repo1 偶发 5xx），5 次 + 指数退避
+  if ! curl -fsSL -4 --retry 5 --retry-delay 3 --retry-all-errors -o "$part" "$url"; then
+    echo "ERROR: 下载失败：$url" >&2
+    rm -f "$part"
+    return 1
+  fi
 
-echo "OK: 已获取并校验 $DEST"
-echo "  size   = $size  (期望 $EXPECTED_SIZE)"
-echo "  sha256 = $sha"
+  local size sha
+  size="$(actual_size "$part")"
+  sha="$(actual_sha256 "$part")"
+
+  if [ "$size" != "$esize" ]; then
+    echo "ERROR: $name size 不符 —— 期望 $esize，实际 $size" >&2
+    rm -f "$part"
+    return 1
+  fi
+  if [ "$sha" != "$esha" ]; then
+    echo "ERROR: $name sha256 不符 —— 期望 $esha，实际 $sha" >&2
+    rm -f "$part"
+    return 1
+  fi
+
+  mv -f "$part" "$dest"
+  echo "OK: 已获取并校验 $dest"
+  echo "  size   = $size  (期望 $esize)"
+  echo "  sha256 = $sha"
+}
+
+# 逐行解析 JAR_TABLE（跳过空行）。任一 jar 失败即整体非 0 —— 不允许"部分成功"。
+rc=0
+while IFS='|' read -r name rel esize esha; do
+  [ -z "$name" ] && continue
+  fetch_one "$name" "$rel" "$esize" "$esha" || rc=1
+done <<< "$JAR_TABLE"
+
+exit "$rc"
