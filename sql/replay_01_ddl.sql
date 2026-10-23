@@ -275,29 +275,30 @@ WITH (
 -- ════════════════════════════════════════════════════════════════════
 -- 形状表：append / 分区 dt / 无主键 / bucket -1 / dt × late_bucket（**60 s 档**）只存计数
 --
+-- ★★ 本表的语义**已由用户签字裁定**（2026-10-23，impl-03d 开工前）：
+--   本表装的是**「已进 DWD 的迟到行」按 (事件日 × 60 s 档) 的计数**，
+--   **不是**「被 sideOutputLateData 丢掉、根本没进 DWD 的超期事件」。
+--   ⚠️ 上一版 DDL 注释写的是后者，与本表实际写入**不是同一个群体**；现按裁定对齐到实现侧。
+--
 -- ★「只存计数」是承重的（canonical-truth §3.3 三原则）：本表**不存**事件明细，
---   只有 (dt, late_bucket, cnt)。它是 A3 迟到对账的唯一数据源：
---       count(*) FROM dwd WHERE is_late=1  ==  sum(cnt) FROM dwd_late_event_count
---   ⇒ 因此 cnt 必须是「该 60 s 档内的迟到条数」，不是 0/1 标志。
---   ★ **写入已由 impl-03c 落地**（`sql/replay_50_ads.sql` 的 ⑤ 段，
---      `INSERT OVERWRITE dwd_late_event_count`）：按 (事件日 × 60 s 档) 聚合 `is_late=1`。
---   ⚠️⚠️ **这条等价式是同义反复，不是证据**（spec 轴审阅指出，已更正）：
---      `cnt` 就是由 `WHERE is_late = 1` 这个**同一谓词**算出来的，
---      所以 `sum(cnt) == count(*) WHERE is_late=1` 必然成立（同义反复）。
---      它能证的只有「写入没写错分区/没丢桶」，**不能**证「迟到计数与上游一致」。
---   ⚠️⚠️ **更实质的语义缺口（本票未解决，挂 03d）**：本表按设计该装的是
---      **超期事件**（被 sideOutputLateData 丢掉、根本没进 DWD 的那些），
---      而当前实现装的是**进了 DWD 的 `is_late=1` 行**。两者**不是同一个群体**：
---      超期事件在 DWD 里根本没有行，故当前写法对它们**零覆盖**。
---      ⇒ 要么本表语义改为「DWD 内迟到行按档计数」（则 DDL 上这段注释要改），
---        要么补一条从超期通道来的写入（那要走旁路输出，SQL-only 面做不到）。
---      本票**不猜**：登记在此，03d 做 A3 断言时必须先裁这一条。
--- ★ 超期事件不进 DWD（被 sideOutputLateData 丢弃），它们只在此表计数——
---   这就是「为什么迟到标记差异不可加」的实例（A2 只入日志、不作断言）。
+--   只有 (dt, late_bucket, cnt)。`cnt` = 「该 60 s 档内的迟到**条数**」，不是 0/1 标志。
+--   ★ 写入在 `sql/replay_50_ads.sql` 的 ⑤ 段（`INSERT OVERWRITE dwd_late_event_count`）。
+--
+-- ⚠️⚠️ **A3 的判据必须按本语义写，否则是恒真假判据**（03d 承重前提）：
+--   反例（**不许**这样写）：`sum(cnt) == count(*) FROM dwd WHERE is_late=1`
+--     —— `cnt` 就是由**同一谓词** `is_late=1` 算出来的 ⇒ 必然成立，同义反复，
+--        它只能证「分桶没丢」，**不能**证迟到口径正确。
+--   可写的判据（仍非强证据，但至少不是恒真）：按 **`late_bucket` 逐档**比对
+--     `cnt` 与「DWD 里落进该档的 `is_late=1` 条数」，并把两侧**档集合**也比（多一档/少一档即失败）。
+--
+-- ★ 超期事件（被 `sideOutputLateData` 丢弃、根本没进 DWD）**本表零覆盖**——
+--   这是**已知且已裁定接受**的覆盖缺口，不是待修缺陷。若将来要覆盖它们，
+--   需要旁路输出（SQL-only 面做不到），届时应另开票。
+--   这也是「为什么迟到标记差异不可加」的实例（A2 只入日志、不作断言）。
 CREATE TABLE IF NOT EXISTS dwd_late_event_count (
   dt           STRING COMMENT '事件日 yyyy-MM-dd（UTC）',
   late_bucket  BIGINT COMMENT '该事件所属的 60 s 档（epoch ms 向下取整到 60 s）',
-  cnt          BIGINT COMMENT '本档迟到事件条数（只存计数，不存明细）'
+  cnt          BIGINT COMMENT '本档**已进 DWD 的迟到行**条数（只存计数，不含被丢弃的超期事件）'
 ) PARTITIONED BY (dt)
 WITH (
   'bucket' = '-1'

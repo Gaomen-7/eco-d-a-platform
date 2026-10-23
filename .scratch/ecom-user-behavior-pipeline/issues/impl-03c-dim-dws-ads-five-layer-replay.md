@@ -155,12 +155,16 @@ COUNT(DISTINCT subject_id)`（user-subject 行数 = 该窗口去重用户数）�
    故全部写 1 合理；但 Doris 的实时侧是 0/1 三态（暂定/落定）。
    对账（03f）只比 `is_settled=1`（spec §4.2），因此这一条**不影响**现状，
    但「离线只会产 settled=1」这个限制要显式记住。
-7. **★★ `dwd_late_event_count` 的语义缺口（本票未解决，03d 必须裁）**：
-   DDL 说它装**超期事件**（`sideOutputLateData` 丢掉、没进 DWD 的），
-   实现装的是**进了 DWD 的 `is_late=1` 行** —— 两个不同群体。超期事件在 DWD 无行，
-   故当前写法对它们**零覆盖**。且 `sum(cnt) == count(*) WHERE is_late=1` 是**同义反复**
-   （cnt 由同一谓词算出），不能当 A3 证据。二选一（本票不猜）：改本表语义 + 改 DDL 注释，
-   或补超期通道写入（需旁路输出，SQL-only 面做不到）。
+7. ~~**★★ `dwd_late_event_count` 的语义缺口**~~ → ✅ **已裁（2026-10-23，用户签字）**：
+   取「**改本表语义 + 改 DDL 注释**」一支。
+   **裁定后的语义**：本表 = 「`is_late=1` **且已进 DWD** 的行，按 (事件日 × 60 s 档) 计数」，
+   **不是**「被 `sideOutputLateData` 丢掉的超期事件」。对超期事件**零覆盖**是
+   **已裁定接受的已知缺口**（要覆盖需旁路输出，SQL-only 面做不到），不是待修缺陷。
+   已落盘的改动：`sql/replay_01_ddl.sql` ⑧ 段抬头 + `cnt` 列注释、
+   `sql/replay_50_ads.sql` ⑤ 段抬头，三处口径现已一致。
+   ⚠️ **03d 写 A3 时仍不得**用 `sum(cnt) == count(*) WHERE is_late=1`（同义反复，
+   cnt 由同一谓词算出）；可写形态已记在 DDL ⑧ 段抬头：按 `late_bucket` **逐档**比对
+   `cnt` 与 DWD 侧该档 `is_late=1` 条数，**并把两侧档集合也比**（多一档/少一档即失败）。
 8. **★★ 缺口：ADS 缺品类/地域分面（不是「形状」）**：`REQ-F-RT-02` 要求看板有
    「品类分布、地域分布」。本票的 ADS 只产 `dim_key='ALL'` 与 `channel=<channel>`
    ——**没有** `category=<id>` / `region=<大区>` 两种 dim_key。
