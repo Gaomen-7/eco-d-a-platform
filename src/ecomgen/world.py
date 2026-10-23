@@ -58,6 +58,13 @@ PAGES: Final[tuple[str, ...]] = (
 
 _N_CATEGORIES: Final[int] = 12
 
+# 价格区间 5 元 ~ 2000 元（分），**设计值**。
+# ★ 抽成常量而不是在 world.py 与 dims.py 各写一遍 `randrange(500, 200_001)`：
+#   维度变更流要产出同口径的**新价格**，两处硬编码一旦漂移，拉链表里的价格
+#   与事件流的金额分布就会悄悄不一致 —— 这在表上完全看不出来。
+PRICE_CENTS_MIN: Final[int] = 500
+PRICE_CENTS_MAX: Final[int] = 200_001
+
 
 @dataclass(frozen=True)
 class Item:
@@ -116,8 +123,7 @@ def build_world(
             Item(
                 item_id=f"i_{i:06d}",
                 category_id=categories[rng.randrange(n_categories)],
-                # 价格区间 5 元 ~ 2000 元（分），设计值
-                price_cents=rng.randrange(500, 200_001),
+                price_cents=rng.randrange(PRICE_CENTS_MIN, PRICE_CENTS_MAX),
             )
         )
 

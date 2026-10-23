@@ -140,6 +140,14 @@ WITH (
 -- ★ 字段改名（spec §5.2）：start_date/end_date → valid_from_ms/valid_to_ms（BIGINT ms）
 --   valid_to_ms = 9999999999999 表示仍有效。
 -- ★ 时间源 = 维度变更流 change_time（事件时间语义，满足 D-3）。
+-- ★★ **区间两侧都是闭区间**：[valid_from_ms, valid_to_ms]，且
+--   `valid_to_ms = 下一版 valid_from_ms − 1`。
+--   于是「边界那一毫秒」恰归**新版本**（旧版在它之前一毫秒就已失效），
+--   两个版本既不重叠、也不留空隙。若把 valid_to_ms 当开区间，同一毫秒会
+--   既不命中旧版（因为 `− 1` 已让旧版提前结束）而新版从该毫秒开始 ⇒ 不重叠成立；
+--   但若改成「valid_to_ms = 下一版起点」再配开区间，则边界毫秒两版都不命中。
+--   ⇒ 写法（−1）与判据（BETWEEN，闭）**必须成对**；
+--     已由 tests/test_replay_temporal_sql.py::test_zipper_valid_to_is_next_change_time_minus_one 钉住。
 -- ★ 时态维 join **走 batch 区间 join**（impl-03c 落地），不是 lookup join
 --   （lookup join 是 processing-time，回放必错，官方逐字否定）。
 -- ★ 不分区：维度表行数少且需要**全量**区间 join，分区只会让 join 端多一层裁剪。
@@ -152,7 +160,7 @@ CREATE TABLE IF NOT EXISTS dim_item (
   category_id   STRING,
   price_cents   INT,
   brand         STRING,
-  valid_to_ms   BIGINT COMMENT '本版本失效起点（epoch ms，开区间）；9999999999999=仍有效',
+  valid_to_ms   BIGINT COMMENT '本版本失效**终点**（epoch ms，**闭区间含本毫秒**）；9999999999999=仍有效',
   change_time   BIGINT COMMENT '维度变更事件时间（epoch ms）——拉链时间源',
   PRIMARY KEY (item_id, valid_from_ms) NOT ENFORCED
 ) WITH (
@@ -268,9 +276,19 @@ WITH (
 --   只有 (dt, late_bucket, cnt)。它是 A3 迟到对账的唯一数据源：
 --       count(*) FROM dwd WHERE is_late=1  ==  sum(cnt) FROM dwd_late_event_count
 --   ⇒ 因此 cnt 必须是「该 60 s 档内的迟到条数」，不是 0/1 标志。
---   ⚠️ **本票不写这张表**：没有任何 INSERT 指向它（grep 'INTO dwd_late_event_count'
---      零命中），写入逻辑归 impl-03d。故此刻 A3 等价式**必然不成立**（左非 0、右恒 0），
---      别把它当已成立的不变量去引用。
+--   ★ **写入已由 impl-03c 落地**（`sql/replay_50_ads.sql` 的 ③ 段，
+--      `INSERT OVERWRITE dwd_late_event_count`）：按 (事件日 × 60 s 档) 聚合 `is_late=1`。
+--   ⚠️⚠️ **这条等价式是同义反复，不是证据**（spec 轴审阅指出，已更正）：
+--      `cnt` 就是由 `WHERE is_late = 1` 这个**同一谓词**算出来的，
+--      所以 `sum(cnt) == count(*) WHERE is_late=1` 必然成立（同义反复）。
+--      它能证的只有「写入没写错分区/没丢桶」，**不能**证「迟到计数与上游一致」。
+--   ⚠️⚠️ **更实质的语义缺口（本票未解决，挂 03d）**：本表按设计该装的是
+--      **超期事件**（被 sideOutputLateData 丢掉、根本没进 DWD 的那些），
+--      而当前实现装的是**进了 DWD 的 `is_late=1` 行**。两者**不是同一个群体**：
+--      超期事件在 DWD 里根本没有行，故当前写法对它们**零覆盖**。
+--      ⇒ 要么本表语义改为「DWD 内迟到行按档计数」（则 DDL 上这段注释要改），
+--        要么补一条从超期通道来的写入（那要走旁路输出，SQL-only 面做不到）。
+--      本票**不猜**：登记在此，03d 做 A3 断言时必须先裁这一条。
 -- ★ 超期事件不进 DWD（被 sideOutputLateData 丢弃），它们只在此表计数——
 --   这就是「为什么迟到标记差异不可加」的实例（A2 只入日志、不作断言）。
 CREATE TABLE IF NOT EXISTS dwd_late_event_count (

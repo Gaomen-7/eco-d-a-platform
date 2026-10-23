@@ -39,11 +39,14 @@ GEN_SPAN="${GEN_SPAN:-3d}"
 GEN_SEED="${GEN_SEED:-20241022}"
 GEN_OUT="${GEN_OUT:-data/threshold/raw.jsonl}"
 GEN_MANIFEST="${GEN_MANIFEST:-data/threshold/manifest.json}"
+# ★ 维度变更流**另一个文件**（impl-03c）：事件文件已被 03b 的门槛批字节判据锁定，
+#   混进去会推翻那份判据。两个文件同属「门槛批现产」这一步，一起产一起守。
+GEN_DIM_OUT="${GEN_DIM_OUT:-data/threshold/dim.jsonl}"
 UV="${UV:-$HOME/.local/bin/uv}"
 
 # ── 层表："层名:脚本:该层必须出现的 marker" ────────────────────────────
 # 顺序不可交换（后者读前者的表）。marker 是该层的**正向证据**。
-# 30/40/50 属 03c，尚未落盘 ⇒ 缺失即 exit 3（见退出码语义），不静默跳过。
+# 五层自 impl-03c 起全部落盘；缺失仍按 exit 3 处理（见退出码语义），不静默跳过。
 LAYERS=(
   "ods:replay_10_ods.sql:layer=ods rows="
   "dwd:replay_20_dwd.sql:layer=dwd rows="
@@ -74,11 +77,11 @@ if [ -n "$LAYER" ]; then
   fi
   echo "[replay] LAYER=$LAYER ⇒ 跑到该层为止（含；不是只跑该层——层间有数据依赖）"
 else
-  echo "[replay] LAYER 未指定 ⇒ 五层全跑（30/40/50 属 03c，未落盘则 exit 3）"
+  echo "[replay] LAYER 未指定 ⇒ 五层全跑"
 fi
 
 # ── 0. 门槛批现产（spec §5.1 前置换作）─────────────────────────────────
-if [ "${FORCE_GEN:-0}" = "1" ] || [ ! -s "$GEN_OUT" ]; then
+if [ "${FORCE_GEN:-0}" = "1" ] || [ ! -s "$GEN_OUT" ] || [ ! -s "$GEN_DIM_OUT" ]; then
   echo "[replay] >> gen  (ecomgen dump --events $GEN_EVENTS --logical-span $GEN_SPAN --seed $GEN_SEED)"
   # ★ 必须走 **console script** `ecomgen`，不能 `python -m ecomgen`
   #   （impl-03b spec 轴审阅实测证伪）：本包没有 `src/ecomgen/__main__.py`，
@@ -88,12 +91,12 @@ if [ "${FORCE_GEN:-0}" = "1" ] || [ ! -s "$GEN_OUT" ]; then
   #   直接以 1 退出，整条链根本跑不起来。
   if ! "$UV" run ecomgen dump \
         --events "$GEN_EVENTS" --logical-span "$GEN_SPAN" --seed "$GEN_SEED" \
-        --out "$GEN_OUT" --manifest "$GEN_MANIFEST"; then
+        --out "$GEN_OUT" --manifest "$GEN_MANIFEST" --dim-out "$GEN_DIM_OUT"; then
     echo "[replay] ✗ 门槛批现产失败" >&2
     exit 1
   fi
 else
-  echo "[replay] -- 门槛批已存在（$GEN_OUT），跳过现产（强制：FORCE_GEN=1）"
+  echo "[replay] -- 门槛批已存在（$GEN_OUT / $GEN_DIM_OUT），跳过现产（强制：FORCE_GEN=1）"
 fi
 
 # ── 执行一个 SQL 文件：0=成功 / 1=失败 / 3=脚本缺失 ────────────────────
@@ -163,7 +166,7 @@ for entry in "${LAYERS[@]}"; do
   rc=$?
   if [ "$rc" -eq 3 ]; then
     echo "[replay] ✗ 层 $name 未实现（$SQL_DIR/$file 不存在）。" >&2
-    echo "[replay]   本阶段（impl-03b）范围内的绿路径是：make replay LAYER=dwd" >&2
+    echo "[replay]   五层缺任一脚本即 exit 3（绝不谎报成功）" >&2
     exit 3
   fi
   if [ "$rc" -ne 0 ]; then exit 1; fi

@@ -266,7 +266,7 @@ interface PyrightJsonDiagnostic { file; severity; message; range?; rule? }
 | 服务 | `mem_limit` | **实测常驻** | 占限额 |
 | --- | --- | --- | --- |
 | kafka | 1g | **647.8 MiB** | 63% |
-| flink-jm | 1g | **456.3 MiB** | 45% |
+| flink-jm | **2g**（2026-10-23 由 1g 上调，见下注） | **456.3 MiB**（1g 时的实测） | 22% |
 | flink-tm | 2g | **567.9 MiB** | 28% |
 | superset | 1g | **259.4 MiB** | 25% |
 | **小计（四服务实测）** | — | **≈1.89 GiB** | — |
@@ -275,11 +275,19 @@ interface PyrightJsonDiagnostic { file; severity; message; range?; rule? }
 | **小计（含 doris，六服务全起）** | — | **≈3.83 GiB** | — |
 | `kafka-init`（一次性） | 256m | 不常驻 | — |
 | `client`（profile `client`，`run --rm`） | 256m | 不常驻 | — |
-| **声明上限合计（默认 up）** | — | **5.25 GiB** | 天花板 11.68 ⇒ 余 **6.43** GiB |
+| **声明上限合计（默认 up）** | — | **6.25 GiB** | 天花板 11.68 ⇒ 余 **5.43** GiB |
 | **声明上限合计（--profile doris）** | — | **10.5 GiB**（10,752 MiB） | 天花板 11.68 ⇒ 余 **1.18** GiB |
 
-> **★ 两个口径别混用（P0 实测澄清）**：`scripts/config_check.py` 的「常驻上限合计」按**「有 `mem_limit` 且**无** `profiles` 键」**统计 ⇒ 它报的是 **5.25 GiB**（**不含** profile 隔离的 Doris）。而「全部服务声明上限」含 Doris 的 2g+3g。**两个数都对，只是口径不同**——写文档时必须说明用的是哪一个。
-> **读法（重要）**：`mem_limit` 是**上限**不是占用。实测值远低于上限，说明当前**空载**骨架很轻；**真正的压力在 P1 有数据流之后**——Flink 的 managed memory 会随 RocksDB 状态增长、Doris 的 BE compaction 会吃内存。故「5.25 / 10.5 GiB」是**已声明的上限契约**，「1.89 / 3.83 GiB」是**当前空载实测**，两者不可互相冒充。
+> **★ 两个口径别混用（P0 实测澄清）**：`scripts/config_check.py` 的「常驻上限合计」按**「有 `mem_limit` 且**无** `profiles` 键」**统计 ⇒ 它报的是 **6.25 GiB**（**不含** profile 隔离的 Doris）。而「全部服务声明上限」含 Doris 的 2g+3g。**两个数都对，只是口径不同**——写文档时必须说明用的是哪一个。
+> **读法（重要）**：`mem_limit` 是**上限**不是占用。实测值远低于上限，说明当前**空载**骨架很轻；**真正的压力在 P1 有数据流之后**——Flink 的 managed memory 会随 RocksDB 状态增长、Doris 的 BE compaction 会吃内存。故「6.25 / 10.5 GiB」是**已声明的上限契约**，「1.89 / 3.83 GiB」是**当前空载实测**，两者不可互相冒充。
+>
+> ★★ **`flink-jm` 由 1g 上调到 2g**（2026-10-23，impl-03c 实机证伪）：`make replay` 不是「在宿主跑 SQL」，而是
+> `docker exec eco-flink-jm /opt/flink/bin/sql-client.sh -f /sql/…` ⇒ **sql-client 的 JVM 与 JobManager 的 JVM 住同一个 cgroup**。
+> 1g 只够 `jobmanager.memory.process.size: 1024m` 这一项，客户端只能靠内核挤余量 ⇒ 跑到 ADS 层（最重的一层）时
+> 容器被 **cgroup OOM-kill**（`oom-kill:constraint=CONSTRAINT_MEMCG`），`docker exec` 返回 **137**、JM 被 `restart` 拉起。
+> ⚠️ 这个症状**不会**置 `.State.OOMKilled=true`，现场看起来像「SQL 报错」或「TaskManager 掉线」——故已加**静态守卫**
+> `tests/test_deployment_memory.py`（判据：`mem_limit >= jobmanager.memory.process.size + 512MiB`）。
+> 512 MiB 是**设计值**（本仓给的客户端余量，不是官方最小堆）。
 >
 > ★ **Doris 实测已回填**（2026-10-20，U-ν 完成）：六服务**全起**时 `docker stats --no-stream` 合计 **≈3.83 GiB**，距 11.68 GiB 天花板余 **7.85 GiB**。判据 `curl :8030/api/health` 实测返回
 > `{"msg":"success","code":0,"data":{"online_backend_num":1,"total_backend_num":1}}` ⇒ **`online_backend_num == total_backend_num == 1`**，R1 的「Doris 能在下调后稳定供数」这一半**已实测通过**（`SHOW BACKENDS` 的 `Alive=true`；三张 ADS 表建成并已有 30 天动态分区）。
@@ -293,7 +301,7 @@ interface PyrightJsonDiagnostic { file; severity; message; range?; rule? }
 | 不与 `deploy.limits.memory` 并存 | **只写 `mem_limit`** | 官方：`deploy` 是**可选段**（未实现即忽略）；二者并存时官方要求**必须一致**，写错一个即自相矛盾 |
 | 「不允许有服务缺省」 | 由 `make verify` / `config-check` **脚本断言** | ⚠️ **P0 实测确认**：`docker compose config` 能**列出** `mem_limit` 但**不报缺** ⇒ 判据必须脚本化。规则已写进 `Makefile` 的 `config-check` 目标 |
 | 冷启动/体量记账 | **用 `docker image inspect`**，不用 `docker images` | 本机 `UseContainerdSnapshotter=true`，官方警告此时 `docker images` 会**把压缩 blob 叠加进读数、显著虚高**。**实测镜像体积**（`image inspect`）：Kafka 654.1 MiB / Flink 1491.4 MiB / **Superset 1207.8 MiB** / Doris base-latest 1.96 GB / **`eco/doris:4.1.5`（自建）12.60 GiB**（13,526,796,833 B，2026-10-20 实测）/ `mysql:8.0`（`client` 用）1.01 GiB |
-| 常驻预算 | 见下表。**声明的 `mem_limit` 上限合计**：默认 `up` = **5.25 GiB**；`--profile doris` = **10.5 GiB**（10,752 MiB，含 `client` 256m）⇒ **两种场景都在 11.68 GiB 天花板内**（余量 6.43 / **1.18** GiB） | `docker stats --no-stream` 实测；`make config-check` 断言。⚠️ 统计口径见下注 |
+| 常驻预算 | 见下表。**声明的 `mem_limit` 上限合计**：默认 `up` = **6.25 GiB**；`--profile doris` = **10.5 GiB**（10,752 MiB，含 `client` 256m）⇒ **两种场景都在 11.68 GiB 天花板内**（余量 5.43 / **1.18** GiB） | `docker stats --no-stream` 实测；`make config-check` 断言。⚠️ 统计口径见下注 |
 
 > ★ **Doris 自建镜像体积的读法（2026-10-20 实测）**：`eco/doris:4.1.5` = **12.60 GiB**（`image inspect`），是 Kafka+Flink+Superset 三者之和（**3.28 GiB**）的 **3.8 倍**。这是「Doris **必须本地构建**」（官方不发版本化镜像）的体积代价，也是「零状态冷启」档豁免 30 分钟判据的根因之一（另一根因是 ≈35 min 的构建耗时）。详见 [`reproducibility-boundary.md`](reproducibility-boundary.md) §3。
 > ★★ **口径核实已结案（2026-10-20，结论与旧猜测相反）**：U-ν 旧文的 `docker images` = **13.5 GB** 与本次 `image inspect` 的 **12.60 GiB（＝13,526,796,833 B ＝13.53 GB 十进制）** **一致** ⇒ **旧读数不是 containerd snapshotter 造成的虚高**。规则仍照旧（**记账一律用 `image inspect`**），但引用时**必须带单位**（GiB 与 GB 差 7%，这才是本例真正的坑）。

@@ -133,7 +133,7 @@ Source: `issues/04-reproducibility-boundary.md` · 裁决全文见该票 `## Ans
 **剩下的等待由脚本承担**：`doris-init.sh` 自己轮询 FE（`SHOW FRONTENDS`，60×3 s）与 BE（`SHOW BACKENDS` 的 `Alive=true`，60×3 s）——**这正是「不能靠 compose 依赖来表达的等待」**，写进脚本才是对的。
 
 **常驻还是按需**：**按需（`run --rm`）**。
-- 不占常驻内存（`config_check.py` 的「常驻上限」口径按「有 `mem_limit` 且**无** `profiles` 键」统计 ⇒ 报 **5.25 GiB**，不含 Doris 也不含 `client`）。
+- 不占常驻内存（`config_check.py` 的「常驻上限」口径按「有 `mem_limit` 且**无** `profiles` 键」统计 ⇒ 报 **6.25 GiB**，不含 Doris 也不含 `client`）。
 - 但**计入「全部服务声明上限」口径**（含 `client` 256m ⇒ **10.5 GiB**）。
 - **两个口径都合法，文档引用时必须写明用的是哪一个**（这条已在 `canonical-truth.md` 冲突 I 的签字句里）。
 

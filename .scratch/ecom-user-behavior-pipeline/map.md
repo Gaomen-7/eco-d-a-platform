@@ -61,7 +61,7 @@ Progress: 9 票，**9 已落子（全部）**（P1 最小可证集 · 唯一真�
 2. ~~**F2 · 公开数据集回放在首版的范围**~~ → **已由 [05] 收敛**：P2 门槛批由生成器 `dump` 现产（104 万事件 / 3 天跨度，落 `data/` 不入 git）；`REQ-F-LAKE-09` 维持 COULD、公开数据集回放**不在 P2 最小集内**；回放可用性由冲突 H 的相对下界保障（签字版在 `canonical-truth.md` §2.2）。
 3. **F3 · 生成器 live 模式的确定性**（挂 [02]）：`REQ-F-GEN-06`（同种子同哈希）在 live 下要同时满足「pin 到补丁号的 Faker」「同种子」「按速率写」——速率是墙上时钟量，三者能否同真说不清。→ **D12 转出本图**（P1 施工面参数）。
 4. ~~**F4 · 迟到计数表落在哪**~~ → **已由 [05] 收口**：原则（[01] §3.3）＋取值（表名 **`dwd_late_event_count`**、粒度 **`dt` × 60 s 档**、append、只存计数）齐备；FC-2 已批，落笔归 [09]。
-5. ~~**F5 · `client` 何时不该存在、空转开销**~~ → **已由 [04] 落子**：`client` 在 **Docker Desktop 面必需、原生 Linux 面可选**（官方「Linux hosts can reach the nodes directly」）；常驻记账用**按需 `run --rm`**，并计入「全部声明上限」口径（10.5 GiB）而非「常驻上限」（5.25 GiB）。见 [`reproducibility-boundary.md`](reproducibility-boundary.md) §4。
+5. ~~**F5 · `client` 何时不该存在、空转开销**~~ → **已由 [04] 落子**：`client` 在 **Docker Desktop 面必需、原生 Linux 面可选**（官方「Linux hosts can reach the nodes directly」）；常驻记账用**按需 `run --rm`**，并计入「全部声明上限」口径（10.5 GiB）而非「常驻上限」（6.25 GiB）。见 [`reproducibility-boundary.md`](reproducibility-boundary.md) §4。
 6. **F6 · 降级阶梯的触发条件**（挂 [02]）：HLD §8-R6 的 Superset 减服务 A/B/C、gdd §1.11 的 G4（Kafka 原生镜像）都没写「什么信号出现才降级、降级后谁回填实测」。→ **D12 转出本图**（P1 施工面参数）。
 7. **F7 · 世界时钟**（挂 [02]）：`--seed` 下的回放会带 2022-2024 的时间戳，而 1 分钟窗口按「当前水印」关窗——回放怎么被当成实时喂进去，涉及是否允许写 event_time 而不是墙钟。→ **D12 转出本图**（P1 施工面参数，卡施工口径时走 09-Q10 兜底）。
 8. ~~**F8 · 多 JDK / 多 Python 的现实包袱**~~ → **已由 [04] 收敛为一句可判的话**：**JDK/Maven 只服务于「构建 Flink 作业」，不在起链路路径上**（`up`/`init`/`verify`/`lint`/`typecheck` 都不需要它）⇒ 它既不挡 L0，也不进 `REQ-F-ORCH-01` 的判据；`uv` 的三处偏差属生成器施工面，归 **P1**。见 [`reproducibility-boundary.md`](reproducibility-boundary.md) §6。

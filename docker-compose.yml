@@ -124,8 +124,24 @@ services:
       dockerfile: Dockerfile
     container_name: eco-flink-jm
     hostname: flink-jm
-    mem_limit: 1g
-    memswap_limit: 1g
+    # ★★ 2g（**原为 1g，impl-03c 实测证伪后上调**）：`make replay` 在**本容器内**跑
+    #    `sql-client.sh -f`（脚本 lake_replay.sh 的 `docker exec`）⇒ 该容器的 cgroup 里
+    #    同时住着**两个 JVM**：JobManager 本体（`jobmanager.memory.process.size: 1024m`，
+    #    见 docker/flink/conf/config.yaml）＋ sql-client 客户端（堆另算）。
+    #    1g 装不下「1g 的 Flink 进程 + 一个客户端」⇒ ADS 层（最重的一层）提交作业时
+    #    容器被内核 **cgroup OOM-kill**，实测逐字：
+    #      oom-kill:constraint=CONSTRAINT_MEMCG, task_memcg=/wsl-user/.../35ada115b62f...,
+    #        task=java,pid=23998
+    #      Memory cgroup out of memory: Killed process 23998 (java)
+    #        total-vm:1876884kB, anon-rss:563428kB
+    #    ⇒ 症状**不是** `.State.OOMKilled=true`，而是 `docker exec` 返回 **137**、且 JM
+    #    被 restart 策略拉起（RestartCount 每次 +1）—— 极易被误判成「SQL 写错了」或
+    #    「TaskManager 掉线」。lake_replay.sh 对此的判据就是「docker exec 退出 137」。
+    #    ⚠️ 1g → 2g 是**部署面缺陷修正**，不是调参绕开报错：Flink 进程自己就要 1024m，
+    #       而 sql-client 与它同 cgroup ⇒「声明上限 < 该容器实际必然占用」的矛盾。
+    #       预算随之 5.25 → 6.25 GiB（天花板 11.68，余 5.43）；HLD §4.2 已同步。
+    mem_limit: 2g
+    memswap_limit: 2g
     command: ["jobmanager"]
     ports:
       - "127.0.0.1:8081:8081"

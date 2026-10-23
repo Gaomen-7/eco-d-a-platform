@@ -24,6 +24,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from ecomgen.dims import build_dimension_stream, count_by_kind, write_dimension_stream
+from ecomgen.jsonl import write_jsonl
 from ecomgen.producer import (
     EventBatch,
     ProducerParams,
@@ -31,6 +33,7 @@ from ecomgen.producer import (
     plan_threshold_batch,
     produce_batch,
 )
+from ecomgen.world import build_world
 
 # live 模式的平移基准取「本轮启动时刻」，故必须在运行时读取墙上时钟。
 # dump 模式**不读**，因此 dump 产出与运行时刻无关（可复现）。
@@ -64,6 +67,13 @@ def _build_parser() -> argparse.ArgumentParser:
     add_common(p_dump)
     p_dump.add_argument("--out", required=True, help="输出 JSONL 路径")
     p_dump.add_argument("--manifest", default=None, help="输出清单 JSON 路径（可选）")
+    # ★ 维度变更流**另落一个文件**（impl-03c）：混进事件文件会改动事件字节，
+    #   把 03b 已锁定的门槛批字节判据一起推翻。给定即产出，不给则不产（向后兼容）。
+    p_dump.add_argument(
+        "--dim-out",
+        default=None,
+        help="维度变更流输出 JSONL 路径（可选；拉链维表 dim_* 的输入）",
+    )
     # ★ 门槛批（impl-03b）：`--events` 与 `--logical-span` 是**条数与跨度**的表达，
     #   与 P1 的 `--sessions`（会话数）是两个不同用途的参数
     #   （spec §5.1：批次密度 ≈4 ev/s 与 REQ-NF-PERF-03 的 200 ev/s **不同源**）。
@@ -188,6 +198,10 @@ def _manifest(batch: EventBatch, params: ProducerParams) -> dict[str, Any]:
 def _dump(args: argparse.Namespace) -> int:
     params = _params(args)
     batch = produce_batch(params)
+    # ★ 维度变更流要**同一份世界**（同一 seed 派生）——重建一次而不是让
+    #   produce_batch 回传：build_world 是纯函数（同 seed 同产出），重建不改变
+    #   任何事件字节，却能让「维度与事件同源」这件事在调用点显式可见。
+    world = build_world(params.seed, n_users=params.n_users, n_items=params.n_items)
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -201,17 +215,34 @@ def _dump(args: argparse.Namespace) -> int:
     #   不可用（实测 ValidationException: "window rank function requires order by
     #   clause with non-constant fields"）。`_src_offset` 提供了真实的、非常量的序。
     #   gdd Q25 本就要求 ODS 保留 offset 类元数据，这里是它在文件侧的落点。
-    with out.open("w", encoding="utf-8", newline="\n") as handle:
-        for offset, event in enumerate(batch.events):
-            handle.write(
-                json.dumps(
-                    {"_src_offset": offset, **event.record},
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                )
-            )
-            handle.write("\n")
+    # ★ 落盘走 `ecomgen.jsonl.write_jsonl`（impl-03c）：事件流与维度变更流必须
+    #   共用**同一份**「键序固定 / 无空格 / \n / 末尾换行」实现 —— 两侧各写一遍
+    #   json.dumps 时，任一侧漏掉 sort_keys 就会让「同 seed 同字节」按文件类型分叉，
+    #   而两份文件各自的单测都还是绿的。
+    write_jsonl(
+        out,
+        (
+            {"_src_offset": offset, **event.record}
+            for offset, event in enumerate(batch.events)
+        ),
+    )
+
+    # ★ 维度变更流（impl-03c）：窗口 [最早事件时刻, 最晚事件时刻) 由**已产出的事件批次**
+    #   反推，而不是由计划参数猜——「每个对象至少一个覆盖全批次的初始版本」因此由构造
+    #   成立（事件落在区间内），时态 join 不会漏行。空批次直接跳过（没有时刻可覆盖）。
+    if getattr(args, "dim_out", None) and batch.events:
+        event_times = [int(e.record["event_time"]) for e in batch.events]
+        dim_rows = build_dimension_stream(
+            world,
+            start_ms=min(event_times),
+            end_ms=max(event_times) + 1,
+        )
+        write_dimension_stream(Path(args.dim_out), dim_rows)
+        counts = count_by_kind(dim_rows)
+        print(
+            f"[ecomgen] 维度变更流：{len(dim_rows)} 行 "
+            f"({', '.join(f'{k}={v}' for k, v in sorted(counts.items()))}) → {args.dim_out}"
+        )
 
     if args.manifest:
         manifest_path = Path(args.manifest)
