@@ -1,0 +1,219 @@
+WARNING: Unknown module: jdk.compiler specified to --add-exports
+WARNING: Unknown module: jdk.compiler specified to --add-exports
+WARNING: Unknown module: jdk.compiler specified to --add-exports
+WARNING: Unknown module: jdk.compiler specified to --add-exports
+WARNING: Unknown module: jdk.compiler specified to --add-exports
+Oct 23, 2026 3:47:32 PM org.jline.utils.Log logr
+WARNING: Unable to create a system terminal, creating a dumb terminal (enable debug logging for more information)
+[INFO] Executing SQL from file.
+
+Command history file path: /opt/flink/.flink-sql-history
+Flink SQL> -- impl-03c-replay-evidence.sql — impl-03c 的**可复现**验收取证（不是断言；断言归 impl-03d）
+
+Flink SQL> [INFO] Execute statement succeeded.
+
+Flink SQL> [INFO] Execute statement succeeded.
+
+Flink SQL> [INFO] Execute statement succeeded.
+
+Flink SQL> CREATE CATALOG IF NOT EXISTS paimon WITH ('type'='paimon','warehouse'='file:/warehouse')[INFO] Execute statement succeeded.
+
+Flink SQL> [INFO] Execute statement succeeded.
+
+Flink SQL> [INFO] Execute statement succeeded.
+
+Flink SQL> 
+|      chk |     ods |     dwd | dim_item | dim_category | dim_user | dim_region | dim_channel |     dws |   ads |
++----------+---------+---------+----------+--------------+----------+------------+-------------+---------+-------+
+| AC1 五层 | 2097152 | 1048576 |     2417 |           17 |   102978 |         12 |           6 | 1550285 | 90348 |
++----------+---------+---------+----------+--------------+----------+------------+-------------+---------+-------+
+1 row in set (4.25 seconds)
+
+Flink SQL> 
+|               chk | n_multi |
++-------------------+---------+
+| AC2a 多版本商品数 |     398 |
++-------------------+---------+
+1 row in set (1.75 seconds)
+
+Flink SQL> 
+|                 chk | n_broken |
++---------------------+----------+
+| AC2b 衔接断点(item) |        0 |
++---------------------+----------+
+1 row in set (1.18 seconds)
+
+Flink SQL> 
+|                 chk | n_overlap |
++---------------------+-----------+
+| AC2c 区间重叠(item) |         0 |
++---------------------+-----------+
+1 row in set (1.12 seconds)
+
+Flink SQL> 
+|                     chk | n_broken |
++-------------------------+----------+
+| AC2b 衔接断点(category) |        0 |
++-------------------------+----------+
+1 row in set (1.17 seconds)
+
+Flink SQL> 
+|                     chk | n_overlap |
++-------------------------+-----------+
+| AC2c 区间重叠(category) |         0 |
++-------------------------+-----------+
+1 row in set (1.17 seconds)
+
+Flink SQL> 
+|                 chk | n_broken |
++---------------------+----------+
+| AC2b 衔接断点(user) |        0 |
++---------------------+----------+
+1 row in set (1.22 seconds)
+
+Flink SQL> 
+|                 chk | n_overlap |
++---------------------+-----------+
+| AC2c 区间重叠(user) |         0 |
++---------------------+-----------+
+1 row in set (1.67 seconds)
+
+Flink SQL> 
+|                        chk | cat_multi | user_multi |
++----------------------------+-----------+------------+
+| AC2a 多版本(category/user) |         5 |       2978 |
++----------------------------+-----------+------------+
+1 row in set (1.52 seconds)
+
+Flink SQL> -- ── AC3 时态 join 真按**事件时刻**取版本 ────────────────────────────────
+|                          chk | n_events |
++------------------------------+----------+
+| AC3a 命中非最新版(item 品类) |    29660 |
++------------------------------+----------+
+1 row in set (2.77 seconds)
+
+Flink SQL> 
+|                          chk | n_events |
++------------------------------+----------+
+| AC3b 命中非最新版(item 价格) |   105704 |
++------------------------------+----------+
+1 row in set (2.27 seconds)
+
+Flink SQL> 
+|                          chk | n_events |
++------------------------------+----------+
+| AC3c 命中非最新版(user 等级) |    11691 |
++------------------------------+----------+
+1 row in set (2.77 seconds)
+
+Flink SQL> 
+|                   chk | n_missing |
++-----------------------+-----------+
+| AC3d 未命中事件(item) |         0 |
++-----------------------+-----------+
+1 row in set (1.81 seconds)
+
+Flink SQL> 
+|                   chk | item_pv | cat_pv | user_pv | dwd_pv |
++-----------------------+---------+--------+---------+--------+
+| AC3e subject 1:1 覆盖 |  469924 | 469924 |  469924 | 469924 |
++-----------------------+---------+--------+---------+--------+
+1 row in set (1.62 seconds)
+
+Flink SQL> 
+|                    chk | subject_type |      n |
++------------------------+--------------+--------+
+| AC4a subject_type 取值 |     category |  51616 |
+| AC4a subject_type 取值 |         item | 987696 |
+| AC4a subject_type 取值 |         user | 510973 |
++------------------------+--------------+--------+
+3 rows in set (1.31 seconds)
+
+Flink SQL> 
+|             chk | n_unaligned |
++-----------------+-------------+
+| AC4b 未对齐 60s |           0 |
++-----------------+-------------+
+1 row in set (1.21 seconds)
+
+Flink SQL> 
+|                     chk | n_orphan |
++-------------------------+----------+
+| AC4c ADS 窗口无对应 DWS |        0 |
++-------------------------+----------+
+1 row in set (1.41 seconds)
+
+Flink SQL> 
+|                    chk | n_bad |
++------------------------+-------+
+| AC4d dt 与窗口日不一致 |     0 |
++------------------------+-------+
+1 row in set (1.57 seconds)
+
+Flink SQL> 
+|             chk | n_dup |
++-----------------+-------+
+| AC5a ADS 键重复 |     0 |
++-----------------+-------+
+1 row in set (1.07 seconds)
+
+Flink SQL> 
+|                   chk | metric_name |     n |
++-----------------------+-------------+-------+
+| AC5b metric_name 取值 |         gmv | 30116 |
+| AC5b metric_name 取值 |          pv | 30116 |
+| AC5b metric_name 取值 |          uv | 30116 |
++-----------------------+-------------+-------+
+3 rows in set (1.21 seconds)
+
+Flink SQL> 
+|             chk |             dim_key |     n |
++-----------------+---------------------+-------+
+| AC5c dim_key 面 |                 ALL | 12912 |
+| AC5c dim_key 面 |   channel=affiliate | 12906 |
+| AC5c dim_key 面 |      channel=direct | 12912 |
+| AC5c dim_key 面 |       channel=email | 12903 |
+| AC5c dim_key 面 |     channel=organic | 12906 |
+| AC5c dim_key 面 | channel=paid_search | 12906 |
+| AC5c dim_key 面 |      channel=social | 12903 |
++-----------------+---------------------+-------+
+7 rows in set (1.32 seconds)
+
+Flink SQL> 
+|          chk | dwd_is_late | late_sum | n_buckets |
++--------------+-------------+----------+-----------+
+| AC6 迟到对账 |      131316 |   131316 |      4303 |
++--------------+-------------+----------+-----------+
+1 row in set (1.37 seconds)
+
+Flink SQL> 
+|           chk | dws | ads | late |
++---------------+-----+-----+------+
+| AC7 dt 分区数 |   3 |   3 |    3 |
++---------------+-----+-----+------+
+1 row in set (1.57 seconds)
+
+Flink SQL> 
+|                      chk |    ads_pv | dwd_pv |     ads_gmv |     dwd_gmv |
++--------------------------+-----------+--------+-------------+-------------+
+| X1 ADS ALL pv/gmv vs DWD | 469924.00 | 469924 | 61442119.03 | 61442119.03 |
++--------------------------+-----------+--------+-------------+-------------+
+1 row in set (1.61 seconds)
+
+Flink SQL> 
+|                     chk |     ch_pv |    all_pv |
++-------------------------+-----------+-----------+
+| X2 渠道面合计 == 全量面 | 469924.00 | 469924.00 |
++-------------------------+-----------+-----------+
+1 row in set (1.36 seconds)
+
+Flink SQL> 
+|                     chk | n_mismatch |
++-------------------------+------------+
+| X3 ADS uv 逐窗口 vs DWD |          0 |
++-------------------------+------------+
+1 row in set (2.17 seconds)
+
+Flink SQL> 
+Shutting down the session...
+done.

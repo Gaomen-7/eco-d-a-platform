@@ -149,7 +149,10 @@ WITH (
 --   ⇒ 写法（−1）与判据（BETWEEN，闭）**必须成对**；
 --     已由 tests/test_replay_temporal_sql.py::test_zipper_valid_to_is_next_change_time_minus_one 钉住。
 -- ★ 时态维 join **走 batch 区间 join**（impl-03c 落地），不是 lookup join
---   （lookup join 是 processing-time，回放必错，官方逐字否定）。
+--   （lookup join 是 processing-time，回放必错）。
+--   ⚠️ 分级：这句是**本仓上下游文档的一致口径**（spec §5.2 + [05] Q10），
+--      **本票没有查到逐字官方出处（无版本号/URL）** ⇒ 按 HLD §0.3 属**设计值级**约束，
+--      **不是** `官方给出`。首版写成「官方逐字否定」是越界（code-review 指出），已改。
 -- ★ 不分区：维度表行数少且需要**全量**区间 join，分区只会让 join 端多一层裁剪。
 --   ⚠️ 因此这里**没有** PARTITIONED BY —— 不是漏写。
 
@@ -276,7 +279,7 @@ WITH (
 --   只有 (dt, late_bucket, cnt)。它是 A3 迟到对账的唯一数据源：
 --       count(*) FROM dwd WHERE is_late=1  ==  sum(cnt) FROM dwd_late_event_count
 --   ⇒ 因此 cnt 必须是「该 60 s 档内的迟到条数」，不是 0/1 标志。
---   ★ **写入已由 impl-03c 落地**（`sql/replay_50_ads.sql` 的 ③ 段，
+--   ★ **写入已由 impl-03c 落地**（`sql/replay_50_ads.sql` 的 ⑤ 段，
 --      `INSERT OVERWRITE dwd_late_event_count`）：按 (事件日 × 60 s 档) 聚合 `is_late=1`。
 --   ⚠️⚠️ **这条等价式是同义反复，不是证据**（spec 轴审阅指出，已更正）：
 --      `cnt` 就是由 `WHERE is_late = 1` 这个**同一谓词**算出来的，

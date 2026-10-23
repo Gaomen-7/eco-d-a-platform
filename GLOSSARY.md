@@ -60,6 +60,26 @@ _Avoid_: 两套 ADS、离线看板（当所指是直接把离线结果给看板�
 维表行的有效期间，记为 `valid_from_ms` / `valid_to_ms`（UTC epoch 毫秒，与事件时间同源同单位；`valid_to_ms` 取极大哨兵值表示仍有效）。同键多版本按区间互斥（无重叠无空洞）。离线侧按**区间 join** 消费（事件时间落在区间内），不走 lookup join——后者是处理时间语义，回放历史数据必错。
 _Avoid_: 拉链表（当只指表不指区间时）、start_date/end_date（日期精度表达不了同日两次变更）、SCD2（外部术语，项目内统一叫拉链）
 
+**subject_type / dim_key**：
+DWS 与 ADS 的两个**不同层级的维度标签**，别混用。**@subject_type@** 是 DWS 的行身份：
+取值域**恰三值** @item@ / @category@ / @user@，配 @subject_id@ 指定「这一行在说哪个商品/品类/用户」；
+**@dim_key@** 是 ADS 的行身份：一个**扁平字符串**，全量面写 @'ALL'@、切分面写 @'channel=<渠道>'@
+（Doris 侧「无维度」的约定值是空串 @''@，两边差异只影响对账配键）。
+⇒ 关键点：ADS 的键里**没有** @subject_type@，故三个 subject 的分面在 ADS 上不可区分；
+DWS 里三 subject **不能相加**（每条 subject 都是 1:1 覆盖的全量事件集，相加即三倍计数）。
+_Avoid_: 维度类型、维度键（两者混为一谈时）、分组字段
+**metric_name / is_settled**：
+@ads_window_metric@ 的指标身份与落定状态。@metric_name@ 取值 @pv@ / @uv@ / @gmv@，
+是 ADS 键的一部分（一个窗口 × 一个指标 × 一个 dim_key 一行）。
+@is_settled@ 是 0/1 三态载体的一员：@0@ 暂定、@1@ 落定；配合 @revision@>0 表示已修订
+（spec §6.2）。⚠️ 离线回放**只产 @is_settled=1@**（无重算流）——对账只比这一侧。
+_Avoid_: 指标、度量（不加限定地说「指标」时，指的是 pv/uv/gmv 还是实时侧的 event_* 要看上下文）
+**维度变更流**：
+与事件流**并列的另一路输入**：一行一个维度版本（@change_time@ + 变更后字段），
+由生成器单独产出（@data/threshold/dim.jsonl@，与事件文件分开——事件文件已被门槛批字节判据锁定）。
+它是拉链表的**唯一时间源**：@valid_from_ms = change_time@，
+@valid_to_ms = 下一版 change_time − 1@。⚠️ 它与事件流同属「门槛批现产」这一步。
+_Avoid_: 维表数据、静态维（当所指其实是这个变化流时）
 **事件结构分布**：
 同一 1 分钟窗口内各事件类型的计数比。
 **它不是转化率**——用户的浏览与支付通常落在不同分钟的窗口里。

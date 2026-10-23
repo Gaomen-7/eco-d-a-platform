@@ -80,8 +80,8 @@ SELECT
 FROM src_dim;
 
 -- ── 拉链：同 id 的版本按 change_time 排序，下一版的起点 − 1 即本版终点 ────
--- ★ 用行号而不是 LEAD 更稳：LEAD 的默认值只能给常量，而这里「没有下一版 ⇒
---   哨兵值」正好是常量，故 LEAD 足够；行号版本会多一层分组，不取。
+-- ★ 为什么用 LEAD 而不是自连接/行号：LEAD 的默认值只能给常量，而这里恰好
+--   「没有下一版 ⇒ 哨兵值 9999999999999」就是一个常量 ⇒ LEAD 足够，不必多一层分组。
 CREATE TEMPORARY VIEW v_zipper AS
 SELECT
   dim, entity_id, change_time,

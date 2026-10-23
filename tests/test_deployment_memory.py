@@ -137,12 +137,11 @@ def test_flink_jm_mem_limit_covers_its_own_process_plus_sql_client() -> None:
     )
 
 
-def test_flink_jm_memswap_equals_mem_limit() -> None:
-    """`memswap_limit` 必须与 `mem_limit` 相等（HLD §4.2；不等即预算有渗漏点）。"""
-    block = _compose_service_block("flink-jm")
-    mem = re.search(r"^\s+mem_limit:\s*(\S+)\s*$", block, re.MULTILINE)
-    swap = re.search(r"^\s+memswap_limit:\s*(\S+)\s*$", block, re.MULTILINE)
-    assert mem and swap, "flink-jm 缺 mem_limit 或 memswap_limit"
-    assert _parse_size(mem.group(1)) == _parse_size(swap.group(1)), (
-        "flink-jm 的 memswap_limit 与 mem_limit 不等（容器可借等量 swap）"
-    )
+# ── 与 config_check.py 的边界（避免一条契约两个真源）────────────────────
+# ⚠️ @memswap_limit == mem_limit@ 这条**不在这里重复实现**：
+#   HLD §4.2 指定它的落点是 @scripts/config_check.py@（走 @docker compose config@ 的
+#   规范化 JSON，不限 flink-jm，覆盖全部 8 个服务）。本轮 code-review 指出首版在本文件
+#   重写了同一条断言 ⇒ 一条契约两个真源，改一处漏一处时两边会给出相反结论。
+#   ⇒ 删掉重复项；本文件只负责 config_check **不覆盖**的那条：
+#     「mem_limit 必须装得下该容器**必然**要住的进程」（需要读 config.yaml，config_check 不做）。
+#   config_check 的调用点是 @make config-check@，不进 pytest（要 docker 守护进程）。

@@ -18,10 +18,9 @@
 --      对账（03f）必须先就这一点表态，不能默认「同名即同值」。
 --   2. **三行 DWS → 一行 ADS 的合并规则**（★ 实机纠正，见下）：ADS 键里没有
 --      `subject_type`，三行 DWS 若各写一次 `dim_key='ALL'` 会同键互相覆盖 = 静默丢数据，
---      故必须**显式**合成一行。但**不能相加**：
---        实测 `SUM(pv)` over 三 subject = 1 409 772，而 DWD 的 page_view 只有 469 924
---        —— 恰好 3.0 倍。原因：item / category / user 三条 subject join 都是
---        **1:1 覆盖**（每条事件恰命中一个商品版本、一个品类版本、一个用户版本），
+--      故必须**显式**合成一行。但**不能相加**（★ 实机实测曾恰为 3.0 倍，见票面）：
+--        原因：item / category / user 三条 subject join 都是 **1:1 覆盖**
+--        （每条事件恰命中一个商品版本、一个品类版本、一个用户版本），
 --        三条各自就已经是**全量**事件集，相加即三倍计数。
 --      正确做法：取**单一 subject** 作为全量的 1:1 代表。这里取 `subject_type='user'`
 --      ——每条事件恰有一个 user，故 user-subject 行**恰好一一覆盖**事件集，
@@ -29,21 +28,17 @@
 --      ⚠️ **三个 subject 的 uv 并不同值**（此处曾误写「本就同值」，实测纠正）：
 --        item 行的 uv 是「碰过该商品的用户数」，category 行是「碰过该品类的用户数」，
 --        都可能**远小于**该窗口的全量去重用户数。故 uv 必须**单独算**：
---        user-subject 的每一行就是一个用户 ⇒ `COUNT(DISTINCT subject_id)`；
---        实测首版对 `uv` 取 `MAX(uv)` 得到恒 1，4 304 个窗口全部与 DWD 对不上。
+--        user-subject 的每一行就是一个用户 ⇒ `COUNT(DISTINCT subject_id)`。
+--        （曾误取 `MAX(uv)` ⇒ 该值恒为 1，每个窗口都与 DWD 对不上。）
 --      ⇒ 这就是「DWS 落成 ADS」的正确读法：**取一条 1:1 subject 的正确读法**。
 --   3. **dim_key 的全量值写 'ALL'**：Doris 侧「无维度」的约定值是空串 ''，
 --      这一处差异只影响**对账怎么配键**，由 03f 处理，不改键语义。
 --   ⇒ 本票只保证「键同构 + 同一公式取名」，**逐值相等由 03f 判**。
 --
--- ★★ 为什么每个聚合面**只算一遍**（impl-03c 实机教训）：
---   首版把 pv/uv/gmv 写成三个各自 GROUP BY 的 UNION ALL ⇒ 每条支路一次全表
---   shuffle，4 并行下直接撞网络缓冲上限：
---     java.io.IOException: Insufficient number of network buffers: required 512,
---     but only 471 available. (total 5079 × 32768 B)
---   改成「一次聚合算出三列 → 再对**小结果**做 unpivot」后，shuffle 次数从 3 降到 1，
---   且 unpivot 的输入是窗口数（数千行）而不是事件数（百万行）。
---   ⚠️ 这不是「调参绕开报错」：三次全表扫描本身就该合并，报错只是把它逼出来了。
+-- ★★ 摊平（unpivot）的写法是**被实机逼出来的**，别改回「三条 UNION ALL」：
+--   首版 pv/uv/gmv 各写一条支路 ⇒ 每条各 shuffle 一遍，撞网络缓冲上限。
+--   现方案：聚合只做一次 → CROSS JOIN 3 行静态指标名（**广播**，不新增 shuffle）。
+--   推理与实测数字见下面 ⓪ 段（此处不重复，避免两处数字将来漂移）。
 --
 -- ★ 本文件不写断言（断言归 impl-03d）。
 
@@ -53,9 +48,7 @@ SET 'table.local-time-zone' = 'UTC';
 SET 'table.dml-sync' = 'true';
 -- ★ 并行度降到 2（**本层专用**，不是全局改）：ADS 的输入是 DWS 的窗口级小结果
 --   （数千行），4 并行只会把每个算子的 network buffer 配额摊薄到不够用 ——
---   实测 4 并行时报：
---     java.io.IOException: Insufficient number of network buffers: required 512,
---     but only 471 available. (total 5079 × 32768 B)
+--   实测 4 并行时报 `Insufficient number of network buffers`（逐字见票面 Progress）
 --   ⇒ 该报错与数据量无关，是「并行度 × 算子链数」把小结果切得太碎。
 --   REQ-F-RT-08 的「并行度 ≤4」是**实时作业**的约束（flink JobConfig），
 --   batch 层用 2 不违反它，也不影响任何口径。
@@ -73,8 +66,7 @@ USE ecom_lake;
 -- ★ 为什么要有它：本层要把「一次聚合算出的 pv/uv/gmv 三列」摊成三行
 --   （ADS 的键里有 metric_name）。首版用「三条各读一遍聚合视图的 `UNION ALL`」
 --   ⇒ 三条支路各自 shuffle 一遍，4 并行直接撞网络缓冲上限：
---     java.io.IOException: Insufficient number of network buffers: required 512,
---     but only 471 available. (total 5079 × 32768 B)
+--     `Insufficient number of network buffers`（逐字报错见票面 Progress ①）
 --   改成「聚合只做一次 + CROSS JOIN 一张 3 行静态视图」后，指标名的展开是
 --   **广播**（3 行 × N 行），不产生任何额外 shuffle 边。
 --   ⚠️ 这不是「调参绕开报错」：三次全表扫描本身就该合并成一次，
@@ -90,9 +82,7 @@ SELECT metric_name FROM (
 -- ★★ 为什么是 `WHERE subject_type = 'user'` 而**不是**把三 subject 相加：
 --   三条 subject 的 join 都是 **1:1 覆盖**（每条事件恰有一个 item 版本、一个
 --   category 版本、一个 user 版本）⇒ 每条 subject 流都已是**全量事件集**，
---   相加 = 三倍计数。实机证据（impl-03c，2026-10-23）：
---     SUM(pv) over 三 subject = 1 409 772 ；DWD 的 page_view = 469 924（恰 3.0×）
---     SUM(gmv) over 三 subject = 184 326 357 ；DWD 的 purchase = 61 442 119（恰 3.0×）
+--   相加 = 三倍计数（实机实测恰 3.0 倍，逐字数字见票面 Progress ①）。
 --   这正是票面「口径不自洽就停下登记」要拦的形态 —— 它**不会报错**，只会静默三倍。
 --   user-subject 与事件**一一对应**（user_id 是事件的必有字段），故它单独就是真值；
 --   uv 也因此天然是这个窗口的全量去重用户数。
@@ -100,7 +90,7 @@ SELECT metric_name FROM (
 --   ADS 的 `dim_key='ALL'` 只是「全站合计」这一张面，不是三张面之和。
 -- ★★ uv **不能取** MAX(uv)：DWS 的 uv 是「该 subject 行内的去重用户数」，
 --   而 subject_type='user' 的每一行**就是一个用户** ⇒ 该行的 uv 恒等于 1，
---   取 MAX 会得到 1（实机：4304 个窗口全部对不上）。
+--   取 MAX 会得到恒 1（实测：每个窗口都与 DWD 对不上）。
 --   全量去重用户数 = 该窗口的 **user-subject 行数** = `COUNT(DISTINCT subject_id)`。
 CREATE TEMPORARY VIEW v_all_metric AS
 SELECT
@@ -169,9 +159,8 @@ FROM v_metric_src CROSS JOIN v_metric_name;
 --   ADS 有两个切面（`dim_key='ALL'` + 6 个 `channel=…`）写**同一张主键表**。
 --   ① 首版：全量面 `INSERT OVERWRITE`、渠道面 `INSERT INTO` ⇒ 换更小跨度重跑时，
 --      渠道面残留上批次的行（全量面被清、渠道面没清）。
---   ② 把渠道面也改成 `INSERT OVERWRITE` ⇒ 后一条把前一条刚写的行**整表抹掉**：
---       修复前 rows=90 348 ；两条 OVERWRITE 时 rows=77 436
---       差额 12 912 == 当时 `dim_key='ALL'` 的全部行数
+--   ② 把渠道面也改成 `INSERT OVERWRITE` ⇒ 后一条把前一条刚写的行**整表抹掉**。
+--      实机：行数恰好少了「全部 `dim_key='ALL'` 行」那么多（数字见票面 Progress）。
 --   ⚠️ 两次都**五层 exit 0、marker 齐全**，只有数字错 —— 「marker 不是断言」的活例子。
 --   `INSERT OVERWRITE` 是**整表**语义 ⇒ 一张表必须由**一条**语句写全。
 --   守卫：tests/test_replay_temporal_sql.py::
@@ -188,7 +177,7 @@ SELECT
   CAST(1 AS TINYINT)                  AS is_settled
 FROM v_ads_row;
 
--- ── ③ 迟到计数（dwd_late_event_count：只存计数，不存明细）───────────────
+-- ── ⑤ 迟到计数（dwd_late_event_count：只存计数，不存明细）───────────────
 -- 🚨 **本段有一处未裁的语义缺口（已登记在票面 + replay_01_ddl.sql，勿当已成立引用）**：
 --   DDL 说这张表装的是**超期事件**（被 sideOutputLateData 丢掉、压根没进 DWD 的）；
 --   下面这条语句装的却是**进了 DWD 的 `is_late=1` 行**。两者不是同一个群体 ——
@@ -213,9 +202,9 @@ GROUP BY
   (event_time / 60000) * 60000;
 
 -- ── 层报告（spec §5.3 可观察性）：layer=<层> rows=… ─────────────────────
--- ★ 层③（两切面）是**一条** `INSERT OVERWRITE` ⇒ 表里只有本批次（ALL 行 + channel 行），
+-- ★ ③ 把两个切面并进**一条** `INSERT OVERWRITE` ⇒ 表里只有本批次（ALL 行 + channel 行）：
 --   既不会残留上批次的渠道行（`INSERT INTO` 的错），也不会被第二切面抹掉
---   （两条 OVERWRITE 的错，见层③ 抬头的事故记录）。本报告按整表计数即可。
+--   （两条 OVERWRITE 的错，见 ④ 抬头的事故记录）。本报告按整表计数即可。
 -- ⚠️ rows 只是**可观察性**，不是断言：行的**内容**对不对由 impl-03d 的断言判。
 SELECT CONCAT('layer=ads rows=', CAST(COUNT(*) AS STRING)) AS layer_report
 FROM ads_window_metric;

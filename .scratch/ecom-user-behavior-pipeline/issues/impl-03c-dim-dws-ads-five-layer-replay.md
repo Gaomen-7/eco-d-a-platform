@@ -36,15 +36,15 @@ AND e.event_time_ms BETWEEN d.valid_from_ms AND d.valid_to_ms
 
 ## Acceptance criteria
 
-- [ ] `make replay`（缺省、不带 `LAYER=`）跑完五层**退出 0**，日志逐层有 `layer=<层> rows=…` 且五层**行数均 > 0**
-- [ ] 拉链维表能查到**同一 id 的多个版本**，且版本区间**首尾相接不重叠**（`valid_to_ms` 与下一版 `valid_from_ms` 衔接一致）
-- [ ] 抽查若干条事件，其回填到的维度值与**事件时刻**的版本一致（不是最新版本，也不是随机版本）—— 时态 join 真的按事件时刻生效
-- [ ] `dws_subject_window` 与 `ads_window_metric` 的 `window_start` 语义一致；`subject_type` 取值域恰为三值
-- [ ] ADS 表主键列**逐列同名同义**于 Doris `ecom_ads.ads_window_metric`（03f 对账依赖它；不一致现在改最便宜）
-- [ ] `dwd_late_event_count` 只有计数列，**没有事件明细**
-- [ ] 三天跨度下 `dt` **有 3 个分区**（门槛批跨度兑现）
-- [ ] `dwd_late_event_count` 的 `is_late` 侧与 DWD 有对应量（本票只记录，03d 才做 A3 断言）
-- [ ] 仍**全 SQL 零 jar**：未新增 jar、未引入 `ADD JAR`
+- [x] `make replay`（缺省、不带 `LAYER=`）跑完五层**退出 0**，日志逐层有 `layer=<层> rows=…` 且五层**行数均 > 0**
+- [x] 拉链维表能查到**同一 id 的多个版本**，且版本区间**首尾相接不重叠**（`valid_to_ms` 与下一版 `valid_from_ms` 衔接一致）
+- [x] 抽查若干条事件，其回填到的维度值与**事件时刻**的版本一致（不是最新版本，也不是随机版本）—— 时态 join 真的按事件时刻生效
+- [x] `dws_subject_window` 与 `ads_window_metric` 的 `window_start` 语义一致；`subject_type` 取值域恰为三值
+- [x] ADS 表主键列**逐列同名同义**于 Doris `ecom_ads.ads_window_metric`（03f 对账依赖它；不一致现在改最便宜）
+- [x] `dwd_late_event_count` 只有计数列，**没有事件明细**
+- [x] 三天跨度下 `dt` **有 3 个分区**（门槛批跨度兑现）
+- [x] `dwd_late_event_count` 的 `is_late` 侧与 DWD 有对应量（本票只记录，03d 才做 A3 断言）
+- [x] 仍**全 SQL 零 jar**：未新增 jar、未引入 `ADD JAR`
 
 ## Notes
 
@@ -144,24 +144,31 @@ COUNT(DISTINCT subject_id)`（user-subject 行数 = 该窗口去重用户数）�
    **单位层面**当前不成立：键同构了，但值的量纲差 100 倍。
    ⚠️ 本票**不改** Doris DDL（那是 03f/看板面的冻结项），也不改 Paimon 的 DECIMAL
    （改它要动 §5.2 的形状表）—— 按 Notes「停下来登记」，挂给 03f 裁。
-5. **★ `is_settled` 本票硬编码 1**：离线回放产出的是**已落定**数据（无重算流），
+5. **★★ 缺口（spec 轴审阅发现）：Paimon 侧 ADS 没有 Doris 的 `revision` / `updated_at` 两列**
+   （`docker/doris/init.sql:39/41`）。而 spec §6.2 的**三态看板载体**逐字是
+   `CASE WHEN is_settled=0 THEN '暂定' WHEN revision>0 THEN '已修订' ELSE '落定' END`
+   ⇒ 看板要读 `revision`，而 Paimon 侧没有这列。
+   票面 AC 逐字只要求**键**同构（本票只对齐了键），故不动 DDL；
+   但这**不是**「键形状」问题而是**列集**差异 ⇒ 显式登记，不许当已成立引用。
+   影响面：03f（对账）与 03d/看板（三态）都会撞到；**不阻塞五层贯通**。
+6. **★ `is_settled` 本票硬编码 1**：离线回放产出的是**已落定**数据（无重算流），
    故全部写 1 合理；但 Doris 的实时侧是 0/1 三态（暂定/落定）。
    对账（03f）只比 `is_settled=1`（spec §4.2），因此这一条**不影响**现状，
    但「离线只会产 settled=1」这个限制要显式记住。
-5. **★★ `dwd_late_event_count` 的语义缺口（本票未解决，03d 必须裁）**：
+7. **★★ `dwd_late_event_count` 的语义缺口（本票未解决，03d 必须裁）**：
    DDL 说它装**超期事件**（`sideOutputLateData` 丢掉、没进 DWD 的），
    实现装的是**进了 DWD 的 `is_late=1` 行** —— 两个不同群体。超期事件在 DWD 无行，
    故当前写法对它们**零覆盖**。且 `sum(cnt) == count(*) WHERE is_late=1` 是**同义反复**
    （cnt 由同一谓词算出），不能当 A3 证据。二选一（本票不猜）：改本表语义 + 改 DDL 注释，
    或补超期通道写入（需旁路输出，SQL-only 面做不到）。
-6. **★★ 缺口：ADS 缺品类/地域分面（不是「形状」）**：`REQ-F-RT-02` 要求看板有
+8. **★★ 缺口：ADS 缺品类/地域分面（不是「形状」）**：`REQ-F-RT-02` 要求看板有
    「品类分布、地域分布」。本票的 ADS 只产 `dim_key='ALL'` 与 `channel=<channel>`
    ——**没有** `category=<id>` / `region=<大区>` 两种 dim_key。
    ⚠️ 首版把这条写成「§5.2 的形状，不是缺陷」，那是**越界**（spec §8.3 不猜）：
    §5.2 只规定 ADS 的**键**长什么样，没说**该产哪些 dim_key 面**。
    本票按票面「DWS 再落成 ADS」的最小解释只落了全量 + 渠道；品类/地域分面**未实现**，
    应按 Notes 挂起待裁（缺它们不阻塞五层贯通，但阻塞看板可用性）。
-7. **`subject_type` 三值是 `item`/`category`/`user`**，与 DDL 注释一致；ADS 键里没有它，
+9. **`subject_type` 三值是 `item`/`category`/`user`**，与 DDL 注释一致；ADS 键里没有它，
    故三个分面在 ADS 上不可区分 —— 这是键形状的**直接结果**，但「因此不产分面」
    属上一条的缺口，不要用形状当理由。
 
@@ -346,3 +353,72 @@ AC1（五层行数 > 0 + exit 0）在上面日志里逐层兑现；AC2–AC8 的
 
 「仍待 03f 表态的推定口径」1–7 条、以及 @dwd_late_event_count@ 的语义缺口，**均未裁、未改**。
 本票按 Notes「不猜」，只修了自己引入的回退与挖出的部署面缺陷。
+## Code-review 两轴结论与处置（2026-10-23）
+
+两轴各跑一个 subagent（Standards / Spec），**结论都不是「通过」**，下面逐条处置。
+
+### Spec 轴：忠实于票面，但挑出 2 处真缺口（都已处理）
+
+| 判据 | 结论 |
+| --- | --- |
+| 交付内容 7 项 | 全部 MET。⚠️ 但第 1 项（三张拉链表的 DDL）**在 03b 就已存在**，本票只改了注释 —— 审阅点明这一点，避免把 03b 的交付算到本票头上 |
+| AC1–AC9 + 禁止项 + 零 jar | 全部 MET（禁止项 grep 零命中；无 @ADD JAR@；无 .jar 新增） |
+| 「本票不写断言」 | ✅ VERIFIED：无 @sql/assert_lake.sql@、无 @scripts/lake_assert.sh@ |
+
+**G1（真缺口，已修）**：@artifacts/@ 被 @.gitignore@ 第 30 行忽略（@/artifacts/@）
+⇒ 上一节引以为据的「可复现证据」@replay_03c_evidence.sql/.log@ **根本没进版本库**，
+票面上每个 AC 数字在分支上都不可复现 —— 正是本票声称要修的病（「跑完即删、只留数字」）
+换了层皮。**修法**：取证集移到受版本控制的
+@.scratch/ecom-user-behavior-pipeline/evidence/@（查询集 @.sql@ + 输出 @.out.txt@；
+⚠️ 输出**不能**叫 @.log@，@*.log@ 同样被忽略）。
+
+**G2（真缺口，已修）**：AC2 原文说的是「**拉链维表**」，而上一节的取证**只查了 @dim_item@**，
+@dim_category@ / @dim_user@ 的衔接与重叠从未查询。**已补 3 组判据并实跑**：
+category 多版本 5 / 断点 0 / 重叠 0；user 多版本 2 978 / 断点 0 / 重叠 0。
+
+**G3（真缺口，已登记为新条目 5）**：Paimon 侧 ADS **没有** Doris 的 @revision@ / @updated_at@
+两列（@docker/doris/init.sql:39/41@），而 spec §6.2 的**三态看板载体**逐字要读 @revision@。
+票面 AC 只要求**键**同构，故本票不动 DDL；但这是**列集**差异而非键形状，
+必须显式登记 ⇒ 已加入「仍待裁」第 5 条。
+
+### Standards 轴：1 处 HARD（正是本仓点名的「历史最大坑」）+ 若干气味
+
+**HARD-1（已修，最该修的一条）**：@sql/replay_01_ddl.sql@ 与 @sql/README.md@ 把
+「lookup join 是 processing-time」写成 **「官方逐字否定」** —— 而 HLD §0.3 逐字把
+「把设计值当官方保证」列为**本仓历史上最大的坑**。本票**没有**查到逐字官方出处。
+⇒ 两处均改为「本仓上下游一致口径，无逐字版本号/URL ⇒ **设计值级**」。
+⚠️ 这个错 **03b 就存在**（@git show 89c40a6:sql/replay_01_ddl.sql@ 同一句），本票顺手改对。
+
+**HARD-2（已修）**：@replay_50_ads.sql@ 头部内嵌约 10 个**实测快照数字**（无分级标记，
+且会随批次漂移 ⇒ 注释 rot）。⇒ 判据留在 SQL、**数字全部移回票面**（票面本就记了）。
+
+**HARD-3（已修）**：新引入的领域概念未入册（@subject_type@ / @dim_key@ / @metric_name@ /
+@is_settled@ / 维度变更流）。⇒ 已按 @docs/agents/domain.md@ 追加进 @GLOSSARY.md@。
+
+**HARD-4（已修）**：@replay_50_ads.sql@ 末字节无换行（其余 8 个脚本都有）。
+
+**JUDGEMENT 类（择要处置）**：
+- **Duplicated Code**：ADS 里 OOM 复盘写了两遍 ⇒ 已并成一处（另一处留指针）。
+- **一条契约两个真源**：@tests/test_deployment_memory.py@ 重写了 @config_check.py@ 的
+  @memswap_limit == mem_limit@ 断言。HLD §4.2 指定的落点就是 config_check ⇒ **删掉测试里的重复项**，
+  只保留 config_check **不覆盖**的那条（mem_limit 需装得下必然进程，要读 config.yaml）。
+- **编号断裂**：@replay_50_ads.sql@ 两段都标「③」⇒ 改为 ⓪①②③④⑤ 顺排，并修正跨文件引用。
+- **Misleading Comment**：@replay_30_dim.sql@ 首句与结论相反 ⇒ 改写。
+
+**未处置（明确的取舍，不是遗漏）**：
+- 窗口下界字面量 @(event_time / 60000) * 60000@ 重复出现、@dim_key@ 由字符串拼接构成 —
+  ⚠️ 抽公共视图 / 建类型都要动**已验收的 SQL 形状**，收益不抵风险；留待 03d 断言层重构时一并考虑。
+- 注释体量偏重 —— 审阅明确写了「**所述为真**」（逐条核过 LEAD−1↔BETWEEN、batch 模式、
+  单条 INSERT OVERWRITE、渠道 pv=page_view、DWS 不过滤落地日），故保留；rot 风险已由 HARD-2 处理。
+
+### 复审后的回归（改了可执行 SQL，必须重跑）
+
+@make replay@ 重跑（@artifacts/replay_postreview.log@）：
+
+```
+layer=ods rows=1048576 / dwd rows=1048576 / dim rows=105430 / dws rows=1550285 / ads rows=90348
+完成（请求范围全部跑完）        ← exit 0
+```
+
+五层数字与复审**逐字一致**；@pytest@ 226 passed、@ruff check@ / @ruff format --check@ 干净、
+@config_check.py@ PASS（6.25 GiB）。
