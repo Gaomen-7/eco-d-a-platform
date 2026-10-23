@@ -4,7 +4,7 @@
 > 规格落点：spec §5.2（形状表 DIM/DWS/ADS 三行）、§5.3（`replay_30`–`50_ads`）
 
 Type: task
-Status: claimed
+Status: resolved（2026-10-23，两轮 code-review 后收口；五层实机 exit 0、ads=90348；未裁口径 9 条挂 03d/03f）
 Blocked by: impl-03b
 
 **What to build:** 维度变更流灌出拉链维表（跨日多版本），DWD 事件按事件时刻做**区间 join** 命中当时有效的维度版本并回填到 DWS 窗口聚合，DWS 再落成 ADS。跑完本票，`make replay`（缺省、不带 `LAYER=`）**五层一次跑通退出 0**。

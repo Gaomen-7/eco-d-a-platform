@@ -74,12 +74,24 @@
 ### impl-03 内部的 Frontier（2026-10-22 拆票后）
 
 ```
-   impl-03a ✅ ──► impl-03b ──► impl-03c ──► impl-03d ──► impl-03e ──► impl-03f
-   部署面          七表DDL       拉链+五层     哨兵断言      反例证伪     对账+收口
-                  ◄── 当前 frontier
+   impl-03a ✅ ──► impl-03b ✅ ──► impl-03c ✅ ──► impl-03d ──► impl-03e ──► impl-03f
+   部署面          七表DDL        拉链+五层        哨兵断言      反例证伪     对账+收口
+                                                  ◄── 当前 frontier
 ```
 
-- **impl-03a 已完成**；**impl-03b 是当前 P2 入口**（依赖已满足）。
+- **impl-03a / 03b / 03c 已完成**；**impl-03d 是当前 P2 入口**（依赖已满足）。
+- ✅ **impl-03c 已结清**（2026-10-23）：`make replay` 缺省跑完五层 exit 0
+  （ods 1048576 / dwd 1048576 / dim 105430 / dws 1550285 / ads 90348）。
+  两轮 code-review 各挑出真缺陷且都已处置：① ADS 两切面原本用两条 `INSERT OVERWRITE`
+  写同一张主键表 ⇒ 后一条把前一条整表抹掉（**五层仍 exit 0、marker 齐全，只有数字错**），
+  已并成单条语句并加静态守卫；② `flink-jm` 的 `mem_limit: 1g` 装不下「Flink 进程(1024m)
+  ＋ 同 cgroup 的 sql-client」⇒ cgroup OOM-kill、`docker exec` 返 137、
+  表面像 TaskManager 掉线，已上调 2g 并加 `tests/test_deployment_memory.py` 守卫；
+  ③ 取证集原本落在被 gitignore 的 `artifacts/`（等于不可复现），已移入
+  `.scratch/ecom-user-behavior-pipeline/evidence/`。
+  ⚠️ 移交 03d/03f 的**未裁口径 9 条**（含 `dwd_late_event_count` 语义缺口、
+  ADS 缺 `revision`/`updated_at`、元/分单位、缺品类/地域分面）见票面「仍待裁」——
+  **03d 做 A3 断言前必须先裁第 7 条**。
 - **强序链**，一次会话一张：03a → 03b → 03c → 03d → 03e → 03f。
 - **强序的理由不是「依赖顺序」而是「失败隔离」**：每张票都能**单独证伪**，不必等后面写完才发现前面的部署面错了。
 - **03e 是唯一的证伪关**：03d 的断言在 03e 跑完 F1–F6 前**不算数**；03d 自己只要求「失败路径能走通一次」，不要求穷举。
