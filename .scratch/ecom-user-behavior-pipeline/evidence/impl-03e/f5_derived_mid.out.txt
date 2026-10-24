@@ -1,0 +1,120 @@
+WARNING: Unknown module: jdk.compiler specified to --add-exports
+WARNING: Unknown module: jdk.compiler specified to --add-exports
+WARNING: Unknown module: jdk.compiler specified to --add-exports
+WARNING: Unknown module: jdk.compiler specified to --add-exports
+WARNING: Unknown module: jdk.compiler specified to --add-exports
+Oct 24, 2026 5:51:29 AM org.jline.utils.Log logr
+WARNING: Unable to create a system terminal, creating a dumb terminal (enable debug logging for more information)
+[34;1m[INFO] Executing SQL from file.[0m
+
+Command history file path: /opt/flink/.flink-sql-history
+Flink SQL> -- assert_lake.sql — 离线断言集：A1 / A3 / 幂等指纹 / 快照三态 / 拉链两条 / 属性钉住
+> --
+> -- 规格落点：spec §5.3（`assert_lake.sql`）、§5.4（离线断言、快照 [5,20]、拉链两条）、
+> --          §5.5（**断言执行面**：哨兵 + stdout 解析）。
+> -- 配套：`scripts/lake_assert.sh`（判定面）+ `tests/test_lake_assert.py`（判定逻辑单测）。
+> --
+> -- ════════════════════════════════════════════════════════════════════
+> -- ★★ 为什么断言要写成「哨兵」而不是靠退出码（spec §5.5 + 本票实机复核）
+> -- ════════════════════════════════════════════════════════════════════
+> -- 源码事实：`sql-client.sh -f` 语句报错后**仍以 0 退出**（`CliClient` 丢弃返回值、
+> -- 无 `System.exit`）。本机实测一份「先一条非法语句、再一条合法语句」的脚本：
+> --     EXIT=0 且输出里恰有 1 条错误标记
+> -- ⇒ **退出码不能当判据**，唯一可用的信号是 stdout。
+> -- ⟹ 每条断言必须自己把结论**打印成字符串**，由 `lake_assert.sh` 解析。
+> --
+> -- ════════════════════════════════════════════════════════════════════
+> -- ★★ 输出语法（`lake_assert.sh` 逐字按这个语法解析；改语法必改脚本 + 单测）
+> -- ════════════════════════════════════════════════════════════════════
+> -- TABLEAU 结果表渲染成 `| cell | cell |`。本文件**只**产出下面两种两列行：
+> --
+> --   A) **哨兵行**（判定面）：  | <NAME> | ok=true |   或   | <NAME> | ok=false |
+> --      · 名字是**稳定标识**，脚本按名字逐条核对；脚本硬编码一份期望清单，
+> --        「少一条」「多一条」「改了名」都算失败。
+> --      · `ok` 必须是**字符串字面量** `ok=true`/`ok=false`，不是 BOOLEAN ——
+> --        脚本据此区分的不是"值真假"，而是"这一行是不是哨兵"。
+> --
+> --   B) **度量行**（只日志）：  | metric.<name> | <value> |
+> --      · 第二列**绝不**以 `ok=` 开头 ⇒ 结构上不可能被误判成断言。
+> --      · A2（重复记账）落在这一类：spec §5.4 逐字「只入日志、不作断言」。
+> --
+> -- ★★ 两条实机限制（不满足就会静默漏判，都已实测）：
+> --   1. **单元格被截断**：TABLEAU 的列宽由会话参数
+> --      `sql-client.display.max-column-width` 控制，**官方默认 30 字符**，
+> --      超宽单元格渲染成 `xxxx...`（本机实测：42 字符的断言名被截断）。
+> --      ⚠️ 分级：**默认值 30 是官方给出**；但它是**可配项** —— 换会话参数就会变。
+> --        本仓不靠"正好卡在 30"，而是留余量把哨兵名钉在 **≤ 26**（**设计值**，
+> --        留 4 字符余量），指纹则拆成多条短度量行、永不塞进一个长单元格。
+> --   2. **sql-client 会回显 SQL 源码**（含注释），每条语句前有 `Flink SQL> ` 或 `> `
+> --      前缀。⇒ 本文件的注释里**不得**出现带方括号的错误标记（否则脚本会把它当
+> --      真错误）。静态守卫：`tests/test_lake_assert.py::test_no_error_token_in_sql`。
+> --      脚本侧则只解析以 `|` 开头的行 ⇒ 不会被回显文本里的 `ok=true` 字样带偏。
+> --
+> -- ════════════════════════════════════════════════════════════════════
+> -- ★★ 两处**实测证伪**的写法（别照 spec 的伪代码抄）
+> -- ════════════════════════════════════════════════════════════════════
+> -- 1) **`crc32` 在 Flink 2.2 SQL 里不存在**（spec §5.4 的
+> --    `SUM(crc32(concat_ws(...)))` 逐字不能执行）。本机实测逐字：
+> --      SqlValidatorException: No match found for function signature crc32(<CHARACTER>)
+> --    同一台机实测可用的替代：`HASH_CODE(x)`（INT）、`MD5(x)` / `SHA1(x)` / `SHA2(x,n)`。
+> --    ⇒ 幂等指纹改用 **`SUM(CAST(HASH_CODE(...) AS BIGINT))`**。
+> --      ⚠️ `HASH_CODE` 返回 **INT**，百万行求和会**溢出 INT** ⇒ 必须先 `CAST` 成
+> --        `BIGINT` 再 `SUM`。直接 `SUM(HASH_CODE(...))` 会得到负数/错值，
+> --        而它在两次跑之间**照样稳定** ⇒ 会是一条"恒绿但不校验"的假指纹。
+> -- 2) **A3 不得写成 `sum(cnt) == count(*) WHERE is_late=1`**（impl-03c 已裁）：
+> --    `cnt` 由**同一谓词** `is_late=1` 算出 ⇒ 同义反复。按裁定写成
+> --    **逐档比对 + 档集合比对**（见 ③ 段）。
+> --
+> -- ════════════════════════════════════════════════════════════════════
+> -- ★★ A1 的粒度：**不按事件日分区比**（但 ODS 侧限定本次落地批 —— 见 ① 段）
+> -- ════════════════════════════════════════════════════════════════════
+> -- spec §5.4 逐字：`ods_distinct = dwd_distinct + reject_distinct`，**全局比对**。
+> -- 「全局」的**目的**是「不要按事件日分区比」——因为 ODS 的 `dt` 是**落地日**
+> -- （append、跨天累积），DWD 的 `dt` 是**事件日** ⇒ 两边没有共同日期轴。
+> -- 硬按日比会把「今天落地、事件发生在昨天」这种正常情况判成失败。这一点本文件遵守。
+> -- ⚠️ 但「不加任何过滤 = 整表」会引入另一类病（实测）：ODS 整表会累积历史落地批，
+> --   一旦某天落了**另一批**，等式两侧的数据范围就不再同源，A1 会无缘无故红。
+> --   ⇒ ODS 侧限定**本次落地日**，与 `replay_20_dwd.sql` 的 `v_ods_scope` **同源**。
+> --   这是**粒度收窄**（整表 → 本次落地批），不是改回按事件日分区。
+> --   已登记票面 Progress（不静默改判据）；若上游判定必须整表，
+> --   正确修法是**清理历史落地批**，而不是放宽判据。
+> --
+> -- ════════════════════════════════════════════════════════════════════
+> -- ★★ 快照区间的**三态**（单看一条会在空表/新表上假红）
+> -- ════════════════════════════════════════════════════════════════════
+> --   · 有数据、提交过多次：判 **[1,20]**（上界是 `retain_max => 20` 收的；
+> --     下界不要求 5 —— `snapshot.num-retained.min` 是**保护下界、不制造快照**，
+> --     官方逐字 "When the number of snapshots is less than snapshot.num-retained.min,
+> --     no snapshots will be expired"）。
+> --   · **空表**（本批 0 行 ⇒ 0 快照，如 `dwd_behavior_event_reject`）：判 **= 0**。
+> --     这同时是「min 不制造快照」的**可观察反证**。
+> --   · 属性本身是否钉住 → 另立一条（`$options`），因为 `10` 也落在 [1,20][34;1m[INFO] Execute statement succeeded.[0m
+
+Flink SQL> [34;1m[INFO] Execute statement succeeded.[0m
+
+Flink SQL> [34;1m[INFO] Execute statement succeeded.[0m
+
+Flink SQL> [34;1m[INFO] Execute statement succeeded.[0m
+
+Flink SQL> 
+> CREATE CATALOG IF NOT EXISTS paimon WITH (
+>   'type' = 'paimon',
+>   'warehouse' = 'file:/warehouse'
+> )[34;1m[INFO] Execute statement succeeded.[0m
+
+Flink SQL> [34;1m[INFO] Execute statement succeeded.[0m
+
+Flink SQL> [34;1m[INFO] Execute statement succeeded.[0m
+
+Flink SQL> +--------------------------+
+|                       fx |
++--------------------------+
+| FIXTURE f5_derived BEGIN |
++--------------------------+
+1 row in set (1.78 seconds)
+
+Flink SQL> [31;1m[ERROR] Could not execute SQL statement. Reason:
+org.apache.calcite.sql.validate.SqlValidatorException: Object 'no_such_table_f5' not found[0m
+
+Shutting down the session...
+done.

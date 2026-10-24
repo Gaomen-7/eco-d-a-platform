@@ -1,0 +1,17 @@
+[assert] ✗ SQL 层错误标记 1 条（见原始输出）
+[assert] ✓ A1_split_complete
+[assert] ✓ A3_late_bucket_split
+[assert] ✓ A3_late_flag_nonempty
+[assert] ✓ IDEMPOTENCY_fp_ready
+[assert] ✓ SNAP_within_upper_bound
+[assert] ✓ SNAP_empty_table_zero
+[assert] ✓ ZIP_interval_self_sync
+[assert] ✓ ZIP_audit_log_shows_change
+[assert] ✓ OPT_snapshot_retention
+[assert] · metric.a2_dup_overshoot = 0
+[assert] · metric.fp.rows = 1048576
+[assert] · metric.fp.hash = 1126399221523001
+[assert] · metric.fp.devent = 1048576
+[assert] · metric.fp.dlag = 131267
+[assert] · A2 只记账、不判定（spec §5.4 逐字：恒真，不作断言）
+[assert] 不通过（--judge 注入模式）

@@ -1,0 +1,19 @@
+[assert] >> 运行 sql/assert_lake.sql（容器 eco-flink-jm）
+[assert] -- docker exec 退出码 = 0（**不作为成功判据**：sql-client 报错仍退 0）
+[assert] ✓ A1_split_complete
+[assert] ✓ A3_late_bucket_split
+[assert] ✓ A3_late_flag_nonempty
+[assert] ✓ IDEMPOTENCY_fp_ready
+[assert] ✓ SNAP_within_upper_bound
+[assert] ✓ SNAP_empty_table_zero
+[assert] ✓ ZIP_interval_self_sync
+[assert] ✓ ZIP_audit_log_shows_change
+[assert] ✓ OPT_snapshot_retention
+[assert] · metric.a2_dup_overshoot = 0
+[assert] · metric.fp.rows = 1048576
+[assert] · metric.fp.hash = 1126399221523001
+[assert] · metric.fp.devent = 1048576
+[assert] · metric.fp.dlag = 131267
+[assert] · A2 只记账、不判定（spec §5.4 逐字：恒真，不作断言）
+[assert] · 指纹已落盘：artifacts/lake_assert/fp.txt  (1048576 1126399221523001 1048576 131267)
+[assert] ✓ 全部断言通过
