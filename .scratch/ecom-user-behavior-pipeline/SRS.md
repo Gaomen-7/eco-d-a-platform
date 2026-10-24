@@ -130,7 +130,7 @@ Superset 6.1.0（看板）
 | `REQ-F-GEN-04` | SHOULD | 大促尖峰模式：短时速率 ≥1000 events/s | 尖峰模式触发期间实测速率 ≥1000/s |
 | `REQ-F-GEN-05` | MUST | 漏斗分布符合真实形态：`page_view` 占绝对多数，逐级递减至 `purchase` | 单次运行后各事件类型计数满足递减关系 |
 | `REQ-F-GEN-06` | MUST | **`--seed` 随机种子**：同一种子 + 同参数产出同一批数据 | 同种子跑两遍，输出文件哈希一致 |
-| `REQ-F-GEN-07` | MUST | **`--late-ratio`（默认 5%）**：把该比例事件的事件时间显式置于水位线之前，制造可复现乱序 | 设 `--late-ratio 0.05` 后，实时侧侧输出确有迟到事件落入 |
+| `REQ-F-GEN-07` | MUST | **`--late-correctable`（默认 3%）／`--late-expired`（默认 2%）**：分别把该比例事件的事件时间置于水位线之前（`--late-correctable` 落 2 分钟允许延迟内、`--late-expired` 超期只计数），偏移**一律相对水印**而非墙上时钟计算，制造可复现乱序 | 设 `--late-correctable 0.03 --late-expired 0.02` 后，实时侧窗口修正段确有迟到事件落入、超期段确有迟到计数条目 |
 | `REQ-F-GEN-08` | MUST | 产出并维护维度数据（商品/品类/地域/渠道），供 DIM 层装载 | DIM 层可装载出非空维表 |
 
 #### 3.1.2 消息队列（模块②）
@@ -166,7 +166,7 @@ Superset 6.1.0（看板）
 | `REQ-F-LAKE-03` | MUST | **DIM** 为主键表，做**时态维表**（商品/品类/用户/地域/渠道） | DIM 各表可 join 出结果 |
 | `REQ-F-LAKE-04` | MUST | **DWS** 主题宽表聚合（用户/商品/品类/时间粒度维度） | DWS 表有数据 |
 | `REQ-F-LAKE-05` | MUST | **ADS** 应用层指标表，供看板与 OLAP 消费 | ADS 表有数据且字段与看板面板对应 |
-| `REQ-F-LAKE-06` | MUST | 五层**全部落 Paimon**，单一 catalog（库名 `ecom_lake`） | 五层表均存在于同一 catalog |
+| `REQ-F-LAKE-06` | MUST | 五层全部落 **单一 Paimon catalog**，该 catalog 下的 **`ecom_lake` database** 承载全部五层表（catalog→database→table 三层，catalog 与 database 不可混说） | 五层表均存在于该 catalog 的 `ecom_lake` database 内（`SHOW TABLES IN <catalog>.ecom_lake` 逐层可查） |
 | `REQ-F-LAKE-07` | MUST | 离线分层由 **Flink 批模式 + Makefile 触发**（无调度器） | `make replay` 可完整跑完五层 |
 | `REQ-F-LAKE-08` | MUST | Paimon 表维护：快照过期保留最近 **5 个** + 定期 compaction 合并小文件 | 表属性配置可见；快照数受控 |
 | `REQ-F-LAKE-09` | COULD | 公开数据集（UserBehavior）映射回放：下载脚本 + md5 校验 + 许可署名，**原始文件不入 git** | 脚本存在；`.gitignore` 覆盖数据目录；仓库内无原始数据 |
@@ -185,7 +185,7 @@ Superset 6.1.0（看板）
 | 编号 | 优先级 | 需求 | 验收判据 |
 | --- | --- | --- | --- |
 | `REQ-F-BI-01` | MUST | 面板：实时 PV / UV、4 步转化漏斗、实时 GMV、品类分布、地域分布 | 5 个面板均可渲染出数据 |
-| `REQ-F-BI-02` | MUST | 自动刷新间隔 **≤ 10 s** | 面板刷新配置 ≤10s；观察到数值变化 |
+| `REQ-F-BI-02` | MUST | 自动刷新间隔 **≤ 10 s** | 面板刷新配置 ≤10s；**「观察到数值变化」＝窗口关闭/修订时刻值确实变化**（非「每次刷新值都变」）；10 s 刷新只证「链路活着」 |
 | `REQ-F-BI-03` | MUST | **评审者零账号**只读可访问（本机浏览器即可） | 无任何外部平台账号即可打开并看到刷新 |
 | `REQ-F-BI-04` | SHOULD | 增加「脏数据率」面板 | 面板存在且随 DLQ 变化 |
 
@@ -193,8 +193,8 @@ Superset 6.1.0（看板）
 
 | 编号 | 优先级 | 需求 | 验收判据 |
 | --- | --- | --- | --- |
-| `REQ-F-ORCH-01` | MUST | `docker compose up` 一键拉起整条链路（含初始化脚本） | 干净机器上一条命令起链路 |
-| `REQ-F-ORCH-02` | MUST | **逐服务显式 `mem_limit`**，常驻总和 ≤ 8 GB | `docker stats` 总值 ≤8 GB |
+| `REQ-F-ORCH-01` | MUST | **`make init`** 一键拉起整条链路（**含 Doris profile 与初始化脚本**） | **在已有 Docker + make 的机器上**（L0 制品态）`make init` 后 `make verify` 退出码 0、`docker compose ps` 全 `healthy`；四档契约见 `reproducibility-boundary.md` §1 |
+| `REQ-F-ORCH-02` | MUST | **逐服务显式 `mem_limit`**，常驻总和 **≤ 8 GB**（**设计值**）。判据按**两个口径**分别断言：①**声明上限**（全部服务 `mem_limit` 之和，含 profile 内服务）≤ 8 GB；②**实测占用**（`docker stats --no-stream` 合计）≤ 8 GB。⚠️ 两者不可互相冒充（口径定义同 `REQ-NF-CAP-01`） | ①`docker compose --profile doris --profile client config` 求和 ≤ 8 GB；②`docker stats --no-stream` 合计 ≤ 8 GB。**P1 带载后须复测，带载未实测即未通过** |
 | `REQ-F-ORCH-03` | MUST | Makefile 目标：`up` / `down` / `init` / `replay` / `verify` / `logs` / `spike` | 各目标均可执行成功 |
 | `REQ-F-ORCH-04` | MUST | 重启策略 `restart: unless-stopped` | 主机重启后链路自动恢复 |
 | `REQ-F-ORCH-05` | MUST | Kafka / Paimon / Doris / Superset 元数据用 named volume 持久化 | `docker compose down` 后再 `up`，数据仍在 |
@@ -206,8 +206,8 @@ Superset 6.1.0（看板）
 
 | 编号 | 优先级 | 需求 | 验收判据 |
 | --- | --- | --- | --- |
-| `REQ-F-VERIFY-01` | MUST | `make verify` 烟测五项：Kafka 有数据 / Flink job RUNNING / Paimon 五层有行 / Doris ADS 有行 / Superset 健康 | 五项断言全通过，退出码 0 |
-| `REQ-F-VERIFY-02` | MUST | **幂等验证**：同 `--seed` 同批数据跑两遍，Doris 结果一致 | 两次结果比对一致 |
+| `REQ-F-VERIFY-01` | MUST | `make verify` 烟测五项：Kafka 有数据 / Flink job RUNNING / Paimon 五层有行 / Doris ADS 有行 / Superset 健康 | 五项烟测中「Paimon 五层有行」在 **P1 里程碑判定中显式 SKIP、不计入通过条件**；**P2 里程碑判定中该项必须为真断言且退出码参与判定** |
+| `REQ-F-VERIFY-02` | MUST | **幂等验证**：同 `--seed` 同批数据跑两遍，Doris 结果一致 | 幂等验证「**不进 `verify` 每次运行**」，改由离线幂等断言（§5.4 离线版）＋ `verify-fault` 恢复重放覆盖 |
 | `REQ-F-VERIFY-03` | SHOULD | **`make verify-fault` 故障注入**：kill TaskManager → 作业从 checkpoint 自动恢复 → 校验 Doris 结果条数与 kill 前一致 | 恢复后条数一致（不重不丢） |
 | `REQ-F-VERIFY-04` | SHOULD | 数据质量校验：按 §3.3 规则检查，实时侧进 DLQ、离线侧单落 `dwd_behavior_event_reject` 并计数 | 违规样本被正确分流且有计数 |
 | `REQ-F-VERIFY-05` | SHOULD | Kafka lag 检查脚本 | 脚本可输出各消费组 lag |
@@ -227,10 +227,10 @@ Superset 6.1.0（看板）
 
 | 编号 | 优先级 | 需求 | 性质 |
 | --- | --- | --- | --- |
-| `REQ-NF-CAP-01` | MUST | 容器群常驻内存 **≤ 8 GB**（**天花板**约束） | 设计目标；官方未给出各家最低内存（A2） |
+| `REQ-NF-CAP-01` | MUST | 容器群常驻内存 **≤ 8 GB**（天花板约束，**设计值**）。判据按**两个口径**分别断言：①**声明上限**（全部服务 `mem_limit` 之和，含 profile 内服务）≤ 8 GB；②**实测占用**（`docker stats --no-stream` 合计）≤ 8 GB。⚠️ 两者不可互相冒充：P0 实测空载六服务合计 ≈3.83 GiB，声明上限合计 10.5 GiB（10,752 MiB，含 `client` 256m），已按官方默认下调后落在 11.68 GiB 天花板内。**P1 带载后须复测，带载未实测即未通过** | 设计目标；官方未给出各家最低内存（A2） |
 | `REQ-NF-CAP-02` | MUST | 磁盘占用（含数据卷）**≤ 20 GB** | 设计目标 |
-| `REQ-NF-CAP-03` | MUST | **预拉镜像前提下**，一条命令到看板出数 **≤ 15 分钟** | 两档之一 |
-| `REQ-NF-CAP-04` | MUST | **冷启动（含拉镜像）≤ 30 分钟** | 两档之二 |
+| `REQ-NF-CAP-03` | MUST | **预拉镜像前提下**，`make init` 到**链路全 healthy** **≤ 15 分钟**（**不含出数**：看板出数依赖 P1 的真实 Flink 作业与 Doris 写数，P1 未实现即不可测）。「到看板出数 ≤ 15 分钟」作为**同一需求的第二截**，判据转 P1 实测 | 两档之一；`make init` 计时至 `docker compose ps` 全 `healthy` |
+| `REQ-NF-CAP-04` | MUST | **预构建镜像经 `docker save`/`docker load` 导入后**，L3 跨机搬运冷启动 ≤ 30 分钟。⚠️ **「本地构建 Doris 镜像」不计入本判据**（实测构建 ≈35 min；Doris 无官方版本化镜像，构建不可避免） | 两档之二；构建耗时单独记录、**不设上限** |
 | `REQ-NF-CAP-05` | MUST | 离线分层最小可跑数据量 ≥ 100 万事件 | 设计目标 |
 | `REQ-NF-CAP-06` | COULD | 可选亿级回放（约 1 亿事件 / ~3.4 GB 解压） | 不阻塞验收 |
 | `REQ-NF-CAP-07` | SHOULD | 数据卷使用率 > 80% 时给出提示 | 防护性 |
@@ -271,7 +271,7 @@ Superset 6.1.0（看板）
 | `item_id` | string | 是 | 非空 | 商品标识 |
 | `category_id` | string | 是 | 非空 | 品类标识 |
 | `event_type` | string | 是 | 五类枚举（见下） | 事件类型 |
-| `schema_version` | string | 是 | 如 `1.0` | 消息版本 |
+| `schema_version` | string | 是 | 如 `1.0`/`1.1`/`2.0`（分级规则见 §3.3.1） | 消息版本 |
 | `page` | string | 否 | 页面标识 | 来源页 |
 | `source` | string | 否 | 端类型 | 来源端 |
 | `channel` | string | 否 | 渠道枚举 | 渠道维度 |
@@ -292,18 +292,26 @@ Superset 6.1.0（看板）
 | `begin_checkout` | `order_id` | 下单（未支付），漏斗第 3 步。**公开数据集回放无此步 → 回放漏斗降级为 3 步，差异须在文档写明** |
 | `purchase` | `amount`、`currency`、`order_id` | 支付，漏斗第 4 步 |
 
-**数据质量规则**（`REQ-F-VERIFY-04` 依据）：① `event_time` 不晚于当前 +5 分钟、不早于 2020-01-01；② `amount` ≥ 0；③ `event_type` ∈ 枚举；④ `user_id` / `item_id` / `event_id` 非空；⑤ `event_id` 唯一。
+**数据质量规则**（`REQ-F-VERIFY-04` 依据）：① `event_time` 不晚于当前 +5 分钟，且**不早于「本批次最早事件时间 − 允许乱序幅度」**（批次基准时间＝本批摄入事件的最早 `event_time`；允许乱序幅度取实时侧允许延迟，默认 2 分钟）；该下界为**相对**下界，对生成器产出与公开数据集回放同时成立；② `amount` ≥ 0；③ `event_type` ∈ 枚举；④ `user_id` / `item_id` / `event_id` 非空；⑤ `event_id` 唯一（重复走独立通道：计数、不进 DLQ、不计脏率，见 gdd D2）。
 **违规处理**：实时侧 → DLQ topic；离线侧 → `dwd_behavior_event_reject` 单表 + 计数。**丢弃必须有痕迹**。
+
+#### 3.3.1 `schema_version` 兼容规则（字段语义；全文指针 → `canonical-truth.md` §3.1）
+
+> **本节只承载本字段的语义与未知版本处置**（本字段定义语义，绕不开）；**铁律全文的唯一权威在 `canonical-truth.md` §3.1**，此处**不复制**四条铁律全文，防第二真相源。
+
+- **S1（版本分级）**：加**可选**字段＝**minor**（`1.0`→`1.1`）；**必填字段增删、字段类型或语义变更**＝**major**（`2.0`）。字符串按 `MAJOR.MINOR` 解析，兼容性判定**只比 major**。
+- **S2（消费端容忍度）**：消费端**必须**容忍同 major 的更高 minor——未知可选字段**丢弃并计数**；**必须拒绝**更高 major ⇒ 该事件进 DLQ（离线侧进 `dwd_behavior_event_reject`），原因码 **`schema_major_unsupported`**。
+- **取值示例与版本号本身**：本仓生产端产出 `1.0`；字段行只写取值示例，版本号**不要求生产端与消费端相等**（能力下界见 §3.1 S3）。
 
 ### 3.4 接口与命名（冻结项，不得漂移）
 
 | 类别 | 冻结值 |
 | --- | --- |
 | Kafka topic | `ecom.behavior.event.v1`；DLQ `ecom.behavior.event.v1.dlq` |
-| 消息格式 | JSON + `schema_version`；字段一律 `snake_case` |
-| Paimon | 库 `ecom_lake`；表 `ods_behavior_event` / `dwd_behavior_event` / `dwd_behavior_event_reject` / `dim_*` / `dws_*` / `ads_*` |
+| 消息格式 | JSON + `schema_version`；字段一律 `snake_case`；**兼容规则见 §3.3.1** |
+| Paimon | **单一 catalog → database `ecom_lake`**；表 `ods_behavior_event` / `dwd_behavior_event` / `dwd_behavior_event_reject` / **`dwd_late_event_count`（FC-2，2026-10-21 已批）** / `dim_*` / `dws_*` / `ads_*` |
 | Doris | 看板直连库 `ecom_ads` |
-| Makefile 目标 | `up` / `down` / `init` / `replay` / `verify` / `spike` / `verify-fault` / `logs` |
+| Makefile 目标 | `up` / `down` / `init` / `replay` / `verify` / `spike` / `verify-fault` / `logs` ＋ **`lint` / `typecheck`（FC-1，2026-10-21 已批：静态检查另设目标，`verify` 保持冻结、只做运行时烟测；`make check` **不新增**，原生多目标并列）** |
 | 本机端口 | Flink UI `:8081`、Superset、Doris（FE/BE）、Kafka `:9092` —— **全部仅绑 `127.0.0.1`** |
 
 ### 3.5 设计约束（版本锚点，摘录自 `FSR.md` §4）
@@ -327,8 +335,8 @@ Flink 2.2.x  ── Kafka connector 5.0.0 ── Kafka 4.3.1
 
 | 编号 | 方式 |
 | --- | --- |
-| `REQ-F-VERIFY-01` | `make verify` 五项烟测，退出码 0 即通过 |
-| `REQ-F-VERIFY-02` | 同 `--seed` 跑两遍，自动比对 Doris 结果 |
+| `REQ-F-VERIFY-01` | `make verify` 五项烟测，退出码 0 即通过；**判定分层**——P1 里程碑中第三项「Paimon 五层有行」**显式 SKIP、不计入通过条件**，P2 里程碑中该项**必须为真断言**（口径见 §3.1.8） |
+| `REQ-F-VERIFY-02` | **不进 `verify` 每次运行**：改由离线幂等断言（同批 dump 重放两遍，DWD `count(*)` 与逐列校验和一致）＋ `verify-fault` 恢复重放覆盖 |
 | `REQ-F-VERIFY-03` | `make verify-fault`：kill TM → 恢复 → 比对条数 |
 | 其余功能需求 | 按 §3.1/§3.3 的「验收判据」列逐条人工确认 |
 
@@ -366,7 +374,7 @@ Flink 2.2.x  ── Kafka connector 5.0.0 ── Kafka 4.3.1
 | --- | --- | --- |
 | `REQ-F-LAKE-02` DWD 主键表 + UTC ms | FSR §6、Q18、Q31、Q33 | `make verify` 查到 DWD 行数 > 0 且 `event_time_ms` 为毫秒整数 |
 | `REQ-F-RT-06` 经 connector 2PC 写 Doris | FSR §3、Q38、R1 | 看板出数 + `make verify-fault` kill TM 后条数一致 |
-| `REQ-F-GEN-07` `--late-ratio` 注入乱序 | Q20、Q55 | 侧输出确有迟到事件；看板可演示 |
+| `REQ-F-GEN-07` `--late-correctable` / `--late-expired` 双注入器 | Q20、Q55 | 窗口修正段确有迟到事件落入、超期段确有迟到计数条目（§3.1.1 判据） |
 | `REQ-NF-CAP-03/04` 冷启动两档 | Q46、Q7 | 分别计时，分开判定 |
 | `REQ-F-OLAP-04` Catalog 直读降级为实验 | FSR R1、Q38 | 实验成败均不阻塞验收 |
 
@@ -401,7 +409,7 @@ Flink 2.2.x  ── Kafka connector 5.0.0 ── Kafka 4.3.1
 | 阶段 | 覆盖需求 | 完成判据 |
 | --- | --- | --- |
 | **P0 环境** | `REQ-F-ORCH-01/02/06/07`、U1/U2/U3 | `docker compose up` 拉起骨架；`docker stats` 总值 ≤ 8 GB |
-| **P1 实时闭环** | `REQ-F-GEN-*`、`REQ-F-MQ-*`、`REQ-F-RT-01..08`、`REQ-F-OLAP-01..03`、`REQ-F-BI-01..04`、`REQ-F-VERIFY-01/02` | 看板持续刷新；`make verify` 通过；`verify-fault` 通过 |
+| **P1 实时闭环** | `REQ-F-GEN-*`、`REQ-F-MQ-*`、`REQ-F-RT-01..08`、`REQ-F-OLAP-01..03`、`REQ-F-BI-01..04`、`REQ-F-VERIFY-01/02` | 看板持续刷新；`make verify` 通过（**P1 分层：第三项「Paimon 五层有行」显式 SKIP**）；`verify-fault` 通过 |
 | **P2 离线分层** | `REQ-F-LAKE-01..08`、`REQ-F-VERIFY-04/05` | 五层表可查；分层理由成稿 |
 | **P2 可选** | `REQ-F-LAKE-09`、`REQ-NF-CAP-06` | 抽样回放跑通即可 |
 | **P3 文档** | `REQ-NF-MNT-03/04`、§4.3 | 演示 GIF + README + 分层文档齐备 |

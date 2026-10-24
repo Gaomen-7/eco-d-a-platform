@@ -3,9 +3,9 @@
 > **性质**：游戏/产品设计文档（Game/General Design Document）体例的**功能设计文档**。本文回答「每个功能**怎么做**、触发条件与状态怎么变、怎么算做到了」。
 > **日期**：2026-10-19（Asia/Shanghai）
 > **上游**：`SRS.md`（需求权威）｜`FSR.md`（路线冻结）｜`research-notes.md`（一手调研证据）
-> **下游**：`spec.md`（实施规格，另行开会话产出）
+> **下游**：本 spec 施工规格；**收口**：`canonical-truth.md`
 > **术语**：一律以仓库根 `GLOSSARY.md` 为准；本文出现的领域概念均在该表内定义。
-> **权威关系**：本文**不是** spec，也不声明需求。凡与 `SRS.md` 冲突处，本文在 §D 显式列出并说明，**不修改** `SRS.md`。
+> **权威关系**：本文**不是** spec，也不声明需求。凡与 `SRS.md` 冲突处，本文在 §D 显式列出并说明。上游改写按 `canonical-truth.md` §0 G1 分档：**事实类**（官方/物理限制把上游陈述证伪）可直接改写上游，**意图类**保留原话并登记。上一版此处「**不修改** `SRS.md`」的自述**从未获 SRS/FSR 背书**（两文件无「不得修改」条款、无变更控制章节），已按本段订正。
 
 ## 0. 这份文档怎么用
 
@@ -49,7 +49,7 @@
 
 **状态与数据变化**
 - 生成器运行态：`idle → warmup → live → (spike ⇄ live) → draining → stopped`（见 §B.1）。
-- 产出物：事件 JSON（含 `schema_version`）、维度快照与维度变更流。
+- 产出物：事件 JSON（含 `schema_version`，**生产端产出 `1.0`**；分级与未知版本处置见 `canonical-truth.md` §3.1 与 SRS §3.3.1）、维度快照与维度变更流。
 - 用户池：默认 **10 万** 个不同 `user_id`（【已确认 Q18】），可配置。这是滚动 UV 与漏斗状态量的基数来源。
 
 **验收判据**
@@ -74,7 +74,7 @@
 
 **状态与数据变化**
 - topic 状态：不存在 → 已创建 → 已配置（RF=1、固定分区数）。
-- 【已确认 D3】retention「7 天或 2 GB 取小」在本速率下**实际生效窗约 6 小时**（200 ev/s × ~500 B/条 ≈ 8.05 GB/天）。这是设计值而非缺陷，但**下游必须知情**（见模块④）。
+- 【已确认 D3·2026-10-21 按配置层级重算】retention「7 天或 2 GB 取小」：`retention.bytes` **按分区生效** ⇒ 2 GB × 6 分区 ＝ 主题级 **≈12 GB**，本速率（200 ev/s × ~500 B/条 ≈ 8.05 GB/天）下**实际生效窗 ≈36 小时**（**设计值**，算术推算；旧「≈6 小时」把 `retention.bytes` 误当主题级总量，**已作废**）。这是设计值而非缺陷，但**下游必须知情**（见模块④与 §D D3）。
 
 **验收判据**
 - 两 topic 均存在（`REQ-F-MQ-01`）。
@@ -113,8 +113,9 @@
 - **GDD 新增判据（替代原「配置可见」）**：
   - **迟到通道可证**：设 `--late-correctable 0.03` 后，Doris 侧出现 `revision > 0` 的窗口；设 `--late-expired 0.02` 后，迟到计数表出现对应条目。**不能**用「Flink UI 里能看到」当判据。
   - **重复与脏可分可证**：故障恢复重放期间，**脏率不得上升**，重复计数上升（D2 见 §D）。原型已实测：若把重复计为脏，重放 5 条合法事件会把脏率从 0% 推到 50%（真脏 0 条）。
-  - **漏斗单调且诚实**：`funnel_cnt_observed` 允许非单调（真实跳步），`funnel_cnt_inferred` 必须单调不增。
-  - **UV 精确性**：实时滚动 UV 与离线精确 UV **逐窗口相等**（【已确认 Q23】使对账从「误差量化」升级为一致性校验）。
+  - **漏斗单调且诚实**：`funnel_cnt_inferred` 沿 `step_no` 1→4 **非增**，违反即 fail；`funnel_cnt_observed` **不设**单调断言（`--chaos-ratio` 下跳步合法）。
+  - **漏斗行修正语义**：`purchase` 迟到 **≤120 s** 落入已落定窗口 ⇒ 该分钟漏斗客数被修正、`ads_funnel_step.revision` **+1**（`revision` 语义与 `ads_window_metric` 同构）；**超期（>120 s）只计数、绝不修正**。依据：TTL 32 min ＝ 30 min 会话 ＋ 2 min 允许延迟。**漏斗唯一键不含 revision**：维持 `(session_date, step_no, window_start)`，`revision` 是值列。
+  - **UV 对账（精确性）**：实时滚动 UV 由 Flink 侧**精确**去重（近似降级为可选实验）；**对账断言条文**——P2 起 `lake_assert.sh` 逐 `metric_name` 比对 Paimon（离线口径基准）与 Doris（看板供数点）两套 `ads_window_metric`，**只比 `is_settled=1`**，逐值严格相等；**P1 阶段显式 SKIP**（场景前置标记，**不是永久豁免**）。切窗口径：`window_start = floor(event_time_ms/60000)×60000`（UTC epoch 对齐），UV 按 1 h epoch 对齐同理。
 
 ### 1.4 模块④ 湖仓分层
 
@@ -124,9 +125,10 @@
 1. 【已确认 Q25】**ODS 只落原样字节**：`payload` 原文 + `kafka_partition` / `offset` / `timestamp` 元数据。**一切解析、类型归属、时间单位转换都在 DWD 完成**。
    理由：`REQ-F-LAKE-01` 要求「不做有损加工」；秒→毫秒转换一旦在 ODS 发生便不可回滚，重放会拿到被改过的数据。且同类项目的坑正是「schema 变更炸历史分区」——把解析推迟到 DWD 可让 ODS 完全免疫 schema 演进。
 2. DWD：清洗 + 规范化 + 统一 UTC epoch 毫秒 + 超集 schema；**主键表**（`event_id`）。
+   - **对 `schema_version` 的义务**（铁律全文见 `canonical-truth.md` §3.1）：同 major 更高 minor 的**未知可选字段丢弃并计数**；**更高 major 拒收** ⇒ 落 `dwd_behavior_event_reject`，原因码 `schema_major_unsupported`。
 3. DIM：**时态维表**（商品/品类/用户/地域/渠道），主键表 + 拉链区间。【已确认 Q26】由生成器的维度变更流喂给。
 4. DWS：主题宽表聚合；ADS：应用层指标。
-5. 五层全部落 Paimon 单一 catalog（库名 `ecom_lake`）。
+5. 五层全部落 **单一 Paimon catalog**，该 catalog 下的 **`ecom_lake` database** 承载全部五层表（层级 catalog→database→table，**catalog 与 database 不可混说**）。
 6. 表维护：快照保留与 compaction（参数见 §A）。
 
 **状态与数据变化**
@@ -145,13 +147,19 @@
 - 五层表均存在于同一 catalog（`REQ-F-LAKE-06`）；`make replay` 可跑完五层（`REQ-F-LAKE-07`）。
 - **GDD 升级判据（替代原「表属性配置可见、快照数受控」的空泛说法，`REQ-F-LAKE-08`）**：
   - ⚠️ **2026-10-19 修订两处**：①`snapshot.num-retained.min` 是**下限**（快照数**不会低于** 5），实际数量由 `snapshot.time-retained`（1 h）与 `num-retained.max` 决定 ⇒ **「快照数 = 5」是错误预期**，判据须改为「下限 5 生效 + 实际数量受控」；②官方支持系统表的引擎列表（Flink/Spark/Trino/**StarRocks**）**不含 Doris** ⇒ 该查询**必须在 Flink SQL 侧执行**，不能写进 Doris。
-  - 快照数由 Paimon 官方系统表**直接读出**，不靠人眼看配置：`SELECT count(*) FROM <table>$snapshots`（官方原话：「The `snapshots` table lists retained snapshots and their commit metadata」）。
+  - **快照窗 [5, 20]**：`snapshot.num-retained.min = 5`（**显式**）＋ `snapshot.num-retained.max = 20`（把「受控」变成**有限数**）＋ `snapshot.time-retained` 保持 1 h 默认；判据 SQL＝`SELECT count(*) FROM <table>$snapshots` 落 **[5, 20]**（官方原话：「The `snapshots` table lists retained snapshots and their commit metadata」）；`replay` 末尾 `sys.expire_snapshots(retain_max => 20)` 只收**上界**（`retain_max` 是上界，不是「钉住」）。
   - 「有数据」也须用 `COUNT(*)` 判，**不得**用 `total_record_count` —— 官方明确后者是「unmerged counts calculated from data files, **not logical row counts**」（这是个容易算错数的坑）。
   - schema 演进可查：`SELECT * FROM <table>$schemas`（供 F5 演练用）。
 - **GDD 升级判据（原判据空表也能通过）**：
   - DIM 判据从「可 join 出结果」升级为「**同一 `item_id` 在不同 `event_time` 下 join 出不同属性值，且拉链区间无重叠无空洞**」（`REQ-F-LAKE-03` 的强化）。
   - 拒绝表判据为「违规样本被正确分流**且有计数**」，且**必须能区分三类原因**（结构/取值、时间范围、重复）。
-  - **GDD 新增判据**：**不变量断言**——`ODS 行数 = DWD 行数 + 拒绝表行数 + 迟到标记差异`（在给定输入下应可逐条对平）。
+  - **不变量替换为 A1/A2/A3**（原「`ODS 行数 = DWD 行数 + 拒绝表行数 + 迟到标记差异`」**删除**——「迟到标记差异」不是可加项，写不出精确等式）：
+    | # | 断言 | 判据 |
+    | --- | --- | --- |
+    | **A1 分流完备** | `count(DISTINCT event_id)` 在 ODS / DWD / 拒绝表三者闭合 | `ods_distinct = dwd_distinct + reject_distinct`，**全局比对**（ODS 无事件日分区，降为全局粒度，可判性不变） |
+    | **A2 重复记账** | `count(*) − count(DISTINCT event_id)` 记为重复率 | **只入日志、不作断言**（承认恒真；它是「为什么不能可加」的实例） |
+    | **A3 迟到对账** | `count(*) FROM dwd WHERE is_late=1` ＝ `sum(cnt) FROM dwd_late_event_count` | 「只存计数」的唯一用途 |
+  - **主键表写入纪律**：DWD/DIM/DWS/ADS 全部设 `table.exec.sink.upsert-materialize = NONE`（写进 `docker/flink/conf/config.yaml`，P1/P2 共用）；**不设** `sequence.field`——靠重放确定性，同 `event_id` 重复行该值相同 ⇒ 回落内部序，白设。
 
 ### 1.5 模块⑤ OLAP
 
@@ -160,8 +168,8 @@
 **流程**
 - 看板直连库 `ecom_ads`。
 - 【已确认 Q23】表模型**保留 UNIQUE KEY 模型**（Merge-on-Write），写入幂等；滚动 UV 由上游算好以整数写入。
-- 【已确认 Q27】分区保留**必须显式配置**：`dynamic_partition.start = -30`。**官方默认是 -2147483648，语义为「历史分区不删除」**——照默认建表的结果是**永不删除**，与需求**恰好相反**（详见 §D D1）。
-- 覆盖写修正依赖 same-key upsert；如需部分列更新，Doris 对 UNIQUE MoW 支持 `partial_columns=true`，但**默认 INSERT INTO 是整行 UPSERT**，必须显式开启。
+- 【已确认 Q27·2026-10-21 订正】分区保留**必须显式配置**，且**真正的前置条件是表级四项**：`dynamic_partition.enable=true`、**显式** `start=-30`（官方默认 **-2147483648**＝「历史分区不删除」⇒ 照默认建表**永不删除**，与需求**恰好相反**）、`time_unit`＋`end`＋`prefix`、`create_history_partition=true`。⚠️ **FE 级总开关 `dynamic_partition_enable` 不是前置条件**：4.1.5 源码默认 **`true`**（**不是** `false`）⇒ 原「第三个前置条件」**作废**（详见 §D D8）。
+- 覆盖写修正依赖 same-key upsert。**`partial_columns=true` 不是表属性**——它是**导入 header / `sink.properties.*`**（`INSERT INTO` 路径走会话变量 `enable_unique_key_partial_update`），建表时写它无效；`INSERT INTO` 默认仍是**整行 UPSERT**。普通 `partial_columns` 受 **Batch constraint** 限制（**一批内只能更新同一组列**）；同批多列组须用 **3.1.0+ 灵活列更新**（JSON ＋ `skip_bitmap_column`，**禁用 `sequence_col`**）。依据与逐字见 `spec.md` §7.2 #18（冲突 O，事实类）。
 
 **状态与数据变化**：窗口行 `写入 → 暂定值 → 落定 → (被修正，revision+1)`。
 
@@ -176,9 +184,13 @@
 
 **流程**
 - 面板：实时 PV / UV、4 步转化漏斗（**步进式**）、实时 GMV、品类分布、地域分布；【SHOULD】脏数据率。
-- 地域与品类**不依赖 GIS/底图**：省份排行横条 + 自绘省份方格地图 + 品类 treemap。
+- 地域与品类**不依赖 GIS/底图**：省份**横条排行**（ECharts Bar 横向，`orientation`）＋ 品类 treemap。⚠️ **方格地图条目已否决、改为横条排行**：`deck_geojson` 需 GeoJSON 列 ＋ 默认 OSM 底图，**违背「不依赖 GIS/底图」**；`REQ-F-BI-01` 只要求「地域分布」、不指定形式。
 - **实时感**：数值跳动 + 相对基线 delta + sparkline + 阈值带，再加 **as-of / 已修订指示**。
 - 【已确认 Q13】必须**视觉区分暂定值与落定值**（窗口关闭前是暂定），否则是「假实时」。
+- **三态载体（已签）**：**B 单表行内状态为主** ＋ **A 式补充**——
+  - **B（主载体）**：Table ＋ 自定义 SQL `CASE WHEN is_settled=0 THEN '暂定' WHEN revision>0 THEN '已修订' ELSE '落定' END` ＋ 条件格式。三态、`revision`、as-of 同行可见，零插件。
+  - **A（补充）**：当前窗口「暂定」Big Number 与落定值并排（跳动的那个数是暂定值）。
+  - **C 单图双色叠加不实现**：「修订描边」需 DOM 挂钩，CSP `script-src: 'self' 'strict-dynamic'` 禁自定义 JS；**留原型证据**。
 - 【已确认】刷新下限：Superset **没有**「不得小于 10 秒」的硬下限（`SUPERSET_DASHBOARD_PERIODICAL_REFRESH_LIMIT = 0` 仅警告阈值，自定义下限 1 s），故 ≤10 s 可实现。
 
 **状态与数据变化**：面板值 `暂定 → 落定 → 已修订`；脏率分子只含**真脏**，重复不进分子。
@@ -202,13 +214,15 @@
 - 【已确认 G3】Superset 复用官方 `docker/` 骨架（compose + entrypoint + 初始化脚本），但剥离其演示用示例数据。
   **初始化的确切顺序**（官方 `docker-init.sh` 实证）：① `superset db upgrade` → ② `superset fab create-admin` → ③ `superset init`（建默认角色与权限）→ ④ `superset load_examples`（**可选，本项目应关闭**）。密钥由环境变量 `SUPERSET_SECRET_KEY` 提供（官方变量名）。
   看板交付形式：`superset import-dashboards -p <.zip>`（产物由 `superset export-dashboards` 生成；zip 内含 `metadata.yaml`、`dashboards/*.yaml`、`charts/*.yaml`、`datasets/*.yaml` 等）。⚠️ 该 CLI 的官方原话**只在源码 docstring**（「Export dashboards to ZIP file」），官方文档页未见——故文档引用时注明「源码级证据」。
+  **zip 定位**：zip 保留为 `make init` 的**复现手段**（手段归本节 §1.7）；**判据归 SRS**（浏览器能看能刷，`REQ-F-BI-01..03`）——手段与判据不混说。
+  ⚠️ **新硬约束（源码级，`database_uuid`）**：dashboard importer 逐字 `config["database_id"] = database_ids[config["database_uuid"]]` ⇒ **dataset 经 `database_uuid` 匹配目标实例的 database**。`make init` 建 `ecom_ads` 连接时**必须固定/回填该 UUID**，否则导入后全部图表断链。
 - 逐服务显式 `mem_limit`；`restart: unless-stopped`；端口仅绑 `127.0.0.1`；日志轮转 10 MB × 3。
   - ⚠️ **2026-10-19 补**：`mem_limit` **管不到 swap**（官方：只设 `memory` 不设 `memswap_limit` 时容器可借**等量** swap）⇒ **每个服务同时写 `memswap_limit` ＝ `mem_limit`**，否则 `REQ-F-ORCH-02` 有渗漏点。
   - ⚠️ **不与** `deploy.resources.limits.memory` **并存**（官方：`deploy` 是可选段、未实现即忽略；并存时要求二者一致）。
   - ⚠️ 「逐服务不允许缺省」须由 `make verify` **脚本断言**：`docker compose config` 能**列出** `mem_limit`（实测会把 `128m` 正常化为字节值）但**不报缺**。
   - ⚠️ 体积/冷启动记账用 **`docker image inspect`**，**不用 `docker images`**（本机 `UseContainerdSnapshotter=true`，官方警告此时读数是**压缩 blob 叠加**、显著虚高）。
 - named volume 持久化 Kafka/Paimon/Doris/Superset 元数据——【已确认 G2】在 Doris 这一侧这是**必需而非优化**，否则 `down` 即丢数据、直接违反 `REQ-NF-REL-02`。
-- Makefile 目标：`up` / `down` / `init` / `replay` / `verify` / `spike` / `verify-fault` / `logs`。
+- Makefile 目标：`up` / `down` / `init` / `replay` / `verify` / `spike` / `verify-fault` / `logs`；**FC-1（2026-10-21 已批）新增 `lint` / `typecheck`**——静态检查与运行时烟测分开，`verify` 保持冻结、只做运行时烟测，`make check` **不新增**（原生多目标并列）。
 
 **状态与数据变化**：服务态 `created → running → (restarting) → exited`；卷在 `down` 后保留、在 `down -v` 后销毁。
 
@@ -225,7 +239,7 @@
 **状态与数据变化**：无自身状态；产出断言结果与退出码。
 
 **验收判据**
-- `make verify` 五项断言全通过、退出码 0（`REQ-F-VERIFY-01`）。**五项的确切断言形式**（据官方接口，避免「配置可见」式空判据）：
+- **`make verify` 判定分层（已签，进码语义）**：**P1 ＝ 4 真断言 ＋ 1 显式 SKIP**（第三项「Paimon 五层有行」SKIP，**不计通过、不计 fail**）；**P2 ＝ 5 真断言**（五项全真）。**五项的确切断言形式**（据官方接口，避免「配置可见」式空判据）：
 
 | 烟测项 | 可执行断言 | 出处/接口 |
 | --- | --- | --- |
@@ -235,12 +249,19 @@
 | Doris ADS 有行 | `SELECT COUNT(*) FROM ecom_ads.<ads_table>`；FE 健康 `GET :8030/api/health` 返回 `online_backend_num == total_backend_num` | [FE health-action](https://doris.apache.org/docs/3.x/admin-manual/open-api/fe-http/health-action/) |
 | Superset 健康 | `GET /health` 返回 **200 且响应体为纯文本 `OK`**（⚠️ **不是 JSON**，别按 JSON 解析） | [health.py](https://github.com/apache/superset/blob/master/superset/views/health.py) |
 
-- `REQ-F-VERIFY-02` 幂等：同 `--seed` 同批数据跑两遍，Doris 结果一致。
-- `REQ-F-VERIFY-03` 故障注入：kill TaskManager → 从 checkpoint 自动恢复 → 校验条数一致。
+- **场景依赖判据**带「场景前置」标记：`revision>0` 出现、UV 对账等**仅在对应注入器/离线场景激活时判定**，否则 SKIP——**不是永久豁免**。
+- `REQ-F-VERIFY-02` 幂等**不进 `verify` 每次运行**（全量重放两遍是重操作）：P2 起由**离线幂等断言**（同批 dump 重放两遍，DWD `count(*)` 与逐列校验和 `SUM(crc32(concat_ws('|', event_id, is_late, late_lag_ms)))` 两次一致）＋ `verify-fault` **恢复重放**共同覆盖。
+- `REQ-F-VERIFY-03` **`verify-fault` 全参数化判据**（两处超时均为**设计值**）：
+  1. **输入冻结**（停生成器或固定 dump 回放）→ 等 lag==0；
+  2. **快照基线**：`ads_window_metric` 与 `ads_funnel_step` **两表** `count`+`sum`、DLQ 计数、Kafka committed offset；
+  3. **kill TM**；
+  4. 轮询 `GET /jobs/overview` 到 `RUNNING`，超时 **120 s** → **超时即 fail**；
+  5. 等 lag==0 **且此后完成一次 checkpoint**，超时 **300 s**；
+  6. 比对两表 `count`/`sum` 与基线**全等**、**重复通道计数上升**（证明确有重放且被幂等吸收）。
   **前提**：`execution.checkpointing.externalized-checkpoint-retention` 必须**显式设为 `RETAIN_ON_CANCELLATION`/`RETAIN_ON_FAILURE`**（官方默认 `NO_EXTERNALIZED_CHECKPOINTS`，默认值下**无法**从指定点恢复）。
 - **GDD 新增判据（把「配置可见」升级为「行为可证」）**：
   - `verify-fault` 期间**脏率不得上升**（重复与脏必须可分）。
-  - UV 对账断言为「实时 == 离线精确」，逐窗口比。
+  - UV 对账断言＝「实时 == 离线精确」，**只比 `is_settled=1`**、逐值严格相等（**P1 显式 SKIP**，见 §1.3）。
   - **反例保护**：若 kill 后条数一致但**脏率飙升**，判为**不通过**——那说明重复被误当脏（D2）。
 
 ### 1.9 加强项 A · 数据质量校验（SHOULD）
@@ -430,11 +451,16 @@ pending ──> running ──> published
 | F12 | 窗口规则①误判合法历史数据 | 拒绝表 100% 命中 | **相对下界**（按推荐） | 排查规则 | 公开数据集回放**不应** 100% 被判脏（D4） |
 | F13 | 漏斗状态无限增长 | 状态大小单调上升 | TTL 清理 32 分钟 | 调参 | 状态大小稳定 |
 
+**DLQ 原因码（机读，本节登记）**：脏三值 `schema_invalid` / `value_out_of_range` / `time_out_of_range`；**版本类** `schema_major_unsupported`——消费端**必须拒绝**更高 major 的事件（铁律 S2；全文见 `canonical-truth.md` §3.1，字段语义见 SRS §3.3.1）。
+
+**编号约定**：本表条目称 **§C F‹n›**；引用「F16」时一律写 **§C F16**——**gdd 不存在 `D16`**（§D 止于 D15），勿再写成「gdd D16」。
+
 ---
 
 ## D. 对 SRS 的偏离与缺陷
 
-> 本节目的是**暴露**而非覆盖（按 Q8：不改 `SRS.md`，等 `spec.md` 会话统一收口）。不为「文档说错了」开票；只有需要真正施工动作时才开票。
+> 本节目的是**暴露**而非覆盖（按 Q8 与 `canonical-truth.md` §0 G1 的分档：**事实类可直接改写上游**，**意图类保留原话并登记**，统一口径见 `canonical-truth.md` §1）。不为「文档说错了」开票；只有需要真正施工动作时才开票。
+> **编号约定**：§D 止于 **D15**，**不存在 `D16`**；凡引「F16」者为 **§C 失败路径表 F16**（Kafka named volume 失效），一律写「gdd §C F16」。
 
 ### D1 · `REQ-NF-REL-03` 与 `REQ-F-OLAP-02` 把一件事说成两道独立防线
 SRS 一边要「end-to-end exactly-once：source offset + checkpoint + sink 2PC 三处对齐」，一边要 unique key 幂等。
@@ -448,9 +474,10 @@ SRS 一边要「end-to-end exactly-once：source offset + checkpoint + sink 2PC 
 `REQ-F-VERIFY-03` 的故障注入**本身就是合法重放**，重放事件**必然重复**。若重复＝脏，则每次演练都会把合法重放倒进 DLQ，并让「脏数据率」面板飙到假值。
 **修正**：重复**摘出为独立通道**（计数、不进 DLQ、不计脏率）；脏通道只保留结构与取值、时间范围两类。**原型已实证**该污染：0% → 50%（真脏 0 条）。
 
-### D3 · `REQ-F-MQ-03`「7 天或 2 GB 取小」的实际生效窗约 6 小时
-算术：200 ev/s × ~500 B ≈ **8.05 GB/天** → 2 GB 上限约 **6 小时**触发。
-**后果**：`REQ-F-GEN-07` 的「离线回放」**不得**从 Kafka 重读超 6 小时的历史（应走 `dump` 文件）；`verify-fault` 的恢复窗口若超 6 小时，offset 可能已过期。
+### D3 · `REQ-F-MQ-03`「7 天或 2 GB 取小」的实际生效窗**须按配置层级重算**（2026-10-21 订正）
+`retention.bytes` 官方明写**按分区生效** ⇒ 2 GB 是**每分区**上限，本仓 **6 分区** ⇒ 主题级 **≈12 GB**。按 200 ev/s × ~500 B ≈ **8.05 GB/天** 推算，**实际生效窗 ≈36 小时**（**设计值**，算术推算；旧「≈6 小时」把 `retention.bytes` 误当主题级总量，**作废**）。另：段被删后还要等 `file.delete.delay.ms`（默认 60 s）才真正删文件。
+⚠️ **逐字出处订正**：旧文所引「A segment will be deleted whenever **either** of these criteria are met」**在 Kafka 4.3 官方站未逐字命中**——官方逐字在 **Log 实现页**（"a segment that is eligible for deletion due to either policy will be deleted"）与 `cleanup.policy` 条目；引用须改指该处，勿再引旧句。
+**后果**：`REQ-F-GEN-07` 的「离线回放」**不得**从 Kafka 重读超出保留窗（≈36 h，设计值）的历史（应走 `dump` 文件）；`verify-fault` 的恢复窗口若超出该窗，offset 可能已过期。
 
 ### D4 · ★致命★ `REQ-F-LAKE-09` 与质量规则①互斥，公开数据集回放会 100% 被判脏
 - `SRS.md` §3.3 规则①：`event_time` **不早于 2020-01-01**。
