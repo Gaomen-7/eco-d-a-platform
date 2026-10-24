@@ -1,0 +1,134 @@
+WARNING: Unknown module: jdk.compiler specified to --add-exports
+WARNING: Unknown module: jdk.compiler specified to --add-exports
+WARNING: Unknown module: jdk.compiler specified to --add-exports
+WARNING: Unknown module: jdk.compiler specified to --add-exports
+WARNING: Unknown module: jdk.compiler specified to --add-exports
+Oct 24, 2026 2:09:19 AM org.jline.utils.Log logr
+WARNING: Unable to create a system terminal, creating a dumb terminal (enable debug logging for more information)
+[34;1m[INFO] Executing SQL from file.[0m
+
+Command history file path: /opt/flink/.flink-sql-history
+Flink SQL> [34;1m[INFO] Execute statement succeeded.[0m
+
+Flink SQL> [34;1m[INFO] Execute statement succeeded.[0m
+
+Flink SQL> [34;1m[INFO] Execute statement succeeded.[0m
+
+Flink SQL> [34;1m[INFO] Execute statement succeeded.[0m
+
+Flink SQL> CREATE CATALOG IF NOT EXISTS paimon WITH ('type' = 'paimon', 'warehouse' = 'file:/warehouse')[34;1m[INFO] Execute statement succeeded.[0m
+
+Flink SQL> [34;1m[INFO] Execute statement succeeded.[0m
+
+Flink SQL> [34;1m[INFO] Execute statement succeeded.[0m
+
+Flink SQL> 
+> -- E1 逐表快照数（票面 AC：逐表查 $snapshots，落 [1,20]）
+> SELECT 'snap_ods' AS k, CAST(COUNT(*) AS STRING) AS v FROM ods_behavior_event$snapshots
+> UNION ALL SELECT 'snap_dwd', CAST(COUNT(*) AS STRING) FROM dwd_behavior_event$snapshots
+> UNION ALL SELECT 'snap_reject', CAST(COUNT(*) AS STRING) FROM dwd_behavior_event_reject$snapshots
+> UNION ALL SELECT 'snap_dim_item', CAST(COUNT(*) AS STRING) FROM dim_item$snapshots
+> UNION ALL SELECT 'snap_dim_category', CAST(COUNT(*) AS STRING) FROM dim_category$snapshots
+> UNION ALL SELECT 'snap_dim_user', CAST(COUNT(*) AS STRING) FROM dim_user$snapshots
+> UNION ALL SELECT 'snap_dim_region', CAST(COUNT(*) AS STRING) FROM dim_region$snapshots
+> UNION ALL SELECT 'snap_dim_channel', CAST(COUNT(*) AS STRING) FROM dim_channel$snapshots
+> UNION ALL SELECT 'snap_dws', CAST(COUNT(*) AS STRING) FROM dws_subject_window$snapshots
+> UNION ALL SELECT 'snap_ads', CAST(COUNT(*) AS STRING) FROM ads_window_metric$snapshots
+> UNION ALL SELECT 'snap_late', CAST(COUNT(*) AS STRING)+-------------------+---+
+|                 k | v |
++-------------------+---+
+|          snap_ods | 6 |
+|          snap_dwd | 6 |
+|       snap_reject | 0 |
+|     snap_dim_item | 5 |
+| snap_dim_category | 5 |
+|     snap_dim_user | 5 |
+|   snap_dim_region | 5 |
+|  snap_dim_channel | 5 |
+|          snap_dws | 5 |
+|          snap_ads | 5 |
+|         snap_late | 5 |
++-------------------+---+
+11 rows in set (3.55 seconds)
+
+Flink SQL> 
+> -- E2 A1 三量（本次落地日口径）
+> SELECT 'a1_ods_distinct' AS k, CAST(COUNT(DISTINCT event_id) AS STRING) AS v
+> FROM ods_behavior_event WHERE dt = DATE_FORMAT(CURRENT_TIMESTAMP, 'yyyy-MM-dd')
+> UNION ALL SELECT 'a1_dwd_distinct', CAST(COUNT(DISTINCT event_id) AS STRING) FROM dwd_behavior_event
+> UNION ALL SELECT 'a1_reject_distinct', CAST(COUNT(DISTINCT event_id) AS STRING) FROM dwd_behavior_event_reject
+> UNION ALL SELECT 'a2_dup_overshoot', CAST(COUNT(*) - COUNT(DISTINCT event_id) AS STRING)
+>   FROM ods_behavior_event WHERE dt = DATE_FORMAT(CURRENT_TIMESTAMP, 'yyyy-MM-dd')+--------------------+---------+
+|                  k |       v |
++--------------------+---------+
+|    a1_ods_distinct | 1048576 |
+|    a1_dwd_distinct | 1048576 |
+| a1_reject_distinct |       0 |
+|   a2_dup_overshoot |       0 |
++--------------------+---------+
+4 rows in set (7.40 seconds)
+
+Flink SQL> 
+> -- E3 A3 两侧总量（逐档相等由 assert_lake.sql 哨兵判；这里只留侧写）
+> SELECT 'a3_late_rows' AS k, CAST(COUNT(*) AS STRING) AS v FROM dwd_behavior_event WHERE is_late = 1
+> UNION ALL SELECT 'a3_cnt_sum', CAST(COALESCE(SUM(cnt),0) AS STRING)+--------------+--------+
+|            k |      v |
++--------------+--------+
+| a3_late_rows | 131316 |
+|   a3_cnt_sum | 131316 |
++--------------+--------+
+2 rows in set (1.52 seconds)
+
+Flink SQL> 
+> -- E4 幂等指纹
+> SELECT 'fp_rows' AS k, CAST(COUNT(*) AS STRING) AS v FROM dwd_behavior_event
+> UNION ALL SELECT 'fp_hash', CAST(SUM(CAST(HASH_CODE(CONCAT_WS('|', event_id,
+>       CAST(is_late AS STRING), CAST(late_lag_ms AS STRING))) AS BIGINT)) AS STRING) FROM dwd_behavior_event
+> UNION ALL SELECT 'fp_devent', CAST(COUNT(DISTINCT event_id) AS STRING) FROM dwd_behavior_event
+> UNION ALL SELECT 'fp_dlag', CAST(COUNT(DISTINCT late_lag_ms) AS STRING)+-----------+------------------+
+|         k |                v |
++-----------+------------------+
+|   fp_rows |          1048576 |
+|   fp_hash | 1126399221523001 |
+| fp_devent |          1048576 |
+|   fp_dlag |           131267 |
++-----------+------------------+
+4 rows in set (3.65 seconds)
+
+Flink SQL> 
+> -- E5 拉链：三张表的版本数 / 断点数 / 重叠数 / audit_log 变更 id 数
+> SELECT 'zip_item_versions' AS k, CAST(COUNT(*) AS STRING) AS v FROM dim_item
+> UNION ALL SELECT 'zip_item_ids', CAST(COUNT(DISTINCT item_id) AS STRING) FROM dim_item
+> UNION ALL SELECT 'zip_user_versions', CAST(COUNT(*) AS STRING) FROM dim_user
+> UNION ALL SELECT 'zip_user_ids', CAST(COUNT(DISTINCT user_id) AS STRING) FROM dim_user
+> UNION ALL SELECT 'zip_cat_versions', CAST(COUNT(*) AS STRING) FROM dim_category
+> UNION ALL SELECT 'zip_audit_item_changed', CAST(COUNT(*) AS STRING) FROM (
+>   SELECT item_id FROM dim_item$audit_log GROUP BY item_id HAVING COUNT(*) >= 2) x
+> UNION ALL SELECT 'zip_audit_user_changed', CAST(COUNT(*) AS STRING) FROM (
+>   SELECT user_id FROM dim_user$audit_log GROUP BY user_id HAVING COUNT(*) >= 2) y
+> UNION ALL SELECT 'zip_audit_cat_changed', CAST(COUNT(*) AS STRING) FROM (
+>   SELECT category_id FROM dim_category$audit_log GROUP BY category_id HAVING COUNT(*) >= 2)+------------------------+--------+
+|                      k |      v |
++------------------------+--------+
+|      zip_item_versions |   2417 |
+|           zip_item_ids |   2000 |
+|      zip_user_versions | 102978 |
+|           zip_user_ids | 100000 |
+|       zip_cat_versions |     17 |
+| zip_audit_item_changed |    398 |
+| zip_audit_user_changed |   2978 |
+|  zip_audit_cat_changed |      5 |
++------------------------+--------+
+8 rows in set (2.08 seconds)
+
+Flink SQL> +---------------------+----+
+|                   k |  v |
++---------------------+----+
+| opt_dim_channel_max | 20 |
+| opt_dim_channel_min |  5 |
++---------------------+----+
+2 rows in set (1.01 seconds)
+
+Flink SQL> 
+Shutting down the session...
+done.

@@ -31,12 +31,14 @@ DORIS_FE   := 8030
 DORIS_MYSQL:= 9030
 SUPERSET   := 8088
 
-.PHONY: help up down init replay verify spike verify-fault verify-fault-corrupt logs lint typecheck client smoke config-check build-flink-image
+.PHONY: help up down init replay verify spike verify-fault verify-fault-corrupt logs lint typecheck client smoke config-check build-flink-image assert replay-idempotent
 
 help:
 	@echo "冻结目标：up down init replay verify spike verify-fault logs"
-	@echo "新增目标（设计面）：verify-fault-corrupt lint typecheck client config-check build-flink-image"
+	@echo "新增目标（设计面）：verify-fault-corrupt lint typecheck client config-check build-flink-image assert replay-idempotent"
 	@echo "  build-flink-image：预取 Paimon jar 并构建本地 Flink 镜像（up 之前必须先跑一次）"
+	@echo "  assert：离线断言集（A1/A3/快照/拉链，impl-03d）—— replay 之后跑"
+	@echo "  replay-idempotent：同批重放两遍 + 指纹比对（幂等离线版，impl-03d）"
 
 # ── 编排 ────────────────────────────────────────────────────────────
 # ── 本地镜像构建（impl-03a）─────────────────────────────────────────────
@@ -90,6 +92,27 @@ init: up
 #     1=执行失败。故 03c 之前**绿路径只有 LAYER=dwd**；不写 LAYER 会 exit 3。
 replay:
 	@LAYER="$(LAYER)" bash scripts/lake_replay.sh
+
+# ── 离线断言（impl-03d，spec §5.4/§5.5）────────────────────────────────
+# 为什么是独立目标而不是塞进 `replay`：
+#   ① 断言要能在**不重跑五层**的前提下反复跑（归因/调试时最常做这件事）；
+#   ② 幂等判据要求「同批重放两遍」，把它塞进 replay 会让每次 `make replay`
+#      都变成两倍工作量 —— spec §8.2 明确「幂等不进每次 verify」。
+# 判据逻辑在 scripts/lake_assert.sh（⚠️ 必须 `bash …` 调，本仓不跟踪 exec 位）。
+assert:
+	@bash scripts/lake_assert.sh
+
+# 幂等离线版（REQ-F-VERIFY-02）：同批 dump 重放两遍，DWD 指纹必须逐字相同。
+# 时序：① replay + 记指纹 → ② replay（同批，不重产）+ 比指纹并覆盖。
+# ⚠️ `FORCE_GEN` 必须为 0（缺省）：重产会换一批数据，「两遍一致」就成了假命题。
+#   本目标**显式**不设 FORCE_GEN，并在下面断言门槛批确实没被重产。
+replay-idempotent:
+	@echo "[idempotent] 第 1 遍：replay + 记录 DWD 指纹"
+	@LAYER= bash scripts/lake_replay.sh
+	@bash scripts/lake_assert.sh --record
+	@echo "[idempotent] 第 2 遍：同批再 replay 一遍 + 与上一遍比指纹"
+	@LAYER= bash scripts/lake_replay.sh
+	@bash scripts/lake_assert.sh --compare
 
 # ── 可复现校验（SRS §3.1.8 五项；spec §4.3 分层）─────────────────────
 # 判据逻辑在 src/ecomgen/verify_runner.py，**不**内嵌 heredoc：

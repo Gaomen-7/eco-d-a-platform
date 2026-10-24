@@ -80,6 +80,26 @@ _Avoid_: 指标、度量（不加限定地说「指标」时，指的是 pv/uv/g
 它是拉链表的**唯一时间源**：@valid_from_ms = change_time@，
 @valid_to_ms = 下一版 change_time − 1@。⚠️ 它与事件流同属「门槛批现产」这一步。
 _Avoid_: 维表数据、静态维（当所指其实是这个变化流时）
+**快照保留三参数 / 保护下界**：
+Paimon 表的三条保留属性，**语义各不相同、不可互相冒充**：
+`snapshot.num-retained.min`（本仓显式 **5**，官方默认 10）是**保护下界**——它是「不许再删」的
+底线，**不制造快照**（官方逐字：快照数低于 min 时，即便 `time-retained` 满足也不过期）；
+`snapshot.num-retained.max`（本仓 **20**，官方默认 `Integer.MAX_VALUE`/`infinite`，两页不一致 D-13）
+是数量上限；`snapshot.time-retained`（本仓**保持官方默认 1 h、不写**）是时间窗。
+⇒ **实际快照数由「1 h 窗口内的提交数」与 max 共同决定，min 只兜底**。
+所以「跑完 replay 应有 5 个快照」是**错误预期**（本仓实测：多张表落在 5~6）。
+`CALL sys.expire_snapshots(retain_max => 20)` 的 `retain_max` 同样是**上界不是钉住**。
+_Avoid_: 快照数、retain_max（当把它读成「钉在 20」时）、保留策略（不加限定）
+
+**断言哨兵（sentinel）**：
+一段**自己把结论打成字符串**的 SELECT，形如 `SELECT '<名>' AS assertion, 'ok=true' AS ok`。
+存在理由：`sql-client.sh -f` 语句报错后**仍以 0 退出**（源码事实：`CliClient` 丢弃返回值、
+无 `System.exit`）⇒ 退出码不可用，判据只能落在 stdout 上。
+配套的 `scripts/lake_assert.sh` 按**硬编码清单**逐条核对「该名字出现且 ok=true」——
+「没有 ok=false 就通过」是假绿通道（语句整段没跑也会满足它）。
+⇒ 与它对立的是**度量行**（`| metric.<名> | <值> |`）：只入日志、不参与成败（A2 属此类）。
+_Avoid_: 断言脚本、healthcheck（不加限定地说「有断言」时，要问是哨兵还是度量）
+
 **事件结构分布**：
 同一 1 分钟窗口内各事件类型的计数比。
 **它不是转化率**——用户的浏览与支付通常落在不同分钟的窗口里。

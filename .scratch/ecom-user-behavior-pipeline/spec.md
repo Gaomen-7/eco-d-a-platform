@@ -466,6 +466,14 @@ SELECT '<断言名>' AS assertion, COUNT(*)>0 AS ok FROM …
 
 各票的「官方未给出清单」是施工时**遇到就登记、不臆造**的清单，重点几条：`sys.compact` 对主键表的逐句适用声明、Flink SQL 断言失败→非零退出码机制（**源码显示不存在**）、Paimon `file://` compaction 成本数字、Group Window Aggregation `deprecated` 的移除时间表、`AUTH_ANONYMOUS` 注释逐字、`partial_columns` 作为建表属性（**官方文档与源码均无**）。
 
+**impl-03d 施工中新登记的（2026-10-24）：**
+
+- **`sys.expire_snapshots` 的 `retain_min` 缺省回落表属性 `snapshot.num-retained.min`** —— **源码级**结论（`ProcedureUtils#fillInSnapshotOptions`），**官方文档未给出**该回落关系（只有 Spark 侧 `expire_changelogs` 有逐字表述）。⇒ 本仓不依赖它：`replay_90_maintain.sql` 对所有表**显式** `ALTER TABLE … SET 'snapshot.num-retained.min' = '5'`。
+- **`sys.compact` 的返回值语义** —— 同一 `compact_strategy => 'full'` 在不同表上返回 `JobID=…` 或 `Success`，**官方未给出**这两种返回的判定含义 ⇒ 本条不解析返回值，判据只落在「无错误标记 + 后续断言」上。
+- **`$audit_log` 的可见窗口与快照过期的关系** —— 官方未给出「过期后审计日志保留多久」的明确条文。⇒ 拉链的「变更发生过」判据**只要求现在能看到痕迹**，不要求历史全在（见 `assert_lake.sql` ⑥b）。
+- **Flink SQL 的 `crc32` 函数** —— spec §5.4 的伪代码写了 `SUM(crc32(...))`，但 **Flink 2.2 SQL 没有该函数**（实机逐字：`No match found for function signature crc32(<CHARACTER>)`）。⇒ 这是**伪代码不成立**而非「官方未给出」；已改用 `SUM(CAST(HASH_CODE(...) AS BIGINT))`。
+
+
 ---
 
 ## ⑨ 追溯表（发布闸门）

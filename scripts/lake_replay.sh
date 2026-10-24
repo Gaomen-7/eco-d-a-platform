@@ -173,5 +173,25 @@ for entry in "${LAYERS[@]}"; do
   i=$((i + 1))
 done
 
+# ── 2. 维护段（impl-03d，spec §5.3 末两项之二）──────────────────────────
+# ★ 只在**全量 replay**（未给 LAYER）时跑：维护段的语义是「这批五层数据落稳之后
+#   收快照/压文件」，LAYER 截断时数据还不完整，压了也只是白做。
+# ★ 不计入 LAYERS 数组：它不是「层」（spec §5.3 的层词汇表是 ods|dwd|dim|dws|ads），
+#   故 `LAYER=maintain` **不是**合法取值（与拒绝表用 `dwd_reject` 的取舍同源）。
+# ★ 这一段的 marker 用 `maintain rows=` 而**不是** `layer=maintain`，理由同上；
+#   run_sql 的 marker 参数是任意子串，故直接传即可。
+if [ "$STOP_AT" -lt 0 ]; then
+  run_sql maintain "replay_90_maintain.sql" "maintain rows="
+  rc=$?
+  if [ "$rc" -eq 3 ]; then
+    echo "[replay] ✗ 维护脚本缺失（$SQL_DIR/replay_90_maintain.sql）。" >&2
+    echo "[replay]   维护段是 replay 的一部分（快照 [5,20] 靠它收敛），缺失即 exit 3" >&2
+    exit 3
+  fi
+  if [ "$rc" -ne 0 ]; then exit 1; fi
+else
+  echo "[replay] -- 跳过维护段（LAYER=$LAYER 截断时不收快照/不压文件）"
+fi
+
 echo "[replay] 完成（请求范围全部跑完）"
 exit 0

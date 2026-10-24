@@ -20,6 +20,29 @@
 --
 -- ★ 本文件只建表，不写任何断言（断言归 impl-03d，03d 之前 assert_lake.sql 可不存在）。
 
+-- ════════════════════════════════════════════════════════════════════
+-- ★★ 快照保留：每张表都显式写 `min=5` / `max=20`（impl-03d，spec §5.4）
+-- ════════════════════════════════════════════════════════════════════
+-- 官方给出的两条语义（⚠️ 都**不是**「快照数 = 5」的意思）：
+--   1. `snapshot.num-retained.min` 是**保护下界**，官方逐字：
+--      "When the number of snapshots is less than `snapshot.num-retained.min`,
+--       no snapshots will be expired (even the condition `snapshot.time-retained` meet)"
+--      ⇒ 它**只阻止过期、不制造快照**。新建的空表只有 1 个快照是正常的，
+--        「跑完 replay 应有 5 个快照」是**错误预期**（gdd:149 已修订、HLD G-D2 已订正）。
+--   2. `snapshot.num-retained.max` 把「受控」落成**有限数**（官方默认
+--      `Integer.MAX_VALUE`／另一页写 `infinite`，D-13 已记录官方两处不一致）。
+--   3. `snapshot.time-retained` **本文件不写** —— 保持官方默认 **1 h**。
+--      它是三者里最常被误读的一条：**实际**快照数由
+--      「`time-retained` 窗口内的快照数量」与 `max` 共同决定，`min` 只在
+--      「数不够」时兜底。
+--      ★ 实测（impl-03d）：`sys.expire_snapshots(retain_max => 20)` 在某表上
+--        把 10 个快照压到 **5** 个 —— retain_max=20 是**上界**，实际删到哪由
+--        `time-retained`(1 h) 与 `min`(5) 决定。见票面 Progress 的逐表数值。
+--
+-- ⚠️ 写 `min=5` 是因为**官方默认是 10**（gdd D2 要求显式 5）—— 不写会拿到 10，
+--    而 10 仍在 [5,20] 区间内 ⇒ **判据觉察不到漏写**，故必须由静态守卫钉住。
+--    守卫：tests/test_lake_assert.py::test_every_table_pins_snapshot_retention
+
 SET 'sql-client.execution.result-mode' = 'TABLEAU';
 SET 'execution.runtime-mode' = 'batch';
 
@@ -65,7 +88,10 @@ CREATE TABLE IF NOT EXISTS ods_behavior_event (
   dt             STRING COMMENT '落地日 yyyy-MM-dd（UTC）'
 ) PARTITIONED BY (dt)
 WITH (
-  'bucket' = '-1'
+  'bucket' = '-1',
+  -- 快照保留 min=5 / max=20（来历与三条容易读错的语义见文件头「快照保留」段）
+  'snapshot.num-retained.min' = '5',
+  'snapshot.num-retained.max' = '20'
 );
 
 -- ════════════════════════════════════════════════════════════════════
@@ -96,7 +122,10 @@ CREATE TABLE IF NOT EXISTS dwd_behavior_event (
 ) PARTITIONED BY (dt)
 WITH (
   'bucket' = '1',
-  'table.exec.sink.upsert-materialize' = 'NONE'
+  'table.exec.sink.upsert-materialize' = 'NONE',
+  -- 快照保留 min=5 / max=20（见文件头「快照保留」段）
+  'snapshot.num-retained.min' = '5',
+  'snapshot.num-retained.max' = '20'
 );
 
 -- ════════════════════════════════════════════════════════════════════
@@ -128,7 +157,10 @@ CREATE TABLE IF NOT EXISTS dwd_behavior_event_reject (
   ingest_time    BIGINT COMMENT '摄入时刻 epoch ms（处理时间）'
 ) PARTITIONED BY (dt)
 WITH (
-  'bucket' = '-1'
+  'bucket' = '-1',
+  -- 快照保留 min=5 / max=20（来历与三条容易读错的语义见文件头「快照保留」段）
+  'snapshot.num-retained.min' = '5',
+  'snapshot.num-retained.max' = '20'
 );
 
 -- ════════════════════════════════════════════════════════════════════
@@ -168,7 +200,10 @@ CREATE TABLE IF NOT EXISTS dim_item (
   PRIMARY KEY (item_id, valid_from_ms) NOT ENFORCED
 ) WITH (
   'bucket' = '1',
-  'table.exec.sink.upsert-materialize' = 'NONE'
+  'table.exec.sink.upsert-materialize' = 'NONE',
+  -- 快照保留 min=5 / max=20（见文件头「快照保留」段）
+  'snapshot.num-retained.min' = '5',
+  'snapshot.num-retained.max' = '20'
 );
 
 CREATE TABLE IF NOT EXISTS dim_category (
@@ -182,7 +217,10 @@ CREATE TABLE IF NOT EXISTS dim_category (
   PRIMARY KEY (category_id, valid_from_ms) NOT ENFORCED
 ) WITH (
   'bucket' = '1',
-  'table.exec.sink.upsert-materialize' = 'NONE'
+  'table.exec.sink.upsert-materialize' = 'NONE',
+  -- 快照保留 min=5 / max=20（见文件头「快照保留」段）
+  'snapshot.num-retained.min' = '5',
+  'snapshot.num-retained.max' = '20'
 );
 
 CREATE TABLE IF NOT EXISTS dim_user (
@@ -196,7 +234,10 @@ CREATE TABLE IF NOT EXISTS dim_user (
   PRIMARY KEY (user_id, valid_from_ms) NOT ENFORCED
 ) WITH (
   'bucket' = '1',
-  'table.exec.sink.upsert-materialize' = 'NONE'
+  'table.exec.sink.upsert-materialize' = 'NONE',
+  -- 快照保留 min=5 / max=20（见文件头「快照保留」段）
+  'snapshot.num-retained.min' = '5',
+  'snapshot.num-retained.max' = '20'
 );
 
 -- ════════════════════════════════════════════════════════════════════
@@ -210,7 +251,10 @@ CREATE TABLE IF NOT EXISTS dim_region (
   PRIMARY KEY (province) NOT ENFORCED
 ) WITH (
   'bucket' = '1',
-  'table.exec.sink.upsert-materialize' = 'NONE'
+  'table.exec.sink.upsert-materialize' = 'NONE',
+  -- 快照保留 min=5 / max=20（见文件头「快照保留」段）
+  'snapshot.num-retained.min' = '5',
+  'snapshot.num-retained.max' = '20'
 );
 
 CREATE TABLE IF NOT EXISTS dim_channel (
@@ -220,7 +264,10 @@ CREATE TABLE IF NOT EXISTS dim_channel (
   PRIMARY KEY (channel) NOT ENFORCED
 ) WITH (
   'bucket' = '1',
-  'table.exec.sink.upsert-materialize' = 'NONE'
+  'table.exec.sink.upsert-materialize' = 'NONE',
+  -- 快照保留 min=5 / max=20（见文件头「快照保留」段）
+  'snapshot.num-retained.min' = '5',
+  'snapshot.num-retained.max' = '20'
 );
 
 -- ════════════════════════════════════════════════════════════════════
@@ -242,7 +289,10 @@ CREATE TABLE IF NOT EXISTS dws_subject_window (
 ) PARTITIONED BY (dt)
 WITH (
   'bucket' = '1',
-  'table.exec.sink.upsert-materialize' = 'NONE'
+  'table.exec.sink.upsert-materialize' = 'NONE',
+  -- 快照保留 min=5 / max=20（见文件头「快照保留」段）
+  'snapshot.num-retained.min' = '5',
+  'snapshot.num-retained.max' = '20'
 );
 
 -- ════════════════════════════════════════════════════════════════════
@@ -267,7 +317,10 @@ CREATE TABLE IF NOT EXISTS ads_window_metric (
 ) PARTITIONED BY (dt)
 WITH (
   'bucket' = '1',
-  'table.exec.sink.upsert-materialize' = 'NONE'
+  'table.exec.sink.upsert-materialize' = 'NONE',
+  -- 快照保留 min=5 / max=20（见文件头「快照保留」段）
+  'snapshot.num-retained.min' = '5',
+  'snapshot.num-retained.max' = '20'
 );
 
 -- ════════════════════════════════════════════════════════════════════
@@ -301,5 +354,8 @@ CREATE TABLE IF NOT EXISTS dwd_late_event_count (
   cnt          BIGINT COMMENT '本档**已进 DWD 的迟到行**条数（只存计数，不含被丢弃的超期事件）'
 ) PARTITIONED BY (dt)
 WITH (
-  'bucket' = '-1'
+  'bucket' = '-1',
+  -- 快照保留 min=5 / max=20（来历与三条容易读错的语义见文件头「快照保留」段）
+  'snapshot.num-retained.min' = '5',
+  'snapshot.num-retained.max' = '20'
 );
