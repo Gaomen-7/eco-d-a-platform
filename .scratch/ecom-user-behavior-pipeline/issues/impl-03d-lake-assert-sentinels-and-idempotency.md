@@ -72,7 +72,7 @@ Blocked by: impl-03c
 | `sql/replay_90_maintain.sql` | ⓪ `ALTER TABLE … SET` 快照保留 ×11（幂等兜底）＋① `sys.compact(full)` ×11 ＋② `sys.expire_snapshots(retain_max=>20)` ×11 ＋`maintain rows=` 收尾 |
 | `sql/assert_lake.sql` | 9 条哨兵（`A1_*`/`A3_*`/`IDEMPOTENCY_*`/`SNAP_*`/`ZIP_*`/`OPT_*`）＋ 20+ 条度量行 |
 | `scripts/lake_assert.sh` | 三层判据（docker 退出码 + 无错误标记 + 逐条哨兵）＋ 指纹 `--record/--compare` ＋ `--judge/--parse` |
-| `tests/test_lake_assert.py` | 40 个用例：判定逻辑与退出码 20 条 + SQL/脚本清单一致性 10 条 + 交付面 10 条 |
+| `tests/test_lake_assert.py` | **43** 个用例：判定逻辑与退出码、marker 反假绿、SQL/脚本清单一致性、交付面 |
 | `scripts/lake_replay.sh` | 接维护段（**仅全量 replay**，`LAYER=` 截断时跳过） |
 | `Makefile` | 新目标 `assert` / `replay-idempotent` |
 | `sql/replay_01_ddl.sql` | 11 张表显式 `snapshot.num-retained.min=5` / `max=20` ＋ 头注「快照保留」段 |
@@ -193,7 +193,7 @@ $ make assert
 | **AC8 属性** | `OPT_snapshot_retention` 22/22 命中（11 表 × min/max）；`opt_dim_channel_min/max = 5/20` 抽查留档 |
 | **AC9 拉链** | ① 区间自洽走**普通 SELECT + LEAD**：三表断点/重叠/哨兵尾值 0 处不符；② 变更走 `$audit_log`：item **398** / user **2978** / category **5** 个 id 有 ≥2 条审计记录 |
 | **AC10 retain_max 上界** | 维护段注释逐字说明「上界不是钉住」＋记了本机实测（dim_region 曾 10→5）；`test_maintain_expire_uses_retain_max_20` 钉住该注释必须在 |
-| **AC11 判定逻辑单测** | `tests/test_lake_assert.py` 40 passed（含票面点名的三例） |
+| **AC11 判定逻辑单测** | `tests/test_lake_assert.py` 43 passed（含票面点名的三例） |
 
 ### ★ 失败路径实测（AC2：接线自检）
 
