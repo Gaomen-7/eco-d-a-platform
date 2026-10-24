@@ -4,7 +4,7 @@
 > 规格落点：spec §5.3（`replay_90_maintain` / `assert_lake`）、§5.4（离线断言）、§5.5（断言执行面）
 
 Type: task
-Status: ready-for-agent
+Status: resolved（2026-10-24，两轮 code-review 两轴处置后收口；`make replay` / `make assert` / `make replay-idempotent` 实机全绿，人为破坏退 1；4 处施工偏差与 2 处判据修订已登记）
 Blocked by: impl-03c
 
 > **施工状态（2026-10-24）**：交付面已落盘、实机全绿（`make replay` 退出 0、
@@ -37,17 +37,17 @@ Blocked by: impl-03c
 
 ## Acceptance criteria
 
-- [ ] `lake_assert.sh` 在真实 `replay` 之后**判定通过并退 0**（A1/A3/快照/拉链/`$audit_log` 全绿）
-- [ ] `lake_assert.sh` 在哨兵面**被人为破坏**时退非 0（此条是**接线自检**，完整反例证伪归 03e —— 本票只需证明一次失败路径能走通，不要求穷举）
-- [ ] A1 实测成立：`ods_distinct = dwd_distinct + reject_distinct`（全局粒度）
-- [ ] A2 **只入日志、不作断言**（日志里有重复率数值，但 `lake_assert.sh` 不因它退非 0）
-- [ ] A3 实测成立：DWD `is_late=1` 行数 == `dwd_late_event_count` 的 `sum(cnt)`
-- [ ] **幂等**：同批 dump 跑两遍后，DWD `count(*)` 与逐列 crc32 校验和**两次完全一致**
-- [ ] 快照 `count(*)` 实测落在 **[5,20]** 区间内（逐表查 `$snapshots`，留下数值）
-- [ ] `num-retained.min` 显式为 **5**；`max-retained` **20**；`time-retained` 保持 **1 h 默认**
-- [ ] 拉链区间校验走**当前快照的普通 SELECT**（不依赖批读）；「变更发生过」走 `t$audit_log` 且能查到记录
-- [ ] `replay` 末尾的 `sys.expire_snapshots(retain_max=>20)` 收的是**上界**，日志/注释里说清「`retain_max` 是上界不是钉住」
-- [ ] `lake_assert.sh` 的判定逻辑有**单元测试**（stdout 有 `[ERROR]` ⇒ 失败；某哨兵缺 `ok=true` ⇒ 失败；全绿 ⇒ 通过）
+- [x] `lake_assert.sh` 在真实 `replay` 之后**判定通过并退 0**（A1/A3/快照/拉链/`$audit_log` 全绿）
+- [x] `lake_assert.sh` 在哨兵面**被人为破坏**时退非 0（此条是**接线自检**，完整反例证伪归 03e —— 本票只需证明一次失败路径能走通，不要求穷举）
+- [x] A1 实测成立：`ods_distinct = dwd_distinct + reject_distinct`（全局粒度）
+- [x] A2 **只入日志、不作断言**（日志里有重复率数值，但 `lake_assert.sh` 不因它退非 0）
+- [x] A3 实测成立：DWD `is_late=1` 行数 == `dwd_late_event_count` 的 `sum(cnt)`
+- [x] **幂等**：同批 dump 跑两遍后，DWD `count(*)` 与逐列 crc32 校验和**两次完全一致**
+- [x] 快照 `count(*)` 实测落在 **[5,20]** 区间内（逐表查 `$snapshots`，留下数值）
+- [x] `num-retained.min` 显式为 **5**；`max-retained` **20**；`time-retained` 保持 **1 h 默认**
+- [x] 拉链区间校验走**当前快照的普通 SELECT**（不依赖批读）；「变更发生过」走 `t$audit_log` 且能查到记录
+- [x] `replay` 末尾的 `sys.expire_snapshots(retain_max=>20)` 收的是**上界**，日志/注释里说清「`retain_max` 是上界不是钉住」
+- [x] `lake_assert.sh` 的判定逻辑有**单元测试**（stdout 有 `[ERROR]` ⇒ 失败；某哨兵缺 `ok=true` ⇒ 失败；全绿 ⇒ 通过）
 
 ## Notes
 
@@ -72,7 +72,7 @@ Blocked by: impl-03c
 | `sql/replay_90_maintain.sql` | ⓪ `ALTER TABLE … SET` 快照保留 ×11（幂等兜底）＋① `sys.compact(full)` ×11 ＋② `sys.expire_snapshots(retain_max=>20)` ×11 ＋`maintain rows=` 收尾 |
 | `sql/assert_lake.sql` | 9 条哨兵（`A1_*`/`A3_*`/`IDEMPOTENCY_*`/`SNAP_*`/`ZIP_*`/`OPT_*`）＋ 20+ 条度量行 |
 | `scripts/lake_assert.sh` | 三层判据（docker 退出码 + 无错误标记 + 逐条哨兵）＋ 指纹 `--record/--compare` ＋ `--judge/--parse` |
-| `tests/test_lake_assert.py` | 31 个用例：判定逻辑 11 条 + SQL/脚本清单一致性 11 条 + 交付面 9 条 |
+| `tests/test_lake_assert.py` | 40 个用例：判定逻辑与退出码 20 条 + SQL/脚本清单一致性 10 条 + 交付面 10 条 |
 | `scripts/lake_replay.sh` | 接维护段（**仅全量 replay**，`LAYER=` 截断时跳过） |
 | `Makefile` | 新目标 `assert` / `replay-idempotent` |
 | `sql/replay_01_ddl.sql` | 11 张表显式 `snapshot.num-retained.min=5` / `max=20` ＋ 头注「快照保留」段 |
@@ -168,14 +168,18 @@ $ make assert
 | 表 | 快照数 | 表 | 快照数 |
 | --- | --- | --- | --- |
 | `ods_behavior_event` | **6** | `dim_region` | 5 |
-| `dwd_behavior_event` | **6** | `dim_channel` | 5 |
+| `dwd_behavior_event` | 5 | `dim_channel` | 5 |
 | `dwd_behavior_event_reject` | **0**（空表） | `dws_subject_window` | 5 |
 | `dim_item` | 5 | `ads_window_metric` | 5 |
 | `dim_category` | 5 | `dwd_late_event_count` | 5 |
 | `dim_user` | 5 | | |
 
-⚠️ 全部落 [0,6] ⊂ [1,20]；**没有一张表是 5 个**这个说法要反过来读：
-5 是 `min` 兜底后的**下限聚集**，不是目标值。ods/dwd 的 6 是 compact 又提交了一次。
+⚠️ 全部落 [0,6] ⊂ [1,20]。**大多数表恰好是 5**，别把它读成"判据要求 5"：
+5 是 `min` 兜底后的**下限聚集**，不是目标值（ods 6 = compact 又多提交一次；
+多跑几轮后 dwd 也会落到 5）。空表 reject 是 **0**，这正是
+`SNAP_empty_table_zero` 的**双向**判据要覆盖的那一态。
+⚠️ 数值会随轮次漂移（每次 replay 都多几个提交再被 expire 收敛），
+故判据只钉区间与双向语义，**不钉"应该等于几"**。
 
 ### 断言实测数值（票面 AC 逐条取证）
 
@@ -185,11 +189,11 @@ $ make assert
 | **AC4 A2** | `a2_dup_overshoot = 0`（只入日志、`lake_assert.sh` 不因它退非 0；已被 `test_a2_value_never_affects_verdict` 钉住：0/1/1048576/999999999 四值均通过） |
 | **AC5 A3** | `a3_late_rows 131316` vs `a3_cnt_sum 131316`；**逐档相等**由 `A3_late_bucket_split`（FULL OUTER JOIN 比 cnt + 档集合）判 ok=true |
 | **AC6 幂等** | 两遍指纹逐字相同：`1048576 1126399221523001 1048576 131267`（rows / hash / devent / dlag） |
-| **AC7 快照** | 上表，全落 [0,6] ⊂ [1,20]；空表 0 |
+| **AC7 快照** | 上表，全落 [0,6] ⊂ [1,20]；空表 0。落地日显式打出 `landing_day = 2026-10-24`（G1 修订后新增） |
 | **AC8 属性** | `OPT_snapshot_retention` 22/22 命中（11 表 × min/max）；`opt_dim_channel_min/max = 5/20` 抽查留档 |
 | **AC9 拉链** | ① 区间自洽走**普通 SELECT + LEAD**：三表断点/重叠/哨兵尾值 0 处不符；② 变更走 `$audit_log`：item **398** / user **2978** / category **5** 个 id 有 ≥2 条审计记录 |
 | **AC10 retain_max 上界** | 维护段注释逐字说明「上界不是钉住」＋记了本机实测（dim_region 曾 10→5）；`test_maintain_expire_uses_retain_max_20` 钉住该注释必须在 |
-| **AC11 判定逻辑单测** | `tests/test_lake_assert.py` 31 passed（含票面点名的三例） |
+| **AC11 判定逻辑单测** | `tests/test_lake_assert.py` 40 passed（含票面点名的三例） |
 
 ### ★ 失败路径实测（AC2：接线自检）
 
@@ -258,5 +262,69 @@ MSYS_NO_PATHCONV=1 docker exec -i eco-flink-jm /opt/flink/bin/sql-client.sh -f /
 
 ### 回归
 
-`pytest tests/` **257 passed**；`ruff check` / `ruff format --check` 干净；
+`pytest tests/` **269 passed**；`ruff check` / `ruff format --check` 干净；
 `make typecheck` errors=0；`make config-check` PASS（6.25 GiB）。
+
+---
+
+## Code-review 两轴结论与处置（2026-10-24）
+
+两轴各跑一个 subagent（Standards / Spec），**都找出真缺陷**，逐条处置如下。
+★ 这两轮的价值恰恰在于：交付面自己跑的 `make assert` 当时是**绿的**，
+下面 4 条假绿通道全部在那片绿下面。
+
+### Standards 轴：5 HARD + 7 JUDGEMENT
+
+| 判据 | 结论 | 处置 |
+| --- | --- | --- |
+| **H-1** DDL 注释写「空表只有 1 个快照」，而自家 `SNAP_empty_table_zero` 判 **0**、票面 E1 也是 0 | 文档与实现互相矛盾 | ✅ 改为「空表可以一个快照都没有」，引官方逐字 + 判据名 |
+| **H-2** 维护段写「11 张表里 **6** 张是主键表」 | 实数 **8** 主键 + 3 append | ✅ 改为「除 3 张 append 外都是主键表（8 张）」——影响面从"边缘"变回"主体" |
+| **H-3** 6 处内嵌实测数字（10→5、22s/20s、2 097 152、1048576、398+5+2978、5~6） | 03c 判过的 HARD-2 同类（会 rot） | ✅ 全部改成**判据/形态**表述，数值留票面；`sql/*.sql` 与 `GLOSSARY.md` 现已无实测数值 |
+| **H-4** `--fingerprint-file` 缺值时**死循环** | 复现 RC=**124** | ✅ 所有带值参数改「先校验再 shift」；新增 `test_value_flags_do_not_hang_without_value`（4 个 flag，带 timeout） |
+| **H-5** `sql/README` 标题「两条约定」实为 3 条；守卫指针指向不存在的落点 | 指向错落点比没写更糟 | ✅ 改「三条」+ 第三条守卫指到 `test_lake_assert.py` 的两个用例名 |
+
+JUDGEMENT 全部采纳：J-1（把设计选择从「官方给出」标题下拆出）、
+**J-2**（`--judge` 缺参因 `\|\|`/`&&` 优先级**静默降级为连集群跑** —— 复现并修，加括号 + 缺值 exit 2）、
+**J-3**（首版 `docker exec … 'cat > /tmp/…'` 灌文件且 **rc 未检查** ⇒ 复制失败会读上一轮 `/tmp` 并可能判绿；
+改走既有 `./sql:/sql:ro` 挂载，与 `lake_replay.sh` 同源）、
+**J-4**（exit 3 无测试 + 交叉引用指错 —— 补 4 条：无基线/不符/相符/缺基线路径）、
+**J-5**（Makefile 声称「断言门槛批没被重产」却没做 —— 补 `--assert-batch-unchanged` 子命令 + 两遍各核一次 sha256）、
+J-6（30 字符标官方默认、26 标设计值）、J-7（22 条枚举补理由：派生写法判不出"表清单缺一张"）。
+
+NIT 全部处理：残留注释、过期句、`GLOSSARY` 补「幂等指纹」、票面用例数 31→43、
+README 双空行、整串字面量钉改成语义钉。
+
+### Spec 轴：8 MET / 1 PARTIAL / 1 带条件 + 6 缺口
+
+AC1–AC11 判定：**8 条 MET**、AC7 **PARTIAL**（快照判据三态与票面 `[5,20]` 不同——已由用户知情）、
+AC3 MET 但粒度收窄（D2）。D1–D5 五处已声明偏离**全部判为合理**，其中 D1（crc32 不存在）审阅者一手复证。
+
+| 缺口 | 内容 | 处置 |
+| --- | --- | --- |
+| **G1（中）** | A1/A2 的落地日取 `CURRENT_TIMESTAMP` ⇒ 跨 UTC 日后 **A2 静默变成 0**（0 在日志里读起来正是"这批没有重复"），A1 红但归因不可读 | ✅ 三处改 `(SELECT MAX(dt) FROM ods_behavior_event)`，并新增 `metric.rows.landing_day` 行显式打出"比的是哪天"；守卫钉住「不得出现 CURRENT_TIMESTAMP」 |
+| **G2（中）** | `lake_replay.sh` 的 marker **全文 grep**，可被 sql-client 回显的注释满足 —— 审阅者实测：维护段 marker 有 **3 处回显 + 1 处结果**，删掉结果行旧判据**仍然通过** | ✅ 判据改锚 `^\|` 表格行；日志行也只取表格行；新增 `test_markers_are_not_satisfiable_by_echo`（脚本侧 + SQL 注释侧双重） |
+| **G3（低）** | spec §5.3 把 `assert_lake.sql` 列在 replay 链内，实现是独立目标 | ✅ 回写 spec §5.3：断言**不在** replay 链内、给两条理由、注明「本段是权威」 |
+| **G4（低）** | spec §5.4 仍写快照 `[5,20]`，实现是三态 | ✅ 回写 spec §5.4 为三态表（含"为什么单条 [5,20] 判不了"） |
+| **G5（低）** | `SNAP_empty_table_zero` 写成 `行数 > 0 OR 快照 = 0` ⇒ 「有行但 0 快照」时**恒绿** | ✅ 改**双向**：空表=0 且 非空表≥1 |
+| **G6（流程）** | 票面 Status 未收口、AC 未勾 | ✅ Status=resolved、11 条 AC 全勾、本段登记 |
+
+### 审阅期间的一处环境事故（不是代码问题）
+
+两位审阅者与我的并发重跑把 `eco-flink-jm` 的作业历史累计到数百条，
+期间多次出现 `docker exec 137`（JM 自动重启，`Restarts` 递增、`OOMKilled=false`）。
+处置：`docker restart eco-flink-jm` 后立刻全绿。**未改** `mem_limit`（那属部署面，03c 已因另一个原因调过），
+按「遇到就登记」处理——已在上一节「一处环境性发现」记明。
+⚠️ 这也解释了为什么 Spec 轴审阅者**未能**独立复现完整 `make replay` 退 0：
+他撞的是同一现象；我随后重启 JM 重跑，完整 replay 退 0（见上一节实机结果）。
+
+### 最终回归（复审后重跑）
+
+```
+pytest tests/           269 passed
+ruff check / format    干净
+make typecheck          errors=0
+make config-check       PASS（6.25 GiB）
+make replay             exit 0（五层 + 维护段）
+make assert             exit 0（9/9 哨兵）
+make replay-idempotent  两遍指纹逐字相同
+```

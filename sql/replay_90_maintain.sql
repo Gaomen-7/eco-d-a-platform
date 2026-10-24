@@ -27,8 +27,11 @@
 --       "When the number of snapshots is less than `snapshot.num-retained.min`,
 --        no snapshots will be expired (even the condition `snapshot.time-retained` meet)"
 --   · `snapshot.time-retained`（官方默认 1 h，本仓**不改**）
--- ★ 实测（impl-03d 本机）：某表 10 个快照调 `retain_max => 20` 后剩 **5** 个 ——
---   不是 20，也不是 10。**这就是「上界不是钉住」的可观察证据**。
+-- ★ **可观察形态**（本机实测见过，逐表数值留在票面 Progress、本文件不内嵌）：
+--   调完 `retain_max => 20` 之后，快照数**可能远低于 20** —— 它既不是 20、
+--   也不是调用前的那个数。**这就是「上界不是钉住」的证据**。
+--   ⚠️ 不在此处写具体数字：那是随批次/环境漂移的量，写进来必 rot
+--      （impl-03c 的 code-review HARD-2 判过同类）。
 --   ⚠️ `retain_min` 缺省时回落表属性 `snapshot.num-retained.min` 这一点是
 --      **源码级结论**（`ProcedureUtils#fillInSnapshotOptions`），
 --      **官方文档未给出**该回落关系（只有 Spark 侧 `expire_changelogs` 有逐字表述）
@@ -42,9 +45,10 @@
 --   only bucket=-1 and batch mode"，本仓主键表固定 bucket=1。
 -- · ⚠️ `sys.compact` 对**主键表**的**逐句适用声明官方没有给出**（spec §8.3 登记项）：
 --   官方 procedure 示例含主键表、且 `buckets` 参数明写 "supported only for
---   fixed-bucket tables" ⇒ 只能算**推断级**，不是官方承诺。本仓 11 张表里 6 张是
---   主键表（bucket=1），逐表调用是**保守选择**（可判、不依赖 `compact_database`
---   在 batch 下的未定行为）。
+--   fixed-bucket tables" ⇒ 只能算**推断级**，不是官方承诺。
+--   影响面：本仓 11 张表里**除 3 张 append 表外都是主键表**（bucket=1）——
+--   即 8 张走的是推断级适用性，不是 1~2 张的边缘情况。
+--   逐表调用是**保守选择**（可判、不依赖 `compact_database` 在 batch 下的未定行为）。
 -- · 返回值的两种形态**都算成功、都不可当判据**：实测同一 `compact_strategy=>'full'`
 --   在不同表上返回过 `JobID=…`（真的压了）与 `Success`（没什么可压）。
 --   ⇒ 判据只能看「无错误标记」+ 后续断言的哨兵，**不能**解析这个返回值。
@@ -56,9 +60,9 @@
 -- ════════════════════════════════════════════════════════════════════
 -- ④ 成本与「不做」清单
 -- ════════════════════════════════════════════════════════════════════
--- · 本机实测全量 11 张表约 1~2 分钟（ODS 一张约 22 s，DWD 约 20 s）。
--- · Paimon `file://` 上的 compaction **成本数字官方未给出**（spec §8.3 登记项）
---   ⇒ 上句是**本机实测**，不是官方承诺，别当成跨机保证。
+-- · Paimon `file://` 上的 compaction **成本数字官方未给出**（spec §8.3 登记项）。
+--   本仓只在**本机**量过（量级：分钟级；逐项数值留票面，不写进文件）。
+--   ⚠️ 那是**本机实测**，不是官方承诺、也不是跨机保证 —— 换机/换数据量都会变。
 -- · **不做**（spec §8.2 明列）：排序 compaction（对 bucket=1 主键表官方不支持）·
 --   把幂等检查放进 `replay`（全量重放两遍是重操作，由 03d 离线断言承担）·
 --   「离线重算覆盖实时行」。

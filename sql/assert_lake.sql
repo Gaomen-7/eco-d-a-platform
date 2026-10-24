@@ -29,11 +29,12 @@
 --      · A2（重复记账）落在这一类：spec §5.4 逐字「只入日志、不作断言」。
 --
 -- ★★ 两条实机限制（不满足就会静默漏判，都已实测）：
---   1. **单元格被截断**：TABLEAU 把超过约 30 字符的单元格渲染成 `xxxx...`。
---      本机实测 `A_very_long_assertion_name_for_width_test`（42 字符）渲染成
---      `A_very_long_assertion_name_...`；一个 40+ 字符的指纹串同样会被截断。
---      ⇒ ① 所有哨兵名 **≤ 26 字符**（`tests/test_lake_assert.py` 静态守卫）；
---         ② 指纹**不塞进一个长单元格**，而是拆成多条短度量行。
+--   1. **单元格被截断**：TABLEAU 的列宽由会话参数
+--      `sql-client.display.max-column-width` 控制，**官方默认 30 字符**，
+--      超宽单元格渲染成 `xxxx...`（本机实测：42 字符的断言名被截断）。
+--      ⚠️ 分级：**默认值 30 是官方给出**；但它是**可配项** —— 换会话参数就会变。
+--        本仓不靠"正好卡在 30"，而是留余量把哨兵名钉在 **≤ 26**（**设计值**，
+--        留 4 字符余量），指纹则拆成多条短度量行、永不塞进一个长单元格。
 --   2. **sql-client 会回显 SQL 源码**（含注释），每条语句前有 `Flink SQL> ` 或 `> `
 --      前缀。⇒ 本文件的注释里**不得**出现带方括号的错误标记（否则脚本会把它当
 --      真错误）。静态守卫：`tests/test_lake_assert.py::test_no_error_token_in_sql`。
@@ -112,13 +113,21 @@ USE ecom_lake;
 -- 五层 + 拒绝表 + 迟到计数表 的行数汇总。给报告提供规模上下文；
 -- **不是**断言 —— 「某层 > 0」由各层自己的 `layer=<层> rows=` 正向证据覆盖。
 SELECT 'metric.rows.ods' AS k, CAST(COUNT(*) AS STRING) AS v FROM ods_behavior_event;
+-- ★★ `landing_day` = 本次判定**实际比对的那个落地日**。
+--   为什么必须有这一行：下面 A1/A2 的 ODS 侧取的是 `MAX(dt)`（见 ① 段的 G1 说明），
+--   而不是 `CURRENT_TIMESTAMP` 的日期。两者在**跨 UTC 日**时会不同 ——
+--   若不给这一行，读者看到 `a2_dup_overshoot = 0` 无法分辨那是
+--   「这批真没重复」还是「比到的那天压根是另一批 / 空分区」。
+--   ⇒ 把"比的是哪天"显式打出来，让数值可归因。
+SELECT 'metric.rows.landing_day' AS k,
+       CAST(MAX(dt) AS STRING) AS v FROM ods_behavior_event;
 -- ★ `ods_today` = **本次落地日**的 ODS 行数。它与 `rows.ods` 并列出现是刻意的：
 --   A1 的 ODS 侧按落地日过滤（见 ① 段），而 DWD 是整表。若这两个数差得离谱、
 --   同时 A1 红了，读者必须立刻能分辨是「分流真出了问题」还是
 --   「刚落过 UTC 日边界 / 本批还没落地」——后者会表现为 `ods_today = 0`
 --   而 `rows.dwd` 仍是上一批的行数。没有这一行，A1 的失败会指向完全错误的排查方向。
 SELECT 'metric.rows.ods_today' AS k, CAST(COUNT(*) AS STRING) AS v FROM ods_behavior_event
-WHERE dt = DATE_FORMAT(CURRENT_TIMESTAMP, 'yyyy-MM-dd');
+WHERE dt = (SELECT MAX(dt) FROM ods_behavior_event);
 SELECT 'metric.rows.dwd' AS k, CAST(COUNT(*) AS STRING) AS v FROM dwd_behavior_event;
 SELECT 'metric.rows.reject' AS k, CAST(COUNT(*) AS STRING) AS v FROM dwd_behavior_event_reject;
 SELECT 'metric.rows.dim_item' AS k, CAST(COUNT(*) AS STRING) AS v FROM dim_item;
@@ -143,8 +152,8 @@ SELECT 'metric.rows.late_count' AS k, CAST(COUNT(*) AS STRING) AS v FROM dwd_lat
 --   「全局」在那句话里的目的是「**不要按事件日分区比**」——因为 ODS 的 `dt` 是
 --   **落地日**、不是事件日，两边没有共同的日期轴。这一点本文件遵守。
 --   但把它读成「ODS 整表、不加任何过滤」会得到一个**依赖历史**的判据：
---   本机实测 ODS 整表 = 2 097 152（两个落地日各一套同一批），
---   `ods_distinct` 因 event_id 相同而塌回 1 048 576 ⇒ 这条**碰巧**是绿的。
+--   本机实测（数值留在票面 E1，此处只记形态）：ODS 整表 = 两个落地日各一套同一批，
+--   而 `ods_distinct` 因 event_id 相同而**塌回单批的规模** ⇒ 这条**碰巧**是绿的。
 --   一旦某天落了**另一批**（不同 seed / 不同规模），`ods_distinct` 会把两批并起来，
 --   而 DWD 只装本次落地日的那一批 ⇒ A1 会**无缘无故红**，且红得无法归因。
 --   ⇒ 本文件把 A1 的 ODS 侧限定为**本次落地日**，与 DWD 的读取范围
@@ -154,14 +163,21 @@ SELECT 'metric.rows.late_count' AS k, CAST(COUNT(*) AS STRING) AS v FROM dwd_lat
 --   ⚠️ 已登记到票面 Progress（不静默改判据）：若上游判定必须严格"整表"，
 --      正确修法是把历史落地日的旧批**清理掉**，而不是放宽本判据。
 -- ★★ 这一条**还会挡一个真事故**：若在 UTC 日边界刚过、本批还没重放时跑断言，
---    `ods_today` 会是 0（新落地日无数据）而 DWD 仍是上一批 1 048 576 行
---    ⇒ 等式 0 = 1048576 + 0 不成立 ⇒ **正确地红**。
+--    新落地日无数据而 DWD 仍是上一批的规模 ⇒ 等式不成立 ⇒ **正确地红**。
+-- ★★ 落地日取 `(SELECT MAX(dt) FROM ods_behavior_event)`，**不取**
+--    `DATE_FORMAT(CURRENT_TIMESTAMP,…)`（code-review 的 G1）。为什么：
+--    用 CURRENT_TIMESTAMP 会把判据绑死到「跑断言那天的 UTC 日」，
+--    而 replay 可能在前一天跑完 —— 跨日后两处时间基不一致，
+--    A2 会**静默变成 0**（0 在日志里读起来正是"这批没有重复"，语义被悄悄换掉），
+--    A1 会红但失败信息读不出「是时间窗错位」。
+--    `MAX(dt)` 表达的是「最近一次落地的批」，与 replay 的产出天然对齐；
+--    它到底取到了哪天，由 `metric.rows.landing_day` 明确打出来，可核。
 --    若不加这个过滤（整表），两边都是上一批的数，A1 会**假绿**地通过
 --    —— 断言在"批次根本不对齐"时通过，比红更糟。
 SELECT 'A1_split_complete' AS assertion,
        CASE WHEN
          (SELECT COUNT(DISTINCT event_id) FROM ods_behavior_event
-           WHERE dt = DATE_FORMAT(CURRENT_TIMESTAMP, 'yyyy-MM-dd'))
+           WHERE dt = (SELECT MAX(dt) FROM ods_behavior_event))
          = (SELECT COUNT(DISTINCT event_id) FROM dwd_behavior_event)
          + (SELECT COUNT(DISTINCT event_id) FROM dwd_behavior_event_reject)
        THEN 'ok=true' ELSE 'ok=false' END AS ok;
@@ -177,9 +193,12 @@ SELECT 'A1_split_complete' AS assertion,
 -- 它的真实用途：解释「为什么迟到标记差异**不可加**」——
 -- 重复行在 DWD 被吸收，却会被 count(*) 口径重复计入。
 -- ★ `lake_assert.sh` **不**判这一行（第二列不以 `ok=` 开头）。
--- ★★ **必须**限定本次落地日（实测抓到的坑）：ODS 是 append + 落地日分区，
---    跨天累积。首版没加过滤，本机实测得到 `1048576` —— 那不是"批内重复"，
---    而是**前一天那一整个分区**（本机跑过两遍、跨了两个 UTC 日）。
+-- ★★ **必须**限定到「最近一次落地批」（实测抓到的坑）：ODS 是 append + 落地日分区，
+--    跨天累积。首版没加过滤时，得到的数与"批内重复"**完全无关** ——
+--    它等于**前一天那一整个分区**的行数（本机跑过两遍、跨了两个 UTC 日）。
+--    ⚠️ 落地日取 `MAX(dt)` 而非 `CURRENT_TIMESTAMP`：理由见 ① 段末尾（G1）。
+--      这一条尤其重要 —— A2 **不作断言**，它出错时没有任何哨兵会红，
+--      只能靠读者看数值；而"0"这个值在两种含义下都合法（真无重复 / 比错天）。
 --    ⇒ 与 `replay_20_dwd.sql` 的 `v_ods_scope` **同一过滤表达式**（同源），
 --      否则这个数字报的是"跑了几次"，不是"这批有多少重复"。
 --    （A1 不受此影响：它用 DISTINCT，且 DWD 侧本就只读本次落地日。
@@ -187,7 +206,7 @@ SELECT 'A1_split_complete' AS assertion,
 SELECT 'metric.a2_dup_overshoot' AS k,
        CAST(COUNT(*) - COUNT(DISTINCT event_id) AS STRING) AS v
 FROM ods_behavior_event
-WHERE dt = DATE_FORMAT(CURRENT_TIMESTAMP, 'yyyy-MM-dd');
+WHERE dt = (SELECT MAX(dt) FROM ods_behavior_event);
 
 -- ════════════════════════════════════════════════════════════════════
 -- ③ A3 — 迟到对账（**断言**，按裁定写成「逐档 + 档集合」）
@@ -236,7 +255,7 @@ WHERE is_late = 1;
 -- ════════════════════════════════════════════════════════════════════
 -- `REQ-F-VERIFY-02` 的离线版：同批 dump 重放两遍，DWD 内容必须逐字节等价。
 -- ★ 为什么指纹拆成多条短度量行：TABLEAU 会把长单元格截断（见文件头限制 1），
---   一个 `ok=true rows=… fp=… devent=…` 的长串会被截成 `ok=true rows=1048576 fp=112...`
+--   一个 `ok=true rows=… fp=… devent=…` 的长串会被截成 `ok=true rows=… fp=<前几位>...`
 --   ⇒ **指纹被截掉的部分恰恰是判据本身**。
 -- ★ 指纹四件套（每件都短、都单独可比）：
 --   `metric.fp.rows`   = COUNT(*)                     ← 行数
@@ -304,15 +323,21 @@ SELECT 'metric.snap.dws' AS k, CAST(COUNT(*) AS STRING) AS v FROM dws_subject_wi
 SELECT 'metric.snap.ads' AS k, CAST(COUNT(*) AS STRING) AS v FROM ads_window_metric$snapshots;
 SELECT 'metric.snap.late_count' AS k, CAST(COUNT(*) AS STRING) AS v FROM dwd_late_event_count$snapshots;
 
--- ⑤c 空表的快照数必须 **= 0**：
---     既证明「空表也被查到」（不是漏查），也证明「min=5 没有凭空造出快照」。
+-- ⑤c 空表 / 非空表的快照数（**双向**判据）
+--     空表（0 行）⇒ 快照必须 **0**（证明 `min=5` 不凭空制造快照）；
+--     非空表(>0 行) ⇒ 快照必须 **≥1**（有数据就该有提交）。
 --     ⚠️ 本仓当前唯一的空表是 reject（门槛批 0 条拒绝）。若未来门槛批出现拒绝行，
---        这条会红 —— 那时**正确处置是改判据**（按有无行分两态），不是删哨兵。
+--        本哨兵会走第二条分支（≥1），**不会**因此变红 —— 这正是双向写法的收益：
+--        单向写法（`行数 > 0 OR 快照 = 0`）在"有行但 0 快照"时恒绿，
+--        那是本文件通篇在防的「判据在某状态下什么都不判」（code-review 抓到的 G5）。
 SELECT 'SNAP_empty_table_zero' AS assertion,
-       CASE WHEN
+       CASE WHEN (
+         (SELECT COUNT(*) FROM dwd_behavior_event_reject) = 0
+         AND (SELECT COUNT(*) FROM dwd_behavior_event_reject$snapshots) = 0
+       ) OR (
          (SELECT COUNT(*) FROM dwd_behavior_event_reject) > 0
-         OR (SELECT COUNT(*) FROM dwd_behavior_event_reject$snapshots) = 0
-       THEN 'ok=true' ELSE 'ok=false' END AS ok;
+         AND (SELECT COUNT(*) FROM dwd_behavior_event_reject$snapshots) >= 1
+       ) THEN 'ok=true' ELSE 'ok=false' END AS ok;
 
 -- ════════════════════════════════════════════════════════════════════
 -- ⑥ 拉链两条（**断言**）
@@ -343,7 +368,8 @@ WHERE (chain.next_vf IS NOT NULL AND chain.next_vf <= chain.vf)
 
 -- ⑥b **变更发生过**：走 `t$audit_log`（审计面），判「三张表都有 id 出现 ≥2 次」。
 --     ⚠️ 必须 `COUNT(DISTINCT t)`：内层是按 id 分组的**多行**结果，
---        直接 `COUNT(*)` 数的是 id 个数（实测 398+5+2978），不是表数。
+--        直接 `COUNT(*)` 数的是**id 个数**（每张表几十到几千不等），不是表数
+--        —— 实测得到过一个远大于 3 的三位数级结果，那正是被数错的东西。
 --     ★ 为何不用 rowkind 判：见文件头「拉链两条」——本仓写路径全是 INSERT。
 SELECT 'ZIP_audit_log_shows_change' AS assertion,
        CASE WHEN COUNT(DISTINCT t) = 3 THEN 'ok=true' ELSE 'ok=false' END AS ok
@@ -373,6 +399,18 @@ FROM (
 --   「某表漏了 min」与「某表整个 $options 读不到」都会露出来。
 -- ★ `snapshot.time-retained` **不判**：本仓刻意保持官方默认 1 h，
 --   「表里没有这条 key」正是"用默认"的正常形态。
+-- ★★ 为什么是**逐条枚举**而不是「GROUP BY 表名再比 count」这种派生写法：
+--   派生写法只能判「有几张表两行都对」，**判不出是哪张表错**；
+--   更关键的是它**判不出表清单本身缺了一张** —— 若某张表整个漏建，
+--   `GROUP BY` 出来的行数会少 1，而 `HAVING`/`count` 条件可以恰好仍成立。
+--   枚举 + 定值 22 让「表集合」与「属性值」**同时**被钉住。
+-- ⚠️ 这是同一契约的**第三处**字面量（另两处：`replay_01_ddl.sql` 的 DDL、
+--   `replay_90_maintain.sql` 的 ALTER）。三处**都必要、无法合并**：
+--     · DDL 管**新建**的表；
+--     · ALTER 管**已存在**的表（`CREATE TABLE IF NOT EXISTS` 对老表一句不改）；
+--     · 本段是**判据**（判据不能去读 DDL 文本 —— 那测的是源码，不是集群状态）。
+--   ⇒ 改 `5`/`20` 任一值必须**同时**改这三处；守卫：
+--     `tests/test_lake_assert.py::test_snapshot_retention_literals_agree`。
 SELECT 'OPT_snapshot_retention' AS assertion,
        CASE WHEN COUNT(*) = 22 THEN 'ok=true' ELSE 'ok=false' END AS ok
 FROM (

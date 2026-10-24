@@ -74,12 +74,16 @@
 ### impl-03 内部的 Frontier（2026-10-22 拆票后）
 
 ```
-   impl-03a ✅ ──► impl-03b ✅ ──► impl-03c ✅ ──► impl-03d ──► impl-03e ──► impl-03f
+   impl-03a ✅ ──► impl-03b ✅ ──► impl-03c ✅ ──► impl-03d ✅ ──► impl-03e ──► impl-03f
    部署面          七表DDL        拉链+五层        哨兵断言      反例证伪     对账+收口
-                                                  ◄── 当前 frontier
+                                                    ◄── 当前 frontier
 ```
 
-- **impl-03a / 03b / 03c 已完成**；**impl-03d 是当前 P2 入口**（依赖已满足）。
+- **impl-03a / 03b / 03c / 03d 已完成**；**impl-03e 是当前 P2 入口**（依赖已满足）。
+- ✅ **impl-03d 已结清**（2026-10-24）：`make replay` exit 0（含维护段）、
+  `make assert` 9/9 哨兵 ok、`make replay-idempotent` 两遍 DWD 指纹逐字相同
+  （`1048576 / 1126399221523001 / 1048576 / 131267`）、人为破坏退 1。
+  ⚠️ 03d 的断言**仍待 03e 跑 F1–F6 证伪**（本图既定纪律，未变）。
 - ✅ **impl-03c 已结清**（2026-10-23）：`make replay` 缺省跑完五层 exit 0
   （ods 1048576 / dwd 1048576 / dim 105430 / dws 1550285 / ads 90348）。
   两轮 code-review 各挑出真缺陷且都已处置：① ADS 两切面原本用两条 `INSERT OVERWRITE`

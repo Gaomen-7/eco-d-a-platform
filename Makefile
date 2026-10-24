@@ -103,15 +103,23 @@ assert:
 	@bash scripts/lake_assert.sh
 
 # 幂等离线版（REQ-F-VERIFY-02）：同批 dump 重放两遍，DWD 指纹必须逐字相同。
-# 时序：① replay + 记指纹 → ② replay（同批，不重产）+ 比指纹并覆盖。
-# ⚠️ `FORCE_GEN` 必须为 0（缺省）：重产会换一批数据，「两遍一致」就成了假命题。
-#   本目标**显式**不设 FORCE_GEN，并在下面断言门槛批确实没被重产。
+# 时序：① replay + 记指纹 → ② replay（同批，不重产）+ 比指纹。
+# ⚠️ 幂等判据只有在**同一批数据**上才有意义 ⇒ 本目标必须保证第二遍没有重产门槛批。
+#   重产的唯一入口是 `lake_replay.sh` 的 `FORCE_GEN=1` 分支；本目标不设它，
+#   但「没设」不等于「没发生」（环境里可能 export 了 FORCE_GEN）⇒ 见下 recipe 的
+#   显式断言：`FORCE_GEN=0` 覆盖环境、并在第一遍之后核对门槛批**字节未变**。
+#   若不核对，某次重产会让「两遍一致」变成"两批恰好相同"或直接假红，
+#   而这个失败完全不会指出真正原因。
 replay-idempotent:
 	@echo "[idempotent] 第 1 遍：replay + 记录 DWD 指纹"
-	@LAYER= bash scripts/lake_replay.sh
+	@FORCE_GEN=0 LAYER= bash scripts/lake_replay.sh
 	@bash scripts/lake_assert.sh --record
+	@echo "[idempotent] 核对门槛批未被重产（sha256 必须与第一遍前一致）"
+	@sha256sum data/threshold/raw.jsonl | tee artifacts/lake_assert/batch.sha256
+	@bash scripts/lake_assert.sh --assert-batch-unchanged artifacts/lake_assert/batch.sha256
 	@echo "[idempotent] 第 2 遍：同批再 replay 一遍 + 与上一遍比指纹"
-	@LAYER= bash scripts/lake_replay.sh
+	@FORCE_GEN=0 LAYER= bash scripts/lake_replay.sh
+	@bash scripts/lake_assert.sh --assert-batch-unchanged artifacts/lake_assert/batch.sha256
 	@bash scripts/lake_assert.sh --compare
 
 # ── 可复现校验（SRS §3.1.8 五项；spec §4.3 分层）─────────────────────

@@ -18,26 +18,35 @@
 --   DWS/ADS dt = 窗口起点日
 --   DIM 不分区
 --
--- ★ 本文件只建表，不写任何断言（断言归 impl-03d，03d 之前 assert_lake.sql 可不存在）。
+-- ★ 本文件只建表，不写任何断言（断言在 `sql/assert_lake.sql`，impl-03d 已交付）。
 
 -- ════════════════════════════════════════════════════════════════════
 -- ★★ 快照保留：每张表都显式写 `min=5` / `max=20`（impl-03d，spec §5.4）
 -- ════════════════════════════════════════════════════════════════════
--- 官方给出的两条语义（⚠️ 都**不是**「快照数 = 5」的意思）：
---   1. `snapshot.num-retained.min` 是**保护下界**，官方逐字：
+-- 前两条是**官方给出**的语义（⚠️ 都**不是**「快照数 = 5」的意思）；
+-- 第三条是**本仓的设计选择**，不是官方语义。
+--
+--   1. **`snapshot.num-retained.min` 是保护下界**，官方逐字：
 --      "When the number of snapshots is less than `snapshot.num-retained.min`,
---       no snapshots will be expired (even the condition `snapshot.time-retained` meet)"
---      ⇒ 它**只阻止过期、不制造快照**。新建的空表只有 1 个快照是正常的，
---        「跑完 replay 应有 5 个快照」是**错误预期**（gdd:149 已修订、HLD G-D2 已订正）。
---   2. `snapshot.num-retained.max` 把「受控」落成**有限数**（官方默认
+--       no snapshots will be expired (even the condition `snapshot.time-retained`
+--       meet), after which `snapshot.num-retained.max` and `snapshot.time-retained`
+--       will be used to control the snapshot expiration until the remaining
+--       snapshot meets the condition."
+--      ⇒ 它**只阻止过期、不制造快照**。**空表可以一个快照都没有**
+--      （本机实测：`dwd_behavior_event_reject` 在本批 0 行时是 **0** 个快照；
+--        判据见 `sql/assert_lake.sql` 的 `SNAP_empty_table_zero`，逐表数值见票面）。
+--      「跑完 replay 应有 5 个快照」是**错误预期**（gdd:149 已修订、HLD G-D2 已订正）。
+--   2. **`snapshot.num-retained.max`** 把「受控」落成**有限数**（官方默认
 --      `Integer.MAX_VALUE`／另一页写 `infinite`，D-13 已记录官方两处不一致）。
---   3. `snapshot.time-retained` **本文件不写** —— 保持官方默认 **1 h**。
---      它是三者里最常被误读的一条：**实际**快照数由
+--   3. **【设计选择，非官方语义】`snapshot.time-retained` 本文件不写** ——
+--      保持官方默认 **1 h**。它是三者里最常被误读的一条：**实际**快照数由
 --      「`time-retained` 窗口内的快照数量」与 `max` 共同决定，`min` 只在
---      「数不够」时兜底。
---      ★ 实测（impl-03d）：`sys.expire_snapshots(retain_max => 20)` 在某表上
---        把 10 个快照压到 **5** 个 —— retain_max=20 是**上界**，实际删到哪由
---        `time-retained`(1 h) 与 `min`(5) 决定。见票面 Progress 的逐表数值。
+--      「数不够」时兜底。本仓选「不写」而不是「写死 1 h」：不写就是跟着官方默认走，
+--      写死会在官方改默认时静默偏离。
+--      ★ 可观察判据（不是数字）：`sys.expire_snapshots(retain_max => 20)` 之后
+--        快照数**可能远低于 20** —— 这正是「`retain_max` 是上界不是钉住」的形态。
+--        逐表实测数值留在票面 Progress；本文件**不内嵌**实测数字
+--        （会随批次/环境漂移而 rot —— impl-03c 的 code-review HARD-2 判过同类）。
 --
 -- ⚠️ 写 `min=5` 是因为**官方默认是 10**（gdd D2 要求显式 5）—— 不写会拿到 10，
 --    而 10 仍在 [5,20] 区间内 ⇒ **判据觉察不到漏写**，故必须由静态守卫钉住。

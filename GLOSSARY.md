@@ -87,7 +87,7 @@ Paimon 表的三条保留属性，**语义各不相同、不可互相冒充**：
 `snapshot.num-retained.max`（本仓 **20**，官方默认 `Integer.MAX_VALUE`/`infinite`，两页不一致 D-13）
 是数量上限；`snapshot.time-retained`（本仓**保持官方默认 1 h、不写**）是时间窗。
 ⇒ **实际快照数由「1 h 窗口内的提交数」与 max 共同决定，min 只兜底**。
-所以「跑完 replay 应有 5 个快照」是**错误预期**（本仓实测：多张表落在 5~6）。
+所以「跑完 replay 应有 5 个快照」是**错误预期**（本机实测多张表停在下界附近，也见过空表 **0** 个；逐表数值见票面，不写进术语表）。
 `CALL sys.expire_snapshots(retain_max => 20)` 的 `retain_max` 同样是**上界不是钉住**。
 _Avoid_: 快照数、retain_max（当把它读成「钉在 20」时）、保留策略（不加限定）
 

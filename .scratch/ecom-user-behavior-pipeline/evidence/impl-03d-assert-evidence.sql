@@ -60,3 +60,8 @@ SELECT 'opt_dim_channel_min' AS k, `value` AS v FROM dim_channel$options
 WHERE `key` = 'snapshot.num-retained.min'
 UNION ALL SELECT 'opt_dim_channel_max', `value` FROM dim_channel$options
 WHERE `key` = 'snapshot.num-retained.max';
+
+-- E7 落地日（G1 修订后新增）：判定实际比对的那个批是哪一天
+SELECT 'landing_day' AS k, CAST(MAX(dt) AS STRING) AS v FROM ods_behavior_event
+UNION ALL SELECT 'ods_today_rows', CAST(COUNT(*) AS STRING) FROM ods_behavior_event
+WHERE dt = (SELECT MAX(dt) FROM ods_behavior_event);

@@ -42,8 +42,7 @@
 
 跑法：`make assert`（只判断言）/ `make replay-idempotent`（同批重放两遍后比 DWD 指纹）。
 
-
-## 两条最容易写反的约定
+## 三条最容易写反的约定
 
 1. **落地日过滤**：`ods_behavior_event` 是 **append + 落地日分区**（跨天累积）
    ⇒ 读它必须过滤 `dt = DATE_FORMAT(CURRENT_TIMESTAMP,'yyyy-MM-dd')`
@@ -69,5 +68,7 @@
    百万行求和会溢出，**先 CAST 成 BIGINT** 是必需的（溢出后的值两次跑之间照样稳定
    ⇒ 会是一条"恒绿但不校验"的假指纹）。
 
-两处约定都有静态守卫：见 [`tests/test_replay_sql.py`](../tests/test_replay_sql.py)
-与 [`tests/test_replay_temporal_sql.py`](../tests/test_replay_temporal_sql.py)。
+三条约定都有静态守卫：前两条见 [`tests/test_replay_sql.py`](../tests/test_replay_sql.py)
+与 [`tests/test_replay_temporal_sql.py`](../tests/test_replay_temporal_sql.py)，
+第三条见 [`tests/test_lake_assert.py`](../tests/test_lake_assert.py)
+（`test_assert_sql_does_not_use_crc32` / `test_assert_sql_hash_code_is_cast_before_sum`）。

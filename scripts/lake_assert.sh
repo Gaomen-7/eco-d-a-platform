@@ -49,8 +49,8 @@
 # 退出码（诚实，不谎报）
 # ════════════════════════════════════════════════════════════════════
 #   0 = 全部断言通过（且幂等比对通过，若要求）
-#   1 = 断言失败 / 出现错误标记 / docker 层失败
-#   2 = 用法错误（未知参数、SQL 文件不存在）
+#   1 = 断言失败 / 出现错误标记 / docker 层失败 / 门槛批被重产
+#   2 = 用法错误（未知参数、缺参数值、SQL 文件或基线文件不存在）
 #   3 = 幂等比对失败（指纹与上一遍不同）—— 与 1 分开，便于归因
 #
 # ════════════════════════════════════════════════════════════════════
@@ -62,10 +62,19 @@
 #   bash scripts/lake_assert.sh --record-then-compare   # 判 + 比 + 覆盖（幂等两遍用）
 #   bash scripts/lake_assert.sh --judge <stdout>    # **只判定面**（不连集群，供单测）
 #   bash scripts/lake_assert.sh --parse <stdout>    # 只解析并打印（排障用）
+#   bash scripts/lake_assert.sh --assert-batch-unchanged <sha256 文件>
+#                                                   # 只核门槛批未被重产（幂等前提）
 #
 #   --judge 的存在理由：判定逻辑必须能**脱离集群**被单测（票面 AC 要求
 #   「lake_assert.sh 的判定逻辑有单元测试」）。把判定抽成纯函数式的子命令，
 #   单测就不需要 docker / 集群 / 90 秒的等待。**注入的是 stdout，不是 SQL。**
+#
+#   --assert-batch-unchanged 的存在理由：幂等判据「同批重放两遍一致」在**换了批**
+#   时毫无意义，而重产入口（`lake_replay.sh` 的 `FORCE_GEN=1`）可能来自**环境变量**
+#   ⇒ `make replay-idempotent` 不能只靠"我没设它"来保证。
+#
+#   ⚠️ 每个带值的参数都**先校验再 shift**：`shift 2` 在只剩 1 个参数时会失败且
+#      **不消耗参数** ⇒ `while [ $# -gt 0 ]` 永真 ⇒ 死循环（本机实测 RC=124）。
 
 set -uo pipefail
 
@@ -82,7 +91,7 @@ FP_FILE="${LAKE_FP_FILE:-artifacts/lake_assert/fp.txt}"
 # ★ 名字必须与 SQL 里的 `AS assertion` 字面量**逐字相同**（含大小写）。
 #   静态守卫：tests/test_lake_assert.py::test_expected_names_match_sql。
 #
-# ★★ 同一个名字在**每一份**都要出现；`<NAME>=true` 表示该条必须 ok=true。
+# ★ 每条哨兵都必须出现且值为 `ok=true`；缺席即失败（见下面 judge 的注释）。
 EXPECTED_ASSERTIONS=(
   "A1_split_complete"
   "A3_late_bucket_split"
@@ -113,17 +122,41 @@ usage() {
   sed -n '/^# 用法$/,/^set -uo/p' "$0" | sed 's/^# \{0,1\}//' | sed '$d'
 }
 
-MODE="judge-only"       # judge-only | record | compare | record-then-compare | parse
+# ★★ **两个正交变量，不是一个 MODE**（本机实测踩到的耦合缺陷）：
+#   `MODE` 同时表示「执行面」与「指纹模式」，导致 `--judge` 无法与 `--compare`
+#   组合 —— `--judge` 判定通过后直接 `exit 0`，永远走不到幂等比对 ⇒
+#   `--judge x --compare` 会静默忽略 `--compare`。
+#   拆开之后：SOURCE 决定"stdout 从哪来"，FP_MODE 决定"跑完怎么处理指纹"。
+SOURCE="cluster"        # cluster | stdin-stdout | parse | batch-check
+FP_MODE="none"          # none | record | compare | record-then-compare
 STDIN_FILE=""
+BATCH_SHA_FILE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --judge)  MODE="judge-only"; shift; STDIN_FILE="${1:-}"; shift || true ;;
-    --parse)  MODE="parse"; shift; STDIN_FILE="${1:-}"; shift || true ;;
-    --record) MODE="record"; shift ;;
-    --compare) MODE="compare"; shift ;;
-    --record-then-compare|--idempotent) MODE="record-then-compare"; shift ;;
-    --fingerprint-file) FP_FILE="${2:-}"; shift 2 ;;
+    --judge)
+      # ★ 必须**先校验再 shift**：`shift 2` 在只剩 1 个参数时会失败且**不消耗参数**
+      #   ⇒ `while [ $# -gt 0 ]` 永真 ⇒ **死循环**（本机实测 `timeout 5` 返回 124）。
+      #   空值也要挡：`--judge` 后不给文件等于"要判定但没有输入"，
+      #   若放过去会**静默降级成连集群跑**（见下面那个 `||`/`&&` 的优先级修正）。
+      [ -n "${2:-}" ] || { echo "[assert] ✗ --judge 需要一个 stdout 文件路径" >&2; exit 2; }
+      SOURCE="stdin-stdout"; STDIN_FILE="$2"; shift 2 ;;
+    --parse)
+      [ -n "${2:-}" ] || { echo "[assert] ✗ --parse 需要一个 stdout 文件路径" >&2; exit 2; }
+      SOURCE="parse"; STDIN_FILE="$2"; shift 2 ;;
+    --record) FP_MODE="record"; shift ;;
+    --compare) FP_MODE="compare"; shift ;;
+    --record-then-compare|--idempotent) FP_MODE="record-then-compare"; shift ;;
+    --fingerprint-file)
+      # ★ 同上：缺值即死循环（本机实测 RC=124）。仓库里 `lake_replay.sh` 对同类
+      #   参数一律「先校验再 shift」，本文件此前是唯一例外。
+      [ -n "${2:-}" ] || { echo "[assert] ✗ --fingerprint-file 需要一个路径" >&2; exit 2; }
+      FP_FILE="$2"; shift 2 ;;
+    --assert-batch-unchanged)
+      # 只核对门槛批未被重产（幂等的前提），**不跑集群、不判断言**。
+      [ -n "${2:-}" ] || {
+        echo "[assert] ✗ --assert-batch-unchanged 需要一个 sha256 文件" >&2; exit 2; }
+      SOURCE="batch-check"; BATCH_SHA_FILE="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "[assert] ✗ 未知参数：$1" >&2; usage >&2; exit 2 ;;
   esac
@@ -295,57 +328,108 @@ trap 'rm -rf "$WORK"' EXIT
 PARSED="$WORK/parsed.txt"
 RAW="$WORK/raw.txt"
 
-if [ "$MODE" = "parse" ] || [ "$MODE" = "judge-only" ] && [ -n "$STDIN_FILE" ]; then
+# ★ 括号**不是**可选的：`||` 与 `&&` 同优先级、左结合 ⇒ 不写括号时
+#   `A || B && C` 实际是 `A || (B && C)`，而本意是 `(A || B) && C`。
+#   本机实测踩到：`--judge` 漏给文件时，旧写法因 B 为假而整个条件为假
+#   ⇒ **静默跳过判定面**、直接去连集群跑（打印「>> 运行 sql/assert_lake.sql」），
+#   而文件头明写「2 = 用法错误」。单测 `test_missing_input_file_exits_2` 只覆盖了
+#   「给了错路径」，漏的正是「压根没给」这一支。
+if [ "$SOURCE" = "batch-check" ]; then
+  # ══════════════════════════════════════════════════════════════════════
+  # 门槛批未被重产（幂等判据的**前提**）
+  # ══════════════════════════════════════════════════════════════════════
+  # ★ 为什么这是独立子命令：幂等判据「同批重放两遍结果一致」在**换了批**时
+  #   完全没有意义。而重产入口（`lake_replay.sh` 的 `FORCE_GEN=1`）可能来自环境
+  #   变量 ⇒ `make replay-idempotent` **不能**只靠"我没设 FORCE_GEN"来保证。
+  # ⇒ 记下第一遍后门槛批的 sha256，两遍 replay 之后各核对一次。
+  # ⚠️ 只核 `raw.jsonl`（事件流）：`dim.jsonl` 与它同属「门槛批现产」一步、
+  #   一起产一起守，raw 未变即该步骤未执行。
+  if [ ! -f "$BATCH_SHA_FILE" ]; then
+    echo "[assert] ✗ 找不到基线 sha256：$BATCH_SHA_FILE" >&2
+    exit 2
+  fi
+  if [ ! -f data/threshold/raw.jsonl ]; then
+    echo "[assert] ✗ 门槛批不存在：data/threshold/raw.jsonl" >&2
+    exit 2
+  fi
+  want="$(awk '{print $1}' "$BATCH_SHA_FILE" | head -1)"
+  got="$(sha256sum data/threshold/raw.jsonl | awk '{print $1}')"
+  if [ "$want" != "$got" ]; then
+    echo "[assert] ✗ 门槛批被重产了（raw.jsonl 变了）—— 幂等判据失效" >&2
+    echo "[assert]   基线：$want" >&2
+    echo "[assert]   现在：$got" >&2
+    echo "[assert]   原因通常是环境里 export 了 FORCE_GEN=1；本目标已显式置 0，" >&2
+    echo "[assert]   若仍变，检查 lake_replay.sh 的现产条件（! -s 分支）" >&2
+    exit 1
+  fi
+  echo "[assert] ✓ 门槛批未变（$got）"
+  exit 0
+fi
+
+# ════════════════════════════════════════════════════════════════════════
+# 执行面：两种来源（stdout 注入 / 连集群），**都在这里把 $PARSED 准备好**
+# ════════════════════════════════════════════════════════════════════════
+# ★ 结构上是 `if … else`，不是「先试注入再掉进集群」——
+#   本机实测：写成一前一后时 `--judge … --compare` 在指纹不符时**不会**报 3，
+#   而是继续去 docker exec 并卡住 120 s。判据面的短路必须显式。
+if [ "$SOURCE" = "parse" ] || [ "$SOURCE" = "stdin-stdout" ]; then
   if [ ! -f "$STDIN_FILE" ]; then
     echo "[assert] ✗ 找不到输入文件：$STDIN_FILE" >&2
     exit 2
   fi
   parse_stdout "$STDIN_FILE" > "$PARSED"
-  if [ "$MODE" = "parse" ]; then
+
+  if [ "$SOURCE" = "parse" ]; then
     echo "--- ASSERT ---"
-    awk -F'\t' '$1=="ASSERT"' "$PARSED"
+    awk -F'	' '$1=="ASSERT"' "$PARSED"
     echo "--- METRIC ---"
-    awk -F'\t' '$1=="METRIC"' "$PARSED"
+    awk -F'	' '$1=="METRIC"' "$PARSED"
     echo "--- ERR ---"
-    awk -F'\t' '$1=="ERR"' "$PARSED"
+    awk -F'	' '$1=="ERR"' "$PARSED"
     exit 0
   fi
-  # --judge：**不连集群**，docker_rc 视为 0（供单测注入）
-  if judge "$PARSED" 0; then
-    echo "[assert] 通过（--judge 注入模式）"
-    exit 0
+
+  # --judge：**不连集群**，docker_rc 视为 0（供单测注入）。
+  # 判定通过后**不 exit** —— 要继续落到下面的指纹模式（--compare 等）。
+  if ! judge "$PARSED" 0; then
+    echo "[assert] 不通过（--judge 注入模式）" >&2
+    exit 1
   fi
-  echo "[assert] 不通过（--judge 注入模式）" >&2
-  exit 1
-fi
+  echo "[assert] 判定通过（--judge 注入模式）"
+else
+  # ── 连集群跑（唯一会消耗 ~60 s 的路径）──────────────────────────────
+  if [ ! -f "$SQL_FILE" ]; then
+    echo "[assert] ✗ 断言脚本缺失：$SQL_FILE" >&2
+    exit 2
+  fi
 
-if [ ! -f "$SQL_FILE" ]; then
-  echo "[assert] ✗ 断言脚本缺失：$SQL_FILE" >&2
-  exit 2
-fi
+  echo "[assert] >> 运行 $SQL_FILE（容器 $CONTAINER）"
+  # ★★ 走**既有的只读挂载** `./sql:/sql:ro`（docker-compose.yml），与
+  #   `lake_replay.sh` 的执行面**同源**（那边是 `-f "/sql/$file"`）。
+  #   ⚠️ 首版是「先 docker exec 把文件灌进 /tmp 再 -f /tmp/…」，两个毛病：
+  #     ① 灌文件那条 docker exec 的 rc 被 `>/dev/null 2>&1` 且**未检查** ⇒
+  #        复制失败时会读**上一轮遗留的 /tmp 文件**并可能判绿 —— 正是本脚本通篇在防的形态；
+  #     ② 两半（replay 用 /sql、assert 用 /tmp）用两套执行面，读的人会以为是两个来源。
+  #   改走 /sql 后不再有"复制"这一步，也就没有那条静默失败通道。
+  MSYS_NO_PATHCONV=1 docker exec -i "$CONTAINER"     /opt/flink/bin/sql-client.sh -f "/sql/$(basename "$SQL_FILE")" > "$RAW" 2>&1
+  DOCKER_RC=$?
 
-echo "[assert] >> 运行 $SQL_FILE（容器 $CONTAINER）"
-MSYS_NO_PATHCONV=1 docker exec -i "$CONTAINER" \
-  bash -c "cat > /tmp/assert_lake.sql" < "$SQL_FILE" >/dev/null 2>&1
-MSYS_NO_PATHCONV=1 docker exec -i "$CONTAINER" \
-  /opt/flink/bin/sql-client.sh -f /tmp/assert_lake.sql > "$RAW" 2>&1
-DOCKER_RC=$?
+  echo "[assert] -- docker exec 退出码 = $DOCKER_RC（**不作为成功判据**：sql-client 报错仍退 0）"
 
-echo "[assert] -- docker exec 退出码 = $DOCKER_RC（**不作为成功判据**：sql-client 报错仍退 0）"
+  parse_stdout "$RAW" > "$PARSED"
 
-parse_stdout "$RAW" > "$PARSED"
+  # 原始输出留档，便于失败归因（artifacts/ 不入 git，见 .gitignore）
+  mkdir -p artifacts/lake_assert 2>/dev/null     && cp "$RAW" artifacts/lake_assert/last_stdout.txt 2>/dev/null || true
 
-# 原始输出留档，便于失败归因（artifacts/ 不入 git，见 .gitignore）
-mkdir -p artifacts/lake_assert 2>/dev/null && cp "$RAW" artifacts/lake_assert/last_stdout.txt 2>/dev/null || true
-
-if ! judge "$PARSED" "$DOCKER_RC"; then
-  echo "[assert] ✗ 断言不通过（原始输出：artifacts/lake_assert/last_stdout.txt）" >&2
-  exit 1
+  if ! judge "$PARSED" "$DOCKER_RC"; then
+    echo "[assert] ✗ 断言不通过（原始输出：artifacts/lake_assert/last_stdout.txt）" >&2
+    exit 1
+  fi
 fi
 
 # ── 幂等模式 ────────────────────────────────────────────────────────────
 FP_RC=0
-case "$MODE" in
+case "$FP_MODE" in
   compare)
     compare_fp "$PARSED" || FP_RC=$?
     ;;

@@ -3,7 +3,7 @@ WARNING: Unknown module: jdk.compiler specified to --add-exports
 WARNING: Unknown module: jdk.compiler specified to --add-exports
 WARNING: Unknown module: jdk.compiler specified to --add-exports
 WARNING: Unknown module: jdk.compiler specified to --add-exports
-Oct 24, 2026 2:09:19 AM org.jline.utils.Log logr
+Oct 24, 2026 3:49:08 AM org.jline.utils.Log logr
 WARNING: Unable to create a system terminal, creating a dumb terminal (enable debug logging for more information)
 [34;1m[INFO] Executing SQL from file.[0m
 
@@ -38,7 +38,7 @@ Flink SQL>
 |                 k | v |
 +-------------------+---+
 |          snap_ods | 6 |
-|          snap_dwd | 6 |
+|          snap_dwd | 5 |
 |       snap_reject | 0 |
 |     snap_dim_item | 5 |
 | snap_dim_category | 5 |
@@ -49,7 +49,7 @@ Flink SQL>
 |          snap_ads | 5 |
 |         snap_late | 5 |
 +-------------------+---+
-11 rows in set (3.55 seconds)
+11 rows in set (3.64 seconds)
 
 Flink SQL> 
 > -- E2 A1 三量（本次落地日口径）
@@ -66,7 +66,7 @@ Flink SQL>
 | a1_reject_distinct |       0 |
 |   a2_dup_overshoot |       0 |
 +--------------------+---------+
-4 rows in set (7.40 seconds)
+4 rows in set (6.90 seconds)
 
 Flink SQL> 
 > -- E3 A3 两侧总量（逐档相等由 assert_lake.sql 哨兵判；这里只留侧写）
@@ -77,7 +77,7 @@ Flink SQL>
 | a3_late_rows | 131316 |
 |   a3_cnt_sum | 131316 |
 +--------------+--------+
-2 rows in set (1.52 seconds)
+2 rows in set (1.47 seconds)
 
 Flink SQL> 
 > -- E4 幂等指纹
@@ -93,7 +93,7 @@ Flink SQL>
 | fp_devent |          1048576 |
 |   fp_dlag |           131267 |
 +-----------+------------------+
-4 rows in set (3.65 seconds)
+4 rows in set (3.58 seconds)
 
 Flink SQL> 
 > -- E5 拉链：三张表的版本数 / 断点数 / 重叠数 / audit_log 变更 id 数
@@ -119,15 +119,27 @@ Flink SQL>
 | zip_audit_user_changed |   2978 |
 |  zip_audit_cat_changed |      5 |
 +------------------------+--------+
-8 rows in set (2.08 seconds)
+8 rows in set (1.97 seconds)
 
 Flink SQL> +---------------------+----+
 |                   k |  v |
 +---------------------+----+
-| opt_dim_channel_max | 20 |
 | opt_dim_channel_min |  5 |
+| opt_dim_channel_max | 20 |
 +---------------------+----+
 2 rows in set (1.01 seconds)
+
+Flink SQL> 
+> -- E7 落地日（G1 修订后新增）：判定实际比对的那个批是哪一天
+> SELECT 'landing_day' AS k, CAST(MAX(dt) AS STRING) AS v FROM ods_behavior_event
+> UNION ALL SELECT 'ods_today_rows', CAST(COUNT(*) AS STRING) FROM ods_behavior_event
+> WHERE dt = (SELECT MAX(dt) FROM ods_behavior_event)+----------------+------------+
+|              k |          v |
++----------------+------------+
+|    landing_day | 2026-10-24 |
+| ods_today_rows |    1048576 |
++----------------+------------+
+2 rows in set (25.21 seconds)
 
 Flink SQL> 
 Shutting down the session...

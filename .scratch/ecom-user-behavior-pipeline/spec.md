@@ -265,11 +265,29 @@ sql/replay_20_dwd.sql       -- ods → dwd_behavior_event + dwd_behavior_event_r
 sql/replay_30_dim.sql       -- 维度变更流 → dim_*（区间）
 sql/replay_40_dws.sql       -- dwd × dim 区间 join → dws_subject_window
 sql/replay_50_ads.sql       -- dws → ads_window_metric
-sql/replay_90_maintain.sql  -- CALL sys.compact(...) ×N + sys.expire_snapshots(retain_max=>20) ×N
-sql/assert_lake.sql         -- 五层行数 + A1/A3 + 拉链 + 快照数，全部 SELECT 哨兵
+sql/replay_90_maintain.sql  -- ALTER 快照保留 ×N + CALL sys.compact(...) ×N + sys.expire_snapshots(retain_max=>20) ×N
 ```
 
+**断言不在 replay 链内，是独立目标**（2026-10-24 修订，impl-03d 施工后回写）：
+`sql/assert_lake.sql` 由 `make assert`（`scripts/lake_assert.sh`）单独执行。
+理由两条，都不是省事：
+
+1. 断言要能在**不重跑五层**的前提下反复跑 —— 归因/调试时这是最常做的动作；
+2. 幂等判据要求「同批重放两遍」，塞进 `replay` 会让每次 `make replay` 都变成两倍工作量
+   （§8.2 已明定「幂等不进每次 verify」，同一理由适用）。
+   ⇒ 幂等由 `make replay-idempotent` 承担（两遍 replay + DWD 指纹比对）。
+
+⚠️ 修订来源：本 spec 原文把 `assert_lake.sql` 列在上面的 `sql-client.sh -f` 串联链末，
+与实现不符（impl-03d code-review 的 G3）。**本段是权威**，原文那条按此修正。
+
 `LAYER=ods|dwd|dim|dws|ads`（缺省跑全部），可观察性靠日志行 `layer=dwd rows=…`。
+维护段（`replay_90_maintain.sql`）**只在全量 replay 时跑**（`LAYER=` 截断时数据不完整，压了白做），
+它的可观察性行是 `maintain rows=…` 而**不是** `layer=maintain` —— `layer=` 是五值的层词汇表。
+
+⚠️ **marker 只在结果表格行上匹配**（`^\|` 起头），不在全文 grep：
+sql-client 会逐字回显 SQL 源码（含注释），而各层脚本的注释里就写着 marker 字面量
+⇒ 全文 grep 会被注释满足（impl-03d 实测：维护段 marker 在输出里有 3 处回显 + 1 处结果，
+把结果行删掉旧判据**仍然通过**）。
 
 ### 5.4 离线断言 A1/A2/A3（[05] Q11·替换原不变量）
 
@@ -285,6 +303,22 @@ sql/assert_lake.sql         -- 五层行数 + A1/A3 + 拉链 + 快照数，全�
 
 - **幂等（Q9 离线版）**：同批 dump 重放两遍，DWD `count(*)` 与逐列校验和（`SUM(crc32(concat_ws('|', event_id, is_late, late_lag_ms)))`）两次一致（`REQ-F-VERIFY-02` 幂等验证的离线版；SRS 那条只覆盖 Doris）。
 - **快照 [5,20]**：`num-retained.min=5`（显式）＋ `num-retained.max=20`（把「受控」变成有限数）＋ `time-retained` 保持 1 h 默认；判据 SQL `SELECT count(*) FROM <t>$snapshots` 落 **[5,20]**；`replay` 末尾 `sys.expire_snapshots(retain_max => 20)` 收**上界**（`retain_max` 是上界不是「钉住」）。
+
+  ⚠️ **判据已修订为三态（2026-10-24，impl-03d 施工后回写；本节是权威）**：
+  「落 [5,20]」这句在**合法状态下就会假红** —— `snapshot.num-retained.min` 是**保护下界、
+  不制造快照**（官方逐字见 §5.2 与 `sql/replay_01_ddl.sql` 头注），本机实测多张表恰好停在
+  **下界值**、空表停在 **0** ⇒ 单条 `[5,20]` 判不了。现判据拆三条：
+
+  | 判据 | 内容 | 为什么 |
+  | --- | --- | --- |
+  | `SNAP_within_upper_bound` | 非空表快照数 ∈ **[1,20]** | 上界是 `retain_max=>20` 收的；下界只要求 ≥1（有数据就该有提交） |
+  | `SNAP_empty_table_zero` | 空表 **=0**；非空表 **≥1**（**双向**） | 「min 不制造快照」的可观察反证；单向写法在「有行但 0 快照」时恒绿 |
+  | `OPT_snapshot_retention` | 11 张表的 `$options` 里 `min=5`/`max=20` 共 **22/22** | **数量判不出漏写**：官方默认 10 也落在区间里。只有直接读属性才判得出 |
+
+  另：`replay_90_maintain.sql` 开头对 11 张表 `ALTER TABLE … SET` 同一组属性 ——
+  因为 `CREATE TABLE IF NOT EXISTS` 对**已存在**的表一句不改，老库会停在官方默认 10。
+
+  判据 SQL 全文见 `sql/assert_lake.sql` ⑤⑥⑦ 段；逐表实测数值见 `issues/impl-03d-*.md` 的 Progress。
 - **拉链断言分两条**：批读会丢 DELETE ⇒ 当前快照的区间校验走普通 SELECT，「变更发生过」走 `t$audit_log`。
 
 ### 5.5 断言执行面：为什么是 `lake_assert.sh`（[05] 断言执行面）

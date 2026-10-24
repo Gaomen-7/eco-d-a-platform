@@ -100,9 +100,20 @@ else
 fi
 
 # ── 执行一个 SQL 文件：0=成功 / 1=失败 / 3=脚本缺失 ────────────────────
-# ★ 双证据：docker 退出码 + [ERROR] 子串 + （若给了 marker）marker 真的出现。
+# ★ 三层证据：docker 退出码 + 无错误标记 + （若给了 marker）marker 在**结果行**里出现。
 # ★ SQL 以只读卷挂进两容器（compose: ./sql:/sql:ro），执行的是容器内 /sql/<file>；
 #   下面的存在性检查查的是**宿主**镜像路径，二者由挂载互为约束（改一处必改另一处）。
+#
+# ★★ marker 必须只在**结果表格行**上匹配（`| layer=ods rows=1048576 |`），
+#    不能在全文上 grep —— 这条是 impl-03d 实测抓到并修掉的**假绿通道**：
+#    sql-client 会**逐字回显 SQL 源码（含注释）**，而各层脚本的注释里就写着
+#    marker 字面量（`replay_10_ods.sql` 的「脚本 grep 出 'layer=ods rows=' 即可」、
+#    `replay_90_maintain.sql` 的「`maintain rows=…`」）。
+#    实测：维护段的 marker 在输出里出现 **3 处回显 + 1 处结果** ⇒ 把结果行删掉，
+#    旧的全文 grep **仍然通过** —— 正向证据退化成「文件被回显过」。
+#    ⇒ 判据改为「存在一行以 `|` 开头且含该 marker」（表格行以 `|` 开头，
+#      回显行以 `>` / `Flink SQL>` 开头，天然分开）。
+#    静态守卫：tests/test_lake_assert.py::test_markers_are_not_satisfiable_by_echo。
 run_sql() {
   local label="$1" file="$2" marker="${3:-}" out rc
   if [ ! -f "$SQL_DIR/$file" ]; then
@@ -125,15 +136,20 @@ run_sql() {
     echo "[replay] ✗ $label：SQL 报错（见上）" >&2
     return 1
   fi
-  if [ -n "$marker" ] && ! printf "%s" "$out" | grep -q "$marker"; then
+  if [ -n "$marker" ] && ! printf "%s" "$out" | grep -qE "^\|[^|]*${marker}"; then
     printf "%s\n" "$out" | tail -20 >&2
-    echo "[replay] ✗ $label：缺正向证据 marker [$marker]（无报错 != 成功）" >&2
+    echo "[replay] ✗ $label：缺正向证据 marker [$marker]（只在结果表格行上找；无报错 != 成功）" >&2
+    echo "[replay]   注意：sql-client 会回显 SQL 源码，全文 grep 会被注释满足（旧缺陷）" >&2
     return 1
   fi
   # 逐个 marker 转成统一日志行（行数必须是 SQL 查出来的，不是脚本猜的）
-  printf "%s" "$out" | grep -oE "(layer=[a-z]+|dwd_reject) rows=[0-9]+" | while IFS= read -r line; do
-    echo "[layer] $line"
-  done
+  # ★ 同样只取表格行：`^\|` 起头 + 去竖线/空白后是 `layer=… rows=N` 形状。
+  #   旧写法 `grep -oE` 在全文上抓，回显里的字样会被当成一层的结果重复打印。
+  printf "%s" "$out" | grep -E '^\|' \
+    | grep -oE "(layer=[a-z]+|dwd_reject|maintain) rows=[0-9]+" \
+    | while IFS= read -r line; do
+        echo "[layer] $line"
+      done
   return 0
 }
 

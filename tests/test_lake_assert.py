@@ -330,17 +330,105 @@ def test_missing_input_file_exits_2(tmp_path: Path) -> None:
 
 
 def test_missing_fingerprint_file_exits_3(tmp_path: Path) -> None:
-    """`--compare` 但指纹文件不存在 ⇒ exit 3（**不是** 0、也不是 1）。
+    """`--compare` 但指纹文件不存在 ⇒ **exit 3**（不是 0、也不是 1）。
 
     ★ 为什么不是 0：没有基线就断言"两次一致"是**谎报**。
-    ★ 为什么不是 1：它不是断言失败，而是"没准备好比对"，归因不同。
+    ★ 为什么不是 1：它不是断言失败，而是「没准备好比对」，归因不同
+      （脚本文件头的退出码表把 3 单列出来，就是为了这个区分）。
+    ★ 走 `--judge` 注入路径：不给会碰集群，让这条用例在任何机器上都可跑，
+      且**不必等 90 秒**。--judge 模式下断言全绿后进入幂等比对分支，
+      指纹文件缺失 ⇒ compare_fp 返回 3。
     """
     fp = tmp_path / "nope-fp.txt"
-    r = _bash("--compare", "--fingerprint-file", str(fp))
-    # 这条会真去连集群 ⇒ 在没有容器的机器上 docker exec 会失败(1)。
-    # 只要它能跑到"比对"阶段就说明没被断言阶段提前拦住 —— 故接受 1 或 3，
-    # 但**不接受 0**。真正"exit 3"的路径由下一条用例用 --judge 覆盖。
-    assert r.returncode != 0
+    p = tmp_path / "stdout.txt"
+    p.write_text(_stdout(green=True), encoding="utf-8")
+    r = _bash("--judge", str(p), "--compare", "--fingerprint-file", str(fp))
+    assert r.returncode == 3, (
+        f"指纹基线缺失时应 exit 3，实际 {r.returncode}\nstdout={r.stdout}\nstderr={r.stderr}"
+    )
+    assert "不存在" in r.stderr or "先跑一次" in r.stderr
+
+
+def test_fingerprint_mismatch_exits_3(tmp_path: Path) -> None:
+    """指纹与基线**不同** ⇒ exit 3（这是幂等判据本身的失败态）。"""
+    fp = tmp_path / "fp.txt"
+    fp.write_text("999 111 222 333\n", encoding="utf-8")  # 与夹具里的四件套都不同
+    p = tmp_path / "stdout.txt"
+    p.write_text(_stdout(green=True), encoding="utf-8")
+    r = _bash("--judge", str(p), "--compare", "--fingerprint-file", str(fp))
+    assert r.returncode == 3
+    assert "幂等破" in r.stderr
+    # 失败必须带**两侧**的值，否则无从归因
+    assert "上一遍" in r.stderr and "本  遍" in r.stderr
+
+
+def test_fingerprint_match_passes(tmp_path: Path) -> None:
+    """指纹与基线**相同** ⇒ exit 0（幂等成立）。"""
+    m = _ALL_METRICS
+    fp = tmp_path / "fp.txt"
+    fp.write_text(
+        f"{m['metric.fp.rows']} {m['metric.fp.hash']} "
+        f"{m['metric.fp.devent']} {m['metric.fp.dlag']}\n",
+        encoding="utf-8",
+    )
+    p = tmp_path / "stdout.txt"
+    p.write_text(_stdout(green=True), encoding="utf-8")
+    r = _bash("--judge", str(p), "--compare", "--fingerprint-file", str(fp))
+    assert r.returncode == 0, r.stderr
+    assert "幂等" in r.stdout
+
+
+def test_batch_check_detects_regeneration(tmp_path: Path) -> None:
+    """`--assert-batch-unchanged` 在门槛批**变了**时必须退非 0。
+
+    ★ 这条守的是幂等判据的**前提**：换了批，两遍"一致"毫无意义。
+      重产入口可能来自环境变量（`FORCE_GEN=1`）⇒ 不能只靠"Makefile 没设它"。
+    """
+    baseline = tmp_path / "batch.sha256"
+    baseline.write_text(
+        "0000000000000000000000000000000000000000000000000000000000000000  x\n"
+    )
+    r = _bash("--assert-batch-unchanged", str(baseline))
+    # 门槛批在 data/ 下（.gitignore 覆盖）；若本机没有它，用例只能验证"基线不符则失败"
+    assert r.returncode == 1, (
+        f"基线不符时应 exit 1，实际 {r.returncode}\nstdout={r.stdout}\nstderr={r.stderr}"
+    )
+    assert "被重产" in r.stderr
+
+
+def test_batch_check_missing_baseline_exits_2(tmp_path: Path) -> None:
+    r = _bash("--assert-batch-unchanged", str(tmp_path / "nope.sha256"))
+    assert r.returncode == 2
+    assert "找不到基线" in r.stderr
+
+
+def test_value_flags_do_not_hang_without_value() -> None:
+    """带值的参数**缺值**时必须 exit 2，**不得挂死**。
+
+    ★ 本机实测过的真缺陷：`--fingerprint-file) FP_FILE="${2:-}"; shift 2 ;;`
+      在只剩 1 个参数时 `shift 2` 失败且**不消耗参数** ⇒ `while [ $# -gt 0 ]` 永真
+      ⇒ 死循环（`timeout 5` 返回 **124**）。
+    ★ 用 `timeout` 而不是直接调用：万一回归，这条用例应当**失败**而不是
+      把整个 pytest 挂住（超时 124 ≠ 2 ⇒ 断言红，且能定位）。
+    """
+    for flag in (
+        "--fingerprint-file",
+        "--judge",
+        "--parse",
+        "--assert-batch-unchanged",
+    ):
+        proc = subprocess.run(
+            [_BASH, str(_SCRIPT), flag],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=20,  # 挂死会被这里打断 ⇒ 用例失败（TimeoutExpired）
+            check=False,
+        )
+        assert proc.returncode == 2, (
+            f"{flag} 缺值应 exit 2（不得挂死/不得静默跑集群），实际 {proc.returncode}"
+        )
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -486,8 +574,14 @@ def test_script_pins_container_and_sql_path() -> None:
     否则两半会跑在两个 JVM/cgroup 上（impl-03c 的 OOM 事故就是这类混淆）。
     """
     text = _script_text()
-    assert 'CONTAINER="${LAKE_FLINK_CONTAINER:-eco-flink-jm}"' in text
-    assert 'SQL_FILE="sql/assert_lake.sql"' in text
+    # ★ 只钉**语义**（哪个变量取哪个值），不钉引号风格/空白 —— 否则改个引号就红，
+    #   而被钉的东西（同容器、同 SQL 路径）其实没变。
+    assert re.search(r'CONTAINER="\$\{LAKE_FLINK_CONTAINER:-eco-flink-jm\}"', text), (
+        "容器未与 lake_replay.sh 取同一个（eco-flink-jm，可用 LAKE_FLINK_CONTAINER 覆盖）"
+    )
+    assert re.search(r'SQL_FILE="sql/assert_lake\.sql"', text), (
+        "断言脚本路径不是 sql/assert_lake.sql"
+    )
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -636,11 +730,18 @@ def test_a1_ods_side_filters_landing_day() -> None:
     code = _strip_comments(_assert_sql_text())
     a1_block = code[code.index("A1_split_complete") :]
     a1_block = a1_block[: a1_block.index("A2") if "A2" in a1_block else 2000]
+    # ★ 落地日取 `(SELECT MAX(dt) FROM ods_behavior_event)`，**不取**
+    #   `DATE_FORMAT(CURRENT_TIMESTAMP,…)` —— 后者把判据绑死到"跑断言那天的 UTC 日"，
+    #   而 replay 可能在前一天跑完 ⇒ 跨日后 A2 会静默变成 0（0 在日志里读起来
+    #   正是"这批没有重复"，语义被悄悄换掉）。这是 code-review 的 G1。
     assert re.search(
-        r"FROM\s+ods_behavior_event\s+WHERE\s+dt\s*=\s*DATE_FORMAT\(CURRENT_TIMESTAMP",
+        r"WHERE\s+dt\s*=\s*\(SELECT\s+MAX\(dt\)\s+FROM\s+ods_behavior_event\)",
         a1_block,
         re.IGNORECASE,
-    ), "A1 的 ODS 侧未按本次落地日过滤（会依赖历史落地批）"
+    ), "A1 的 ODS 侧未限定到最近一次落地批（会依赖历史落地批/或被钉到当天）"
+    assert "CURRENT_TIMESTAMP" not in a1_block, (
+        "A1 的 ODS 侧仍用 CURRENT_TIMESTAMP 取日期（跨 UTC 日会与 replay 的时间基不一致）"
+    )
 
 
 def test_a2_filters_landing_day() -> None:
@@ -654,10 +755,17 @@ def test_a2_filters_landing_day() -> None:
     idx = code.index("metric.a2_dup_overshoot")
     a2_block = code[idx : idx + 600]
     assert re.search(
-        r"FROM\s+ods_behavior_event\s+WHERE\s+dt\s*=\s*DATE_FORMAT\(CURRENT_TIMESTAMP",
+        r"WHERE\s+dt\s*=\s*\(SELECT\s+MAX\(dt\)\s+FROM\s+ods_behavior_event\)",
         a2_block,
         re.IGNORECASE,
-    ), "A2 的 ODS 侧未按本次落地日过滤（会报成『跑过几次』）"
+    ), "A2 的 ODS 侧未限定到最近一次落地批（会报成『跑过几次』）"
+    assert "CURRENT_TIMESTAMP" not in a2_block, (
+        "A2 的 ODS 侧仍用 CURRENT_TIMESTAMP 取日期"
+    )
+    # ★ A2 不作断言 ⇒ 它出错时没有哨兵会红，必须靠「比的是哪天」显式可读。
+    assert "metric.rows.landing_day" in _strip_comments(_assert_sql_text()), (
+        "缺 metric.rows.landing_day：A2 的 0 无法区分『真无重复』与『比错天』"
+    )
 
 
 def test_new_files_use_lf_line_endings() -> None:
@@ -689,6 +797,113 @@ def test_new_files_use_lf_line_endings() -> None:
     assert not offenders, (
         f"以下文件含 CRLF 行尾（本仓统一 LF；会造成整文件假 diff）：{offenders}"
     )
+
+
+def test_snapshot_retention_literals_agree() -> None:
+    """`5` / `20` 这三处字面量（DDL / ALTER / 断言期望）必须**一致**。
+
+    ★ 三处都必要，无法合并成一处（理由见 `sql/assert_lake.sql` ⑦ 段的注释）：
+      · `replay_01_ddl.sql` —— 管**新建**的表；
+      · `replay_90_maintain.sql` —— 管**已存在**的表
+        （`CREATE TABLE IF NOT EXISTS` 对老表一句不改）；
+      · `sql/assert_lake.sql` —— 是**判据**（读集群 `$options`，不读 DDL 文本）。
+    ★ 风险所在：只改一处时，**另外两处会静默地按旧值工作** ——
+      DDL 与 ALTER 不一致时，新建表与老表拿到不同属性（集群内部就分裂了）；
+      而断言若停在旧值，它会**红**（这一半是好事），但如果有人"为了让它绿"
+      去改断言而不改 DDL，就变成了判据追着实现跑。
+    ⇒ 本条让「改一个必须改三个」在 pytest 阶段就现形。
+    """
+    ddl_code = _strip_comments(_ddl_text())
+    maint_code = _strip_comments(_MAINT_SQL.read_text(encoding="utf-8"))
+    assert_code = _strip_comments(_assert_sql_text())
+
+    ddl_min = set(re.findall(r"'snapshot\.num-retained\.min'\s*=\s*'(\d+)'", ddl_code))
+    ddl_max = set(re.findall(r"'snapshot\.num-retained\.max'\s*=\s*'(\d+)'", ddl_code))
+    maint_min = set(
+        re.findall(r"'snapshot\.num-retained\.min'\s*=\s*'(\d+)'", maint_code)
+    )
+    maint_max = set(
+        re.findall(r"'snapshot\.num-retained\.max'\s*=\s*'(\d+)'", maint_code)
+    )
+    assert_min = set(
+        re.findall(
+            r"'snapshot\.num-retained\.min'\s*AND\s*`value`\s*=\s*'(\d+)'", assert_code
+        )
+    )
+    assert_max = set(
+        re.findall(
+            r"'snapshot\.num-retained\.max'\s*AND\s*`value`\s*=\s*'(\d+)'", assert_code
+        )
+    )
+
+    assert ddl_min == {"5"}, f"DDL 的 min 不止一个值：{ddl_min}"
+    assert ddl_max == {"20"}, f"DDL 的 max 不止一个值：{ddl_max}"
+    assert maint_min == ddl_min, f"维护段的 min {maint_min} ≠ DDL {ddl_min}"
+    assert maint_max == ddl_max, f"维护段的 max {maint_max} ≠ DDL {ddl_max}"
+    assert assert_min == ddl_min, f"断言的 min {assert_min} ≠ DDL {ddl_min}"
+    assert assert_max == ddl_max, f"断言的 max {assert_max} ≠ DDL {ddl_max}"
+
+
+def test_markers_are_not_satisfiable_by_echo() -> None:
+    """层/维护段的 marker 判据**不得**被 sql-client 回显的注释满足（假绿通道）。
+
+    ★ 这是本票实测抓到的第二个假绿通道（第一个是「缺哨兵整行」）：
+      sql-client 会**逐字回显 SQL 源码（含注释）**，而各层脚本的注释里就写着
+      marker 字面量。实测维护段：输出里 **3 处回显 + 1 处结果** ⇒
+      把结果行删掉，旧的全文 `grep -q` **仍然通过**
+      ⇒ 正向证据退化成「文件被回显过」，而 marker 的全部意义就是
+      「absence of error != success」。
+    ★ 判据分两层：
+      ① 脚本侧必须锚在**表格行**上（`^\\|` 起头）；
+      ② SQL 注释里**不得**出现「看起来像结果」的 marker 形状（`marker=数字`），
+         因为那种形状一旦被将来某个更宽松的判据捞到，就会重演这个洞。
+    """
+    script = _REPLAY_SH.read_text(encoding="utf-8")
+    # ① marker 检查必须锚表格行。用"行内容断言"而不是正则转义 ——
+    #    后者在本文件里已经因为反斜杠层级写错过一次（守卫自己写错比没有更糟）。
+    marker_check = [
+        line
+        for line in script.splitlines()
+        if "marker" in line and "grep" in line and not line.lstrip().startswith("#")
+    ]
+    assert marker_check, "lake_replay.sh 里找不到 marker 的判定语句"
+    anchored = [line for line in marker_check if "|" in line and "^" in line]
+    assert anchored, (
+        "lake_replay.sh 的 marker 判据未锚定表格行（需要 ^| 形状）"
+        f"⇒ 会被回显的注释满足；实际语句：{marker_check}"
+    )
+    # ② 各层 SQL 的**注释行**里不得出现「marker=数字」形状。
+    #    代码里出现 `CONCAT('layer=ods rows=', …)` 是**产出**，必须允许；
+    #    故只查以 `--` 开头的行。
+    offenders = []
+    for path in sorted(_SQL_DIR.glob("*.sql")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.lstrip().startswith("--"):
+                continue
+            if re.search(r"(layer=[a-z]+|dwd_reject|maintain)\s+rows=\d+", line):
+                offenders.append(f"{path.name}: {line.strip()[:80]}")
+    assert not offenders, (
+        "以下 SQL 注释里出现了「marker=数字」形状（会被宽松判据当结果）："
+        + str(offenders)
+    )
+
+
+def test_judge_rejects_green_where_one_sentinel_missing(judge) -> None:
+    """回归守卫：删掉**任何一条**哨兵都失败（逐个试，不是抽样一条）。"""
+    for name in _ALL_NAMES:
+        r = judge(_stdout(green=True, missing=(name,)))
+        assert r.returncode == 1, f"删掉 {name} 竟然通过"
+        assert name in r.stderr
+
+
+def test_judge_rejects_green_where_one_sentinel_false(judge) -> None:
+    """回归守卫：任意一条 `ok=false` 都失败（逐个试）。"""
+    for name in _ALL_NAMES:
+        text = _stdout(green=True).replace(
+            f"| {name} | ok=true |", f"| {name} | ok=false |"
+        )
+        r = judge(text)
+        assert r.returncode == 1, f"{name} 变 false 竟然通过"
 
 
 def test_assert_sql_pins_required_session_settings() -> None:
