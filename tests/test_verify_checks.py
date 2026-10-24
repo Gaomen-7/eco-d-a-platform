@@ -75,20 +75,73 @@ def test_funnel_monotone_skips_when_no_rows() -> None:
     assert check_funnel_monotone_result_from_rows([]).status is Status.SKIP
 
 
-def test_p1_report_shape_is_four_pass_one_skip(tmp_path: Path) -> None:
-    """P1 分层形态固化：第三项 SKIP，其余四项真断言，退出码 0。"""
-    from ecomgen.verify_runner import P1_CHECKS
+def test_p1_report_shape_is_five_real_checks(tmp_path: Path) -> None:
+    """分层形态固化（impl-03f 起）：五项**真断言**，第三项不再 SKIP。
 
-    assert len(P1_CHECKS) == 5
-    # 第三项必须是那把「显式 SKIP」的
-    third = P1_CHECKS[2]()
-    assert third.status is Status.SKIP
+    P1 时期第三项是显式 SKIP（spec §4.3）；P2 转真后本测试钉住新形态：
+    第三项必须走采集器（不退回打印一行 SKIP 的旧形态）。这里 monkeypatch
+    采集函数注入「五层全 7 行」⇒ 第三项 PASS；SKIP 形态会被
+    test_verify_paimon_layers.py 的同名契约测试拦住。
+    """
+    import ecomgen.verify_runner as vr
+
+    assert len(vr.P1_CHECKS) == 5
+    assert vr.P1_CHECKS[2].__name__ == "check_paimon_layers"
+
+    original = vr.collect_paimon_layer_counts
+    vr.collect_paimon_layer_counts = lambda: dict.fromkeys(  # type: ignore[assignment]
+        vr.PAIMON_LAYER_TABLES, 7
+    )
+    try:
+        third = vr.P1_CHECKS[2]()
+    finally:
+        vr.collect_paimon_layer_counts = original  # type: ignore[assignment]
+
+    assert third.status is Status.PASS
     assert "paimon" in third.name
 
-    report = VerifyReport(checks=[c() for c in P1_CHECKS])
-    counts = report.counts()
-    assert counts["SKIP"] >= 1
-    assert "PASS" in counts
+    report = VerifyReport(
+        checks=[c() for c in vr.P1_CHECKS if c is not vr.P1_CHECKS[2]]
+    )
+    report.checks.insert(2, third)
+    # 第三项已注入「五层全 7 行」⇒ 它本身必须 PASS 且不为 SKIP
+    # （旧实现曾以 SKIP 形态占位——恒真断言 `... or True` 已在 code-review 中剔除）。
+    assert report.checks[2].status is Status.PASS
+    assert report.checks[2].name == third.name
+
+
+def test_recon_probe_is_wired_as_extra_check() -> None:
+    """探针对账接线形态固化（impl-03f §2.6-4）：附加断言末位，
+    不动五项面（P1_CHECKS 恒 5）；调用即走 reconcile_probe 入口。"""
+    import ecomgen.verify_runner as vr
+
+    assert vr.P1_CHECKS == (
+        vr.check_kafka_topic,
+        vr.check_flink_job_running,
+        vr.check_paimon_layers,
+        vr.check_doris_ads_rows,
+        vr.check_superset_health,
+    )
+    assert vr.P1_EXTRA_CHECKS[-1].__name__ == "check_recon_probe"
+
+    import ecomgen.reconcile_probe as rprobe
+
+    captured: dict[str, str] = {}
+
+    def _fake_entry(**_kw):
+        from ecomgen.reconcile_probe import check_probe_reconciliation
+
+        captured["called"] = "yes"
+        return check_probe_reconciliation({}, {})
+
+    original = rprobe.run_probe_reconciliation
+    rprobe.run_probe_reconciliation = _fake_entry  # type: ignore[assignment]
+    try:
+        result = vr.check_recon_probe()
+    finally:
+        rprobe.run_probe_reconciliation = original  # type: ignore[assignment]
+    assert captured["called"] == "yes"
+    assert result.name == "recon-offline-mirror-doris"
 
 
 # ── kafka-topic-retention：读法与施加方同源（impl-02c）─────────────────

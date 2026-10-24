@@ -3,7 +3,7 @@
 > **母票**。2026-10-22 拆为六张副票施工，正文保留为**决策档案**（不删改）。开工看副票，收口回这里核对 10 条验收。
 
 Type: task
-Status: ready-for-agent（拆票中，见下）
+Status: resolved（2026-10-24 22:00 经 impl-03f 收口：六张副票全结，10 条验收全勾）
 Blocked by: impl-02
 
 ## 副票（2026-10-22 拆）
@@ -53,18 +53,19 @@ ODS `ods_behavior_event`（append，`dt`=落地日，`payload` 原文零解析�
 
 ## Acceptance criteria
 
-> **这 10 条由六张副票共同兑现**，收口勾选归 **impl-03f**。括号内是主责票，勾选前先看那张票的验收。
+> **这 10 条由六张副票共同兑现**，收口勾选归 **impl-03f**（2026-10-24 22:00
+> 收口，证据索引见 impl-03f §3.6）。括号内是主责票。
 
-- [ ] `make replay` 默认跑完五层退出 0；`make replay LAYER=dws` 只跑到 DWS 停住，日志逐层有 `layer=<层> rows=…`（**03b / 03c**）
-- [ ] 七张表的分区键、主键、bucket、表属性与形状表逐项一致；DWD/DIM/DWS/ADS 主键表均 `upsert-materialize=NONE` 且未设 `sequence.field`（**03b**）
-- [ ] 拒绝表的 `dt` 取摄入日（处理时间）而非事件日；`reject_reason` 取值域恰为三值，**没有 `duplicate`**（**03b**）
-- [ ] 同批 dump 跑两遍后 DWD 行数与逐列校验和完全一致（幂等成立）（**03d**）
-- [ ] `lake_assert.sh` 在人为破坏一条断言（如改掉 A3 的一侧）时判定失败并返回非 0（证哨兵面真的会判，不是恒真）（**03e**）
-- [ ] 快照 count 落在 [5,20] 内；批读整表时拉链区间在当前快照下自洽，`$audit_log` 能查到变更发生过（**03d**）
-- [ ] Paimon 与 Doris 两套 `ads_window_metric` 在 `is_settled=1` 行上逐值严格相等；人为改动 Doris 侧一个落定值后对账断言失败（**03f**）
-- [ ] `make verify` 第三项在本票完成后由 SKIP 转为真断言，五项全真且退出码 0（**03f**）
-- [ ] 门槛批文件落 `data/` 且被 `.gitignore` 覆盖；仓库内无原始数据（`git check-ignore` 验证）（**03a / 03b**）
-- [ ] 官方未给出的清单按 spec §8.3 登记（`sys.compact` 对主键表的逐句适用声明、`file://` compaction 成本数字等）——**遇到就登记，不臆造**（**03d / 03f**）
+- [x] `make replay` 默认跑完五层退出 0；`make replay LAYER=dws` 只跑到 DWS 停住，日志逐层有 `layer=<层> rows=…`（**03b / 03c**）
+- [x] 七张表的分区键、主键、bucket、表属性与形状表逐项一致；DWD/DIM/DWS/ADS 主键表均 `upsert-materialize=NONE` 且未设 `sequence.field`（**03b**）
+- [x] 拒绝表的 `dt` 取摄入日（处理时间）而非事件日；`reject_reason` 取值域恰为三值，**没有 `duplicate`**（**03b**）
+- [x] 同批 dump 跑两遍后 DWD 行数与逐列校验和完全一致（幂等成立）（**03d**）
+- [x] `lake_assert.sh` 在人为破坏一条断言（如改掉 A3 的一侧）时判定失败并返回非 0（证哨兵面真的会判，不是恒真）（**03e**）
+- [x] 快照 count 落在 [5,20] 内；批读整表时拉链区间在当前快照下自洽，`$audit_log` 能查到变更发生过（**03d**）
+- [x] Paimon 与 Doris 两套 `ads_window_metric` 在 `is_settled=1` 行上逐值严格相等；人为改动 Doris 侧一个落定值后对账断言失败（**03f** §3.1/§3.2：探针批 `rows=3 逐值全等`；UPDATE+1000 ⇒ FAIL 差 1 行）
+- [x] `make verify` 第三项在本票完成后由 SKIP 转为真断言，五项全真且退出码 0（**03f** §3.4：两连续绿 10 PASS / 退 0）
+- [x] 门槛批文件落 `data/` 且被 `.gitignore` 覆盖；仓库内无原始数据（`git check-ignore` 验证）（**03a / 03b**；03f 复核 `.gitignore:10` 命中）
+- [x] 官方未给出的清单按 spec §8.3 登记（`sys.compact` 对主键表的逐句适用声明、`file://` compaction 成本数字等）——**遇到就登记，不臆造**（**03d / 03f**；03f 追加五条：JDBC catalog 工厂缺失 / 分区导出序 / 水位 MIN 语义 / `rows` 保留字 / slot 争用不重启）
 
 ## Notes
 

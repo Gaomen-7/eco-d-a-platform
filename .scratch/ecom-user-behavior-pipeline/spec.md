@@ -507,6 +507,14 @@ SELECT '<断言名>' AS assertion, COUNT(*)>0 AS ok FROM …
 - **`$audit_log` 的可见窗口与快照过期的关系** —— 官方未给出「过期后审计日志保留多久」的明确条文。⇒ 拉链的「变更发生过」判据**只要求现在能看到痕迹**，不要求历史全在（见 `assert_lake.sql` ⑥b）。
 - **Flink SQL 的 `crc32` 函数** —— spec §5.4 的伪代码写了 `SUM(crc32(...))`，但 **Flink 2.2 SQL 没有该函数**（实机逐字：`No match found for function signature crc32(<CHARACTER>)`）。⇒ 这是**伪代码不成立**而非「官方未给出」；已改用 `SUM(CAST(HASH_CODE(...) AS BIGINT))`。
 
+**impl-03f 施工中新登记的（2026-10-24）：**
+
+- **flink-jm 官方镜像不含 `flink-connector-jdbc`** —— `CREATE CATALOG … 'type'='jdbc'` 实机报 `Could not find any factory for identifier 'jdbc'`（factory 清单只有 generic_in_memory / paimon*）；官方 quickstart 未提 sql-client 端 JDBC catalog 需另行装配。⇒ Flink SQL 侧直连 Doris 的查询期 JOIN 路线废弃，对账改 Python 侧导出复算（`reconcile.py`，与 `_doris_scalar_runner` 同源执行面）。
+- **`kafka-console-consumer` 的分区导出序 ≠ 历史真实消费交错序** —— 官方无「按分区导出可复原到达序」的语义保证条文；分区序模拟旁路重放实测不符（18072 vs 7622）。⇒ 全量对账不押注到达序重建，改受控探针批。
+- **并行 Kafka source 的 operator watermark = 各 subtask 水位 MIN，且无「单分区事件即推全局水位」的文档表述** —— 实测定案：6 分区 topic 投一条 tick 只落 1 分区 ⇒ 其余 subtask 水位不动 ⇒ 窗口不关；逐分区各投一条才推得动（`reconcile_probe.send_watermark_ticks` 头注）。官方文档无该交互的显式条文（forBoundedOutOfOrderness 的 MIN 语义是行为推断 + 实测证实）。
+- **`rows` 是 Flink SQL 保留字**（03f §1.2 首记，此处汇总归档）：探针别名 `AS rows` ⇒ `ParseException`，且 sql-client 报错即中止整个脚本（与 03e §2 同款）。官方保留字清单未在易查面命中该判例。
+- **session 集群 slot 争用时批作业 `PendingSlotRequest` 超时且 `NoRestartBackoffTimeStrategy` 不重启**（03f §1.4 首记，此处汇总归档）：官方文档无该交互条文；处置＝TM slot 4→8（REQ-F-RT-08 限并行度非 slot 数，§2.1 已核冻结面）。
+
 
 ---
 

@@ -6,12 +6,17 @@
 
 P1 阶段的五项（spec §4.3 表）：**4 真 + 1 显式 SKIP**。
 第三项「Paimon 五层有行」在 P1 **显式 SKIP**——不计通过也不计 fail。
+**impl-03f（P2）起第三项已转真断言**：五层各 `COUNT(*)>0`（走 Flink SQL
+探针 `sql/verify_paimon_layers.sql`，非 Doris 的 `total_record_count`），
+状态参与退出码 —— spec §4.3 的 P2 行「五项真断言」。
 
-附加断言（P1 可即时判定，spec §4.3）：
+附加断言（spec §4.3）：
 - 漏斗单调（`cnt_inferred` 沿 step_no 非增）
 - **脏率不升**（分子＝DLQ 总 offset，分母＝输入 topic 总 offset，与基线名次比较：
   取不到基线 ⇒ SKIP，**不是** PASS——旧实现「取到 offset 就 PASS」是恒真假通过）
 - **`is_settled` 两态**（暂定 0 与落定 1 都必须 >0；只有落定 ⇒ FAIL）
+- **探针对账**（impl-03f）：受控探针批 → 两轮逐分区踢水位 → Doris 落定行
+  与同源公式复算**逐值严格相等**（is_settled=0 不判，spec §5.4）
 - **F6 降级阶梯**（`docker inspect` 的 OOMKilled/exit 137 计数 ≥ 阈值 ⇒ FAIL；
   阈值是**设计值**，实测值写进报告 `degradation` 字段）
 
@@ -22,6 +27,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import re
 import subprocess
 import sys
 from collections.abc import Callable
@@ -65,6 +71,17 @@ ADS_TABLES: tuple[str, ...] = (
     "ads_funnel_step",
     "ads_late_expired_count",
 )
+
+# ── 第三项「Paimon 五层有行」的探针面（impl-03f 交付物 3）──────────────
+# 层词汇表＝spec §5.3 的五值（ods|dwd|dim|dws|ads）；dim＝五张维表合计
+# （与 replay_30_dim.sql 的 layer=dim rows= 同口径）。
+PAIMON_LAYER_TABLES: tuple[str, ...] = ("ods", "dwd", "dim", "dws", "ads")
+# 探针 SQL 经只读挂载 ./sql:/sql:ro 进容器（与 lake_assert.sh 同一执行面）。
+PAIMON_LAYERS_CONTAINER = "eco-flink-jm"
+PAIMON_LAYERS_SQL = "verify_paimon_layers.sql"
+# 探针五条 SELECT（每层一条，含 SET/CATALOG 头）在批模式下实测 ~2 min 量级；
+# 60 s 会掐断 ADS 那条最贵的扫描。**设计值**，非官方保证。
+PAIMON_LAYERS_TIMEOUT_S = 300
 
 
 def _run(cmd: list[str], timeout: int = 60) -> tuple[int, str]:
@@ -207,19 +224,113 @@ def check_flink_job_state_from_json(payload: str) -> CheckResult:
     )
 
 
-def check_paimon_layers() -> CheckResult:
-    """3/5 Paimon 五层有行 —— **P1 显式 SKIP**（spec §4.3）。
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+_TABLE_CELL_RE = re.compile(r"^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$")
 
-    为什么要显式 SKIP 而不是 PENDING：现状的第三项打 PENDING 且不置 fail=1
-    ⇒ 「今天会假通过」。SKIP 是**一等状态**：不计通过也不计 fail，
-    并在 JSON 报告里明确标注，P2 再转真断言。
+
+def parse_layer_rows_from_stdout(stdout: str) -> dict[str, int]:
+    """从 sql-client 的 TABLEAU stdout 抽「层名 → 行数」（纯函数，可单测）。
+
+    解析纪律与 `lake_assert.sh` 的 parse_stdout 同源（spec §5.5）：
+    - 只认以 ``|`` 开头**且恰好两列**的表格行 —— 回显行以 ``>`` /
+      ``Flink SQL>`` 开头，天然排除（sql-client 会逐字回显 SQL 源码含注释，
+      注释里的 ``| ods | 999 |`` 字面量不会污染结果）；
+    - 第一列必须是层词汇表（ods/dwd/dim/dws/ads）之一 ⇒ 表头
+      （``layer_name``）、分隔行（``+---+---+``）天然不匹配；
+    - 第二列去 ANSI 色后必须是纯数字，否则该行被忽略。
+
+    解析不到任何层 ⇒ 返回 ``{}``，由判定函数按「层缺席」判 FAIL
+    （03e F6 已证伪的假绿通道：缺席不等于通过）。
     """
-    return CheckResult(
-        Status.SKIP,
-        "paimon-five-layers",
-        "P1 未开离线分层",
-        "P2 起：五层各 COUNT(*)>0（走 Flink SQL，非 total_record_count）",
+    counts: dict[str, int] = {}
+    for line in stdout.splitlines():
+        match = _TABLE_CELL_RE.match(_ANSI_RE.sub("", line))
+        if match is None:
+            continue
+        layer, value = match.group(1), match.group(2)
+        if layer not in PAIMON_LAYER_TABLES or not value.isdigit():
+            continue
+        counts[layer] = int(value)
+    return counts
+
+
+def check_paimon_layers_from_counts(
+    counts: dict[str, int] | None, raw: str = ""
+) -> CheckResult:
+    """五层行数判据（纯函数，可单测）：每层都必须被报告且 >0。
+
+    - `counts is None`（探针跑不出来：容器缺失/超时/docker 层失败）⇒ **FAIL**
+      —— P2 起这是真断言，「查不到」是失败，不是 P1 那种显式 SKIP；
+    - 某层**缺席**（探针没输出该层，如中途 SQL 报错被 sql-client 中止）⇒ FAIL，
+      记为「不可查」—— 判定面必须证明「每层都被报告过」，而不是
+      「报告过的层都 >0」（03e F6 的同款假绿通道）；
+    - 某层 = 0 ⇒ FAIL，`actual` 逐层点名（好层的状态不被掩盖）；
+    - 五层齐且全 >0 ⇒ PASS。
+    """
+    name = "paimon-five-layers"
+    expected = "五层各 COUNT(*)>0（走 Flink SQL，非 total_record_count）"
+    if counts is None:
+        return CheckResult(Status.FAIL, name, "探针执行失败", expected, raw)
+
+    parts: list[str] = []
+    for layer in PAIMON_LAYER_TABLES:
+        value = counts.get(layer)
+        if value is None:
+            parts.append(f"{layer}=不可查 FAIL")
+        elif value > 0:
+            parts.append(f"{layer}={value} PASS")
+        else:
+            parts.append(f"{layer}={value} FAIL")
+
+    actual = " ".join(parts)
+    if any(
+        counts.get(t) is None or (counts.get(t) or 0) <= 0 for t in PAIMON_LAYER_TABLES
+    ):
+        return CheckResult(Status.FAIL, name, actual, expected, raw or actual)
+    return CheckResult(Status.PASS, name, actual, expected)
+
+
+def collect_paimon_layer_counts() -> dict[str, int] | None:
+    """在 flink-jm 容器里跑五层探针，返回「层名 → 行数」；执行失败 ⇒ None。
+
+    执行面与 `lake_assert.sh` 同源：`./sql` 只读挂载为容器内 `/sql`
+    （docker-compose.yml 的 ``- ./sql:/sql:ro``），`MSYS_NO_PATHCONV=1`
+    防 Windows 宿主把 `/sql/...` 翻译成路径。⚠️ docker 退出码**不能**当
+    成功判据（sql-client 报错仍退 0，spec §5.5）—— 只看解析出的层行数。
+
+    ★★ 批探针与流作业**共用** session 集群的 slot 池（实机 2026-10-24）：
+    本仓 TM 仅 4 slot、流作业 28 任务常态占满 ⇒ 探针以默认并行度 4 提交时
+    等不到 slot，PendingSlotRequest 超时后批作业 FAILED 且
+    `NoRestartBackoffTimeStrategy` 不重启 —— 第三项转真后的第一个实测教训。
+    ⇒ 探针 SQL 里已 `SET 'pipeline.parallelism' = '1'`（见 sql/verify_paimon_layers.sql），
+    单 slot 即可跑完；本函数不再额外改会话。
+    """
+    rc, out = _run(
+        [
+            "docker",
+            "exec",
+            "-i",
+            PAIMON_LAYERS_CONTAINER,
+            "/opt/flink/bin/sql-client.sh",
+            "-f",
+            f"/sql/{PAIMON_LAYERS_SQL}",
+        ],
+        timeout=PAIMON_LAYERS_TIMEOUT_S,
     )
+    if rc != 0:
+        return None
+    return parse_layer_rows_from_stdout(out)
+
+
+def check_paimon_layers() -> CheckResult:
+    """3/5 Paimon 五层有行 —— **impl-03f（P2）起真断言**（spec §4.3）。
+
+    P1 时期这里是显式 SKIP（不计通过不计 fail）；P2 按 spec §4.3 的
+    「五项真断言」转真：五层各 `COUNT(*)>0`，走 Flink SQL 探针
+    （`sql/verify_paimon_layers.sql`），**非** Doris 的 `total_record_count`
+    （Paimon 系统表不在 Doris 支持列表内，票面 Notes 冻结）。
+    """
+    return check_paimon_layers_from_counts(collect_paimon_layer_counts())
 
 
 def check_doris_ads_rows() -> CheckResult:
@@ -291,6 +402,26 @@ def check_superset_health_from_body(body: str) -> CheckResult:
 
 
 # ── 附加断言（P1 可即时判定的行为判据，spec §4.3）────────────────────
+#
+# ── 探针对账（impl-03f 交付物 1，spec §5.2/§5.4 的键同构对账切面）──────
+# 形态：附加断言（不动 P1 五项面——spec §4.3 P2 行「五项真断言」已由
+# 五项本体满足，对账是六号位的**行为判据**）。跑一轮受控探针批
+# （~4.5 min：200 s 落定等待 + 逐分区踢水位 + 60 s flush），判据面见
+# reconcile_probe 模块头注（水位数学与分区 MIN 语义的实测定案）。
+
+
+def check_recon_probe() -> CheckResult:
+    """附加：Paimon↔Doris 探针对账（受控批，is_settled=1 逐值严格相等）。
+
+    判据面＝reconcile_probe.run_probe_reconciliation（投批 → 两轮逐分区
+    踢水位 → 落定行采集 → 同源公式复算 → 逐值比对）。失败形态含：
+    投递失败 / Doris 读取失败 / 任一侧缺席 / 任一值不等——全部 FAIL
+    （探针对账没有 SKIP 通道，缺席即失败）。
+    """
+    # 局部导入：探针面拉起 confluent_kafka，测试环境按需注入
+    from ecomgen.reconcile_probe import run_probe_reconciliation
+
+    return run_probe_reconciliation()
 
 
 def check_funnel_monotone() -> CheckResult:
@@ -970,19 +1101,20 @@ P1_EXTRA_CHECKS: tuple[Callable[[], CheckResult], ...] = (
     check_funnel_monotone,
     check_dlq_rate_not_increased,
     check_is_settled_two_states,
+    check_recon_probe,
 )
 
 
 def run_verify(report_dir: str = REPORT_DIR) -> VerifyReport:
     """跑完 P1 全部断言，写报告，返回结果。"""
     checks: list[CheckResult] = []
-    print("=== make verify：P1 分层判据（4 真 + 1 显式 SKIP）===")
+    print("=== make verify：分层判据（P2 起五项真断言，spec §4.3）===")
     for fn in P1_CHECKS:
         result = fn()
         checks.append(result)
         print(f"  {result.format_line()}")
 
-    print("--- 附加断言（可即时判定的行为判据）")
+    print("--- 附加断言（行为判据：漏斗/脏率/两态/探针对账）")
     for fn in P1_EXTRA_CHECKS:
         result = fn()
         checks.append(result)

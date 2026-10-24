@@ -68,7 +68,13 @@ env:
 
 taskmanager:
   bind-host: 0.0.0.0
-  numberOfTaskSlots: 4
+  # 8 slot：4 给实时作业（REQ-F-RT-08 限「并行度 ≤4」——slot 数不在冻结面，
+  # 且 slot 是逻辑数，每 slot 资源由 process.memory 切分，改它不动 mem_limit）；
+  # 另 4 供 verify/断言的批探针（impl-03f §1.4：流作业占满 4 slot 时批作业
+  # PendingSlotRequest 超时 FAILED、NoRestartBackoffTimeStrategy 不重启；
+  # pipeline.parallelism=1 也排不到队——free=0 时 1 slot 也无）。
+  # 「session 集群 slot 争用 ⇒ 批作业排队超时不重启」官方无条文，spec §8.3 登记。
+  numberOfTaskSlots: 8
   memory:
     process:
       size: 2048m
