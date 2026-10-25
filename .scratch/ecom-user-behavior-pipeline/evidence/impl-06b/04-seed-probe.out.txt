@@ -1,0 +1,51 @@
+=== [1] 生成 600000 行 × 1700 hex 字符（随机不可压缩） CSV ===
+gen start: 2026-10-25 12:50:53
+gen done : 2026-10-25 12:51:34
+raw bytes: 1024688895
+
+=== [2] docker cp 进 doris-be（stream load 直发 BE，容器内 curl） ===
+in-be bytes: 1024688895
+
+=== [3] 灌数前 du 基线 ===
+96768	/opt/apache-doris/be/storage
+
+=== [4] Stream Load（label=reclaim_probe_20261025T125053Z） ===
+load start: 2026-10-25 12:53:30
+{
+    "TxnId": 41195,
+    "Label": "reclaim_probe_20261025T125053Z",
+    "Comment": "",
+    "TwoPhaseCommit": "false",
+    "Status": "Success",
+    "Message": "OK",
+    "NumberTotalRows": 600000,
+    "NumberLoadedRows": 600000,
+    "NumberFilteredRows": 0,
+    "NumberUnselectedRows": 0,
+    "LoadBytes": 1024688895,
+    "LoadTimeMs": 114300,
+    "BeginTxnTimeMs": 0,
+    "StreamLoadPutTimeMs": 2,
+    "ReadDataTimeMs": 96024,
+    "WriteDataTimeMs": 114159,
+    "ReceiveDataTimeMs": 11742,
+    "CommitAndPublishTimeMs": 115
+}
+
+load done : 2026-10-25 12:55:25
+
+=== [5] 行数核对 + SHOW DATA + 灌数后 du ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-cb6a811434a9 Creating 
+ Container eco-a-d-platform-client-run-cb6a811434a9 Created 
+probe_rows
+600000
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-176d2b156b15 Creating 
+ Container eco-a-d-platform-client-run-176d2b156b15 Created 
+ERROR 1105 (HY000) at line 1: errCode = 2, detailMessage = No database selected
+

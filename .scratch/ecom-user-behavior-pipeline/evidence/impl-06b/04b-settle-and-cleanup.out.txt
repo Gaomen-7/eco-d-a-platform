@@ -1,0 +1,31 @@
+=== [1] 行数复核 + SHOW DATA（-D 进库后用正确形态） ===
+UTC now: 2026-10-25 12:56:34
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-79a68e1e2a4c Creating 
+ Container eco-a-d-platform-client-run-79a68e1e2a4c Created 
+probe_rows
+600000
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-b451a456aad2 Creating 
+ Container eco-a-d-platform-client-run-b451a456aad2 Created 
+TableName	IndexName	Size	ReplicaCount	RowCount	RemoteSize
+reclaim_probe	reclaim_probe	0.000 	8	0	0.000 
+	Total	0.000 	8		0.000 
+
+=== [2] du 稳定性采样（30 s × 3）——DROP 前 PRE_DROP 基线取末次 ===
+sample 1  12:56:46  632124
+sample 2  12:57:17  632180
+sample 3  12:57:47  631632
+
+=== [3] 临时文件清理（04 [7] 未及执行） ===
+-rw-r--r-- 1 1000 1000 1024688895 Oct 25 12:51 /tmp/reclaim_probe.csv
+removed-in-be
+removed-host-copy
+
+=== [4] BE metrics 快照（DROP 前） ===
+doris_be_disks_avail_capacity{path="/opt/apache-doris/be/storage"} 975684591616
+doris_be_disks_trash_used_capacity{path="/opt/apache-doris/be/storage"} 0

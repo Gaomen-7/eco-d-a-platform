@@ -1,0 +1,97 @@
+# 06b 补充凭证 — FE 日志直查逐字（2026-10-25）
+
+> 背景：06 号凭证 [1] 的 awk 时间窗过滤因 `docker exec` 双层引号转义 bug 输出为空（凭证内已注明）。
+> 本文件以**直接 grep**（无窗口过滤，按行首时刻目检）补齐同一证据，全部为 fe.log 逐字。
+> 采集时刻：2026-10-25 ≈13:20 UTC。
+
+## [A] DROP 时刻（T0+5s，12:58:02）
+
+```
+RuntimeLogger 2026-10-25 12:58:02,929 INFO (mysql-nio-pool-13|714) [InternalCatalog.dropTable():876] begin to drop table: reclaim_probe from db: ecom_rehearsal, is force: false
+RuntimeLogger 2026-10-25 12:58:02,929 INFO (mysql-nio-pool-13|714) [CatalogRecycleBin.recycleTable():229] recycle table[1792919869634-reclaim_probe], is force drop: false
+RuntimeLogger 2026-10-25 12:58:02,929 INFO (mysql-nio-pool-13|714) [InternalCatalog.unprotectDropTable():1049] finished dropping table[reclaim_probe] in db[ecom_rehearsal] recycleTable cost: 0ms
+RuntimeLogger 2026-10-25 12:58:03,031 INFO (mysql-nio-pool-13|714) [EditLog.logDropTable():1783] log drop table, logId : 58668, infos: internal.1792919869251.reclaim_probe
+```
+
+## [B] 配置切换后首个 tick：7 条过期分区条目即时被擦（12:49:49，对照物）
+
+```
+RuntimeLogger 2026-10-25 12:49:49,121 INFO (recycle bin|67) [CatalogRecycleBin.erasePartition():616] erase partition[1792578715397]. reason: expired
+RuntimeLogger 2026-10-25 12:49:49,163 INFO (recycle bin|67) [CatalogRecycleBin.erasePartition():616] erase partition[1792919869311]. reason: expired
+... (共 7 条：06a 的 p2026102506-09 + 更早的 p20260924 ×3，全部 reason: expired)
+RuntimeLogger 2026-10-25 12:49:49,452 INFO (recycle bin|67) [CatalogRecycleBin.erasePartition():645] erasePartition eraseNum: 7 cost: 398ms
+```
+
+⇒ **分区条目**在 DropTime+`catalog_trash_expire_second`(300) 过期后的**首个 30 s tick 即被擦**。
+
+## [C] 表条目擦除时刻（13:08:19.491 —— DropTime+617 s）
+
+```
+RuntimeLogger 2026-10-25 13:08:19,491 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():484] erase table[1792919869634]
+RuntimeLogger 2026-10-25 13:08:19,491 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 1 cost: 79ms
+```
+
+⇒ 表条目**未**在 DropTime+300（=13:03:02，名义过期）后的首批 tick（13:03:19–13:06:49 连续
+8 个 tick eraseNum:0）被擦，而是在 **DropTime+600 s（13:08:02）后的首个 30 s tick** 被擦。
+与「表条目滞留存在 ≥600 s 保底下限」假设精确吻合（best-fit 推断；4.1.5 源码本轮因网络不可达
+未能取得，**官方未给出**该下限的存在与数值——按实测口径登记，见 00-SUMMARY §3）。
+
+## [D] 收尾 DROP DATABASE（13:17:42，配置已恢复 86400）
+
+```
+RuntimeLogger 2026-10-25 13:17:42,046 INFO (mysql-nio-pool-15|737) [InternalCatalog.dropDb():483] begin drop database[ecom_rehearsal], is force : false
+RuntimeLogger 2026-10-25 13:17:42,046 INFO (mysql-nio-pool-15|737) [CatalogRecycleBin.recycleTable():229] recycle table[1792919869609-reclaim_rollback_check], is force drop: false
+RuntimeLogger 2026-10-25 13:17:42,047 INFO (mysql-nio-pool-15|737) [CatalogRecycleBin.recycleTable():229] recycle table[1792919869252-ads_window_metric_rehearsal], is force drop: false
+RuntimeLogger 2026-10-25 13:17:42,047 INFO (mysql-nio-pool-15|737) [CatalogRecycleBin.recycleDatabase():198] recycle db[1792919869251-ecom_rehearsal], is force drop: false
+RuntimeLogger 2026-10-25 13:17:42,141 INFO (mysql-nio-pool-15|737) [InternalCatalog.dropDb():560] finish drop database[ecom_rehearsal], is force : false
+```
+
+## [E] BE 侧 tablet 物理删除逐字（be.INFO，13:09:22.7–13:09:23.3，8 个 bucket tablet）
+
+```
+RuntimeLogger I20261025 13:09:22.769325  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919869638 from map, reason=move to trash, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 13:09:22.821995  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/12/1792919869642/1686266122 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 13:09:22.826699  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919869642 from map, reason=move to trash, ...
+... （8 个 tablet_id 1792919869636–1792919869650 全部同款两行：erase from map + delete dir directly）
+```
+
+⇒ BE 实际删除发生在 FE eraseTable 后 **≈63 s**（元数据传播），且逐字确认
+`trash_file_expire_time_sec is 0` ⇒ **直接删目录、无 trash 停留**（与 4.1.5 源码默认 0 一致，
+与 4.x BE Configuration 文档页 86400 冲突——维持 research 07 §3.1 的冲突登记）。
+
+## [F] BE garbage sweeper 节奏旁证（be.INFO）
+
+`start trash and snapshot sweep` 每 **180 s** 一条，与实测 `min_garbage_sweep_interval=180` 一致；
+本轮删除走 eraseTable 直接路径，未经过 sweeper。本轮（2026-10-25）窗口内逐字：
+
+```
+RuntimeLogger I20261025 12:57:22.526269  1607 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261025 13:00:22.574904  1607 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261025 13:03:22.587767  1607 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+```
+
+> ⚠️ 更正（2026-10-25，code-review 提出）：本文件首版 [F] 误引 10-20 时段旧行的时刻
+> （12:57:07 等）；上行才是本轮窗口内的 10-25 行，节奏不变（180 s）。
+
+## [G] eraseNum:0 tick 序列补录（2026-10-25 补抓，code-review 提出）
+
+正文明述但首版未留逐字的「名义过期后表条目仍连续 8 个 tick 未被擦」序列（fe.log 直查）：
+
+```
+RuntimeLogger 2026-10-25 13:03:19,422 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+RuntimeLogger 2026-10-25 13:03:49,421 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+RuntimeLogger 2026-10-25 13:04:19,420 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+RuntimeLogger 2026-10-25 13:04:49,419 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+RuntimeLogger 2026-10-25 13:05:19,418 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+RuntimeLogger 2026-10-25 13:05:49,417 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+RuntimeLogger 2026-10-25 13:06:19,416 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+RuntimeLogger 2026-10-25 13:06:49,415 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+```
+
+⇒ 名义过期 13:03:02 后 13:03:19–13:06:49 连续 8 个 tick 擦除数为 0，
+表条目实际擦除落在 13:08:19（[C]）——DropTime+600 s 后首个 tick。
+
+## [H] 补充引用更正（2026-10-25，code-review 提出）
+
+`DropPartitionClause` 源码注释的引文位于 research 07 **§3.3**（非首版所写 §2.3），
+HLD R7-k 的引用已同步更正。

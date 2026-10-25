@@ -1,0 +1,34 @@
+=== 5b 续测起：当前状态快照 ===
+UTC now: 2026-10-25 13:00:23 (T0 was 12:57:57)
+PRE_LOAD_KB=96768  GONE_THRESHOLD(KB)=117248
+du now: 631284 KB
+doris_be_disks_avail_capacity{path="/opt/apache-doris/be/storage"} 976706813952
+doris_be_disks_trash_used_capacity{path="/opt/apache-doris/be/storage"} 0
+
+=== 轮询观测（每 ≈40 s：du / trash / metrics / recycle bin 条目） ===
+[2026-10-25 13:00:29] elapsed=147s du=631284KB trash_dir=0KB trash_metric=0 bin=in-bin
+[2026-10-25 13:01:06] elapsed=182s du=631400KB trash_dir=0KB trash_metric=0 bin=in-bin
+[2026-10-25 13:01:41] elapsed=219s du=631508KB trash_dir=0KB trash_metric=0 bin=in-bin
+[2026-10-25 13:02:18] elapsed=254s du=631600KB trash_dir=0KB trash_metric=0 bin=in-bin
+[2026-10-25 13:02:54] elapsed=291s du=631696KB trash_dir=0KB trash_metric=0 bin=in-bin
+[2026-10-25 13:03:29] elapsed=327s du=631208KB trash_dir=0KB trash_metric=0 bin=in-bin
+[2026-10-25 13:04:06] elapsed=362s du=631328KB trash_dir=0KB trash_metric=0 bin=in-bin
+[2026-10-25 13:04:42] elapsed=399s du=631656KB trash_dir=0KB trash_metric=0 bin=in-bin
+[2026-10-25 13:05:17] elapsed=435s du=631784KB trash_dir=0KB trash_metric=0 bin=in-bin
+[2026-10-25 13:05:53] elapsed=470s du=631880KB trash_dir=0KB trash_metric=0 bin=in-bin
+[2026-10-25 13:06:28] elapsed=506s du=631508KB trash_dir=0KB trash_metric=0 bin=in-bin
+[2026-10-25 13:07:05] elapsed=541s du=631604KB trash_dir=0KB trash_metric=0 bin=in-bin
+[2026-10-25 13:07:41] elapsed=578s du=631716KB trash_dir=0KB trash_metric=0 bin=in-bin
+[2026-10-25 13:08:17] elapsed=614s du=631836KB trash_dir=0KB trash_metric=0 bin=in-bin
+[2026-10-25 13:08:53] elapsed=650s du=631900KB trash_dir=0KB trash_metric=0 bin=gone
+>>> BIN_ENTRY_GONE (FE purge): 2026-10-25 13:08:53 (elapsed 650s)
+[2026-10-25 13:09:28] elapsed=686s du=96032KB trash_dir=0KB trash_metric=0 bin=gone
+
+=== 5b 收口 ===
+T0(权威)     : 2026-10-25 12:57:57 UTC (epoch 1792933077)
+BIN_ENTRY_GONE: 2026-10-25 13:08:53 (elapsed 650s)
+T_END        : 2026-10-25 13:09:28 (自 T0 elapsed 691s)
+END_REASON   : SUCCESS: du 回落到灌数前基线+20MB 内（磁盘真实释放）
+du final     : 96032 KB (灌数前基线 96768 KB)
+doris_be_disks_avail_capacity{path="/opt/apache-doris/be/storage"} 976698990592
+doris_be_disks_trash_used_capacity{path="/opt/apache-doris/be/storage"} 0

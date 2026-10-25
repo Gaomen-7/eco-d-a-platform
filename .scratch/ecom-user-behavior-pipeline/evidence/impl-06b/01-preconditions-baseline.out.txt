@@ -1,0 +1,99 @@
+=== [1] 墙钟与磁盘余量（实施前置） ===
+UTC now: 2026-10-25 12:46:50
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sdf       1007G   25G  932G   3% /
+
+=== [2] 六服务 healthy（实施前置） ===
+eco-doris-be  Up 4 hours (healthy)
+eco-doris-fe  Up 4 hours (healthy)
+eco-flink-jm  Up 4 hours (healthy)
+eco-flink-tm  Up 4 hours (healthy)
+eco-kafka  Up 4 hours (healthy)
+eco-superset  Up 4 hours (healthy)
+
+=== [3] SHOW FRONTENDS / SHOW BACKENDS 全 Alive（实施前置） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-26f05b45188c Creating 
+ Container eco-a-d-platform-client-run-26f05b45188c Created 
+Name	Host	EditLogPort	HttpPort	QueryPort	RpcPort	ArrowFlightSqlPort	Role	IsMaster	ClusterId	Join	Alive	ReplayedJournalId	LastStartTime	LastHeartbeat	IsHelper	ErrMsg	Version	CurrentConnected	LiveSince
+fe_d7d829b2_4f8d_4eac_9c4c_dd2496899311	172.31.88.40	9010	8030	9030	9020	8070	FOLLOWER	true	492875358	true	true	58278	2026-10-25 09:17:48	2026-10-25 12:46:45	true		doris-4.1.5-release-917b20be838	Yes	
+
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-f3f717a895a3 Creating 
+ Container eco-a-d-platform-client-run-f3f717a895a3 Created 
+BackendId	Host	HeartbeatPort	BePort	HttpPort	BrpcPort	ArrowFlightSqlPort	LastStartTime	LastHeartbeat	Alive	SystemDecommissioned	TabletNum	DataUsedCapacity	TrashUsedCapacity	AvailCapacity	TotalCapacity	UsedPct	MaxDiskUsedPct	RemoteUsedCapacity	Tag	ErrMsg	Version	Status	HeartbeatFailureCounter	CpuCores	Memory	LiveSince	R
+1792479754706	172.31.88.50	9050	9060	8040	8060	8050	2026-10-25 09:18:21	2026-10-25 12:46:55	true	false	320	1.369 MB	0.000 	910.144 GB	1006.854 GB	9.61 %	9.61 %	0.000 	{"location" : "default"}		doris-4.1.5-release-917b20be838	{"lastSuccessReportTabletsTime":"2026-10-25 12:45:59","lastStreamLoadTime":-1,"isQueryDisabled"
+
+=== [4] 三张已验证 ADS 表基线 COUNT(*)（全程不触碰；前后对账口径） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-26819090bede Creating 
+ Container eco-a-d-platform-client-run-26819090bede Created 
+tbl	rows_before
+ads_late_expired_count	9146
+ads_window_metric	30132
+ads_funnel_step	2427
+
+=== [5] catalog recycle bin 现状快照（DROP 前基线） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-c67f27d0308c Creating 
+ Container eco-a-d-platform-client-run-c67f27d0308c Created 
+Type	Name	DbId	TableId	PartitionId	DropTime	DataSize	RemoteDataSize
+Database	ecom_rehearsal	1792919869251			2026-10-25 12:29:55	11.944 KB	0.000 
+Table	ads_window_metric_rehearsal	1792919869251	1792919869252		2026-10-25 12:29:55	2.387 KB	0.000 
+Partition	p20260924	1792479919714	1792479920023	1792578715397	2026-10-25 02:10:52	0.000 	0.000 
+Partition	p20260924	1792479919714	1792479919715	1792578715090	2026-10-25 02:10:53	0.000 	0.000 
+Partition	p20260924	1792479919714	1792479920195	1792578715567	2026-10-25 02:10:53	0.000 	0.000 
+Partition	p2026102506	1792919869251	1792919869252	1792919869297	2026-10-25 12:27:50	2.387 KB	0.000 
+Partition	p2026102507	1792919869251	1792919869252	1792919869301	2026-10-25 12:27:50	2.390 KB	0.000 
+Partition	p2026102508	1792919869251	1792919869252	1792919869308	2026-10-25 12:27:50	2.392 KB	0.000 
+Partition	p2026102509	1792919869251	1792919869252	1792919869311	2026-10-25 12:27:50	2.390 KB	0.000 
+
+=== [6] 回收/释放链路相关配置基线 ===
+--- FE: catalog_trash_expire_second（官方文档默认 86400；运行时改动 FE 重启失效） ---
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-68e7a0c47a5d Creating 
+ Container eco-a-d-platform-client-run-68e7a0c47a5d Created 
+Key	Value	Type	IsMutable	MasterOnly	Comment
+catalog_trash_expire_second	86400	long	true	true	
+--- BE: trash_file_expire_time_sec / min_garbage_sweep_interval（BE HTTP /api/show_config，4.1.5 源码默认 0 / 180） ---
+[["trash_file_expire_time_sec","int32_t","0","true"]]
+[["min_garbage_sweep_interval","int32_t","180","false"]]
+
+=== [7] BE storage 目录 du 基线（容器内实测字节） ===
+96280	/opt/apache-doris/be/storage
+trash dir absent
+
+=== [8] BE 磁盘 metrics 基线（/metrics，字节） ===
+# TYPE doris_be_disks_avail_capacity gauge
+doris_be_disks_avail_capacity{path="/opt/apache-doris/be/storage"} 977259417600
+# TYPE doris_be_disks_local_used_capacity gauge
+doris_be_disks_local_used_capacity{path="/opt/apache-doris/be/storage"} 1425793
+# TYPE doris_be_disks_total_capacity gauge
+doris_be_disks_total_capacity{path="/opt/apache-doris/be/storage"} 1081101176832
+# TYPE doris_be_disks_trash_used_capacity gauge
+doris_be_disks_trash_used_capacity{path="/opt/apache-doris/be/storage"} 0
+
+=== [9] 已存在的库（确认 ecom_rehearsal 不在——06a 收尾已 DROP 进 bin） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-e59702de58f5 Creating 
+ Container eco-a-d-platform-client-run-e59702de58f5 Created 
+Database
+__internal_schema
+ecom_ads
+information_schema
+mysql
+
+=== [10] FE 日志路径可用性（供 purge 时刻取证） ===
+-rw-r--r-- 1 root root 51157093 Oct 25 12:47 /opt/apache-doris/fe/log/fe.log

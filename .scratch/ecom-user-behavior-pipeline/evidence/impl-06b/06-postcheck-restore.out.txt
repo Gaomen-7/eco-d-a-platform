@@ -1,0 +1,134 @@
+=== [1] FE 日志：观测窗内 recycle bin 相关逐字（T0=2026-10-25 12:57:57 → T_END=2026-10-25 13:09:28） ===
+(空＝窗口内 FE 无 recycle 相关日志行——本身即事实)
+
+=== [2] BE 日志：erase/trash/garbage sweep 逐字（be.INFO 行首格式与 fe.log 不同，取尾部后按时段目检） ===
+RuntimeLogger I20261020 07:04:13.785799   764 olap_server.cpp:223] garbage sweeper thread started
+RuntimeLogger I20261020 07:04:13.785897  1148 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261020 07:04:13.786803  1148 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261020 07:04:17.339411   764 threadpool.cpp:332] Thread pool 'TaskWP_CLEAN_TRASH' initialized: min_threads=1, max_threads=1, max_queue_size=2147483647, idle_timeout_ms=500, workload_group=''
+RuntimeLogger I20261020 07:05:36.071892   750 olap_server.cpp:223] garbage sweeper thread started
+RuntimeLogger I20261020 07:05:36.072005  1138 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261020 07:05:36.086005  1138 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261020 07:05:36.135334   750 threadpool.cpp:332] Thread pool 'TaskWP_CLEAN_TRASH' initialized: min_threads=1, max_threads=1, max_queue_size=2147483647, idle_timeout_ms=500, workload_group=''
+RuntimeLogger I20261020 07:09:15.141940   750 olap_server.cpp:223] garbage sweeper thread started
+RuntimeLogger I20261020 07:09:15.142050  1134 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261020 07:09:15.155602  1134 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261020 07:09:15.216022   750 threadpool.cpp:332] Thread pool 'TaskWP_CLEAN_TRASH' initialized: min_threads=1, max_threads=1, max_queue_size=2147483647, idle_timeout_ms=500, workload_group=''
+RuntimeLogger I20261020 07:12:15.155709  1134 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261020 07:12:15.156252  1134 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261020 07:15:15.156379  1134 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261020 07:15:15.156934  1134 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261020 07:18:15.157055  1134 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261020 07:18:15.157529  1134 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261021 09:27:56.557837   752 olap_server.cpp:223] garbage sweeper thread started
+RuntimeLogger I20261021 09:27:56.557992  1184 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261021 09:27:56.559567  1184 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261021 09:27:58.490803   752 threadpool.cpp:332] Thread pool 'TaskWP_CLEAN_TRASH' initialized: min_threads=1, max_threads=1, max_queue_size=2147483647, idle_timeout_ms=500, workload_group=''
+RuntimeLogger I20261021 09:30:56.802556  1184 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261021 09:30:56.803223  1184 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261021 09:33:56.803354  1184 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261021 09:33:56.803913  1184 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261021 09:34:34.835130   752 olap_server.cpp:223] garbage sweeper thread started
+RuntimeLogger I20261021 09:34:34.835258  1159 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261021 09:34:34.836382  1159 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261021 09:34:35.155447   752 threadpool.cpp:332] Thread pool 'TaskWP_CLEAN_TRASH' initialized: min_threads=1, max_threads=1, max_queue_size=2147483647, idle_timeout_ms=500, workload_group=''
+RuntimeLogger I20261021 09:37:34.836519  1159 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261021 09:37:34.837474  1159 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261021 09:40:34.837600  1159 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261021 09:40:34.838196  1159 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261021 09:43:34.838316  1159 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261021 09:43:34.839418  1159 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261021 09:46:34.839551  1159 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261021 09:46:34.840276  1159 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261021 09:48:07.211720   750 olap_server.cpp:223] garbage sweeper thread started
+RuntimeLogger I20261021 09:48:07.211828  1134 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261021 09:48:07.213138  1134 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261021 09:48:07.302376   750 threadpool.cpp:332] Thread pool 'TaskWP_CLEAN_TRASH' initialized: min_threads=1, max_threads=1, max_queue_size=2147483647, idle_timeout_ms=500, workload_group=''
+RuntimeLogger I20261021 09:51:07.226014  1134 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261021 09:51:07.227031  1134 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261021 09:54:07.227149  1134 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261021 09:54:07.228032  1134 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261021 09:57:07.228166  1134 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261021 09:57:07.229044  1134 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261021 10:00:07.229182  1134 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261021 10:00:07.229949  1134 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261021 10:03:07.230111  1134 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261021 10:03:07.231176  1134 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261021 10:06:07.231328  1134 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261021 10:06:07.232353  1134 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261021 10:09:07.232494  1134 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261021 10:09:07.233232  1134 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261021 10:12:07.233381  1134 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261021 10:12:07.234308  1134 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261021 10:15:07.234436  1134 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261021 10:15:07.235112  1134 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+(空＝BE 无 erase/trash/garbage 日志行——本身即事实)
+
+=== [3] 配置恢复：catalog_trash_expire_second 300 → 86400 ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-a174c9cf07d6 Creating 
+ Container eco-a-d-platform-client-run-a174c9cf07d6 Created 
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-133e8af495cd Creating 
+ Container eco-a-d-platform-client-run-133e8af495cd Created 
+Key	Value	Type	IsMutable	MasterOnly	Comment
+catalog_trash_expire_second	86400	long	true	true	
+
+=== [4] 收尾：演练库整体退场（非 force，回 bin；默认参数下 24 h 由 FE 清） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-5628f63770f5 Creating 
+ Container eco-a-d-platform-client-run-5628f63770f5 Created 
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-385490d65637 Creating 
+ Container eco-a-d-platform-client-run-385490d65637 Created 
+Database
+__internal_schema
+ecom_ads
+information_schema
+mysql
+
+=== [5] 三张已验证 ADS 表终态对账（全程零接触的互证） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-bd3d96774fee Creating 
+ Container eco-a-d-platform-client-run-bd3d96774fee Created 
+tbl	rows_after
+ads_funnel_step	2427
+ads_late_expired_count	9146
+ads_window_metric	30132
+
+=== [6] FE/BE Alive + BE 终态容量 ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-fe33a8df0111 Creating 
+ Container eco-a-d-platform-client-run-fe33a8df0111 Created 
+Name	Host	EditLogPort	HttpPort	QueryPort	RpcPort	ArrowFlightSqlPort	Role	IsMaster	ClusterId	Join	Alive	ReplayedJournalId	LastStartTime	LastHeartbeat	IsHelper	Er
+fe_d7d829b2_4f8d_4eac_9c4c_dd2496899311	172.31.88.40	9010	8030	9030	9020	8070	FOLLOWER	true	492875358	true	true	59301	2026-10-25 09:17:48	2026-10-25 13:17:49	tr
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-2a78e17cd408 Creating 
+ Container eco-a-d-platform-client-run-2a78e17cd408 Created 
+BackendId	Host	HeartbeatPort	BePort	HttpPort	BrpcPort	ArrowFlightSqlPort	LastStartTime	LastHeartbeat	Alive	SystemDecommissioned	TabletNum	DataUsedCapacity	TrashUsedCapacity	AvailCapacity	TotalCapacity
+1792479754706	172.31.88.50	9050	9060	8040	8060	8050	2026-10-25 09:18:21	2026-10-25 13:17:59	true	false	309	1.324 MB	0.000 	910.125 GB	1006.854 GB	9.61 %	9.61 %	0.000 	{"location" : "default"}		doris-4
+96296	/opt/apache-doris/be/storage
+doris_be_disks_avail_capacity{path="/opt/apache-doris/be/storage"} 977239572480
+doris_be_disks_trash_used_capacity{path="/opt/apache-doris/be/storage"} 0
+
+UTC now: 2026-10-25 13:18:05
+
+=== 更正（2026-10-25 UTC 事后追加，code-review 提出） ===
+[1] 的行内注释「(空＝窗口内 FE 无 recycle 相关日志行——本身即事实)」是**错的**：
+窗口内（12:57:57–13:09:28）FE 的 dropTable/recycleTable（12:58:02）与 eraseTable（13:08:19）
+实际都发生了。空输出的真因是 awk 时间窗在 docker exec 双层引号链中转义失败、把全部行滤掉了。
+本 .out.txt 其余各节（[2]-[6]）不受影响。FE 日志逐字以 06b-fe-log-extract.out.txt（直查）为准。

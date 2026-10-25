@@ -1,0 +1,134 @@
+=== [1] RECOVER 前：ecom_rehearsal 在 recycle bin（06a 遗产） ===
+UTC: 2026-10-25 12:48:24
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-e42efda92813 Creating 
+ Container eco-a-d-platform-client-run-e42efda92813 Created 
+Type	Name	DbId	TableId	PartitionId	DropTime	DataSize	RemoteDataSize
+Database	ecom_rehearsal	1792919869251			2026-10-25 12:29:55	11.944 KB	0.000 
+
+=== [2] RECOVER DATABASE ecom_rehearsal（票面缓解③路径的实机验证） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-450c20a3668c Creating 
+ Container eco-a-d-platform-client-run-450c20a3668c Created 
+
+=== [3] 恢复后核对：库回位 + 06a 演练表行数（06a 收尾时为 1 行） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-fadbf8923760 Creating 
+ Container eco-a-d-platform-client-run-fadbf8923760 Created 
+Database
+__internal_schema
+ecom_ads
+ecom_rehearsal
+information_schema
+mysql
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-54d141cb9c8b Creating 
+ Container eco-a-d-platform-client-run-54d141cb9c8b Created 
+Tables_in_ecom_rehearsal
+ads_window_metric_rehearsal
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-550ba65c4188 Creating 
+ Container eco-a-d-platform-client-run-550ba65c4188 Created 
+drill_table_rows_after_recover
+1
+
+=== [4] 回滚演练小表：建表 + 1 行 ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-8a8f09f5d361 Creating 
+ Container eco-a-d-platform-client-run-8a8f09f5d361 Created 
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-5705fc2d15a9 Creating 
+ Container eco-a-d-platform-client-run-5705fc2d15a9 Created 
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-f5cdfd3d0099 Creating 
+ Container eco-a-d-platform-client-run-f5cdfd3d0099 Created 
+rows_after_insert
+1
+
+=== [5] DROP TABLE（非 force）→ recycle bin 可见 → RECOVER TABLE → 行数对账 ===
+T(drop rollback_check): 2026-10-25 12:49:11
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-ec7b039d44c0 Creating 
+ Container eco-a-d-platform-client-run-ec7b039d44c0 Created 
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-20b03393ec15 Creating 
+ Container eco-a-d-platform-client-run-20b03393ec15 Created 
+Table	reclaim_rollback_check	1792919869251	1792919869609		2026-10-25 12:49:15	0.000 	0.000 
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-e861c85bda10 Creating 
+ Container eco-a-d-platform-client-run-e861c85bda10 Created 
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-f121772757d5 Creating 
+ Container eco-a-d-platform-client-run-f121772757d5 Created 
+rows_after_recover
+1
+
+=== [6] 观察期配置切换：catalog_trash_expire_second 86400 → 300（缓解方案 §3，收尾恢复） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-8c6932ff56ac Creating 
+ Container eco-a-d-platform-client-run-8c6932ff56ac Created 
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-ecab37520e8b Creating 
+ Container eco-a-d-platform-client-run-ecab37520e8b Created 
+Key	Value	Type	IsMutable	MasterOnly	Comment
+catalog_trash_expire_second	300	long	true	true	
+
+=== [7] 建实测主对象 reclaim_probe（DUPLICATE KEY，无主键 compaction 干扰） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-f7631f5b5417 Creating 
+ Container eco-a-d-platform-client-run-f7631f5b5417 Created 
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-dbf7161d0d1a Creating 
+ Container eco-a-d-platform-client-run-dbf7161d0d1a Created 
+*************************** 1. row ***************************
+       Table: reclaim_probe
+Create Table: CREATE TABLE `reclaim_probe` (
+  `id` bigint NOT NULL,
+  `payload` varchar(2048) NULL
+) ENGINE=OLAP
+DUPLICATE KEY(`id`)
+DISTRIBUTED BY HASH(`id`) BUCKETS 8
+PROPERTIES (
+"replication_allocation" = "tag.location.default: 1",
+"min_load_replica_num" = "-1",
+"is_being_synced" = "false",
+"storage_medium" = "hdd",
+"storage_format" = "V2",
+"inverted_index_storage_format" = "V3",
+"light_schema_change" = "true",
+"disable_auto_compaction" = "false",
+"group_commit_interval_ms" = "10000",
+"group_commit_data_bytes" = "134217728"
+);

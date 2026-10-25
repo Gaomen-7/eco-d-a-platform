@@ -1,0 +1,37 @@
+=== [0] 灌数后（DROP 前）基线 ===
+T_PRE: 2026-10-25 12:57:57  PRE_DROP_DU_KB: 631632
+doris_be_disks_avail_capacity{path="/opt/apache-doris/be/storage"} 975684591616
+doris_be_disks_trash_used_capacity{path="/opt/apache-doris/be/storage"} 0
+
+=== [T0] DROP TABLE ecom_rehearsal.reclaim_probe（非 force） ===
+T0: 2026-10-25 12:57:57 (epoch 1792933077)
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-0ec280246a16 Creating 
+ Container eco-a-d-platform-client-run-0ec280246a16 Created 
+
+=== [T0+x] DROP 后立即采样（预期：bin 立即可见，磁盘不动） ===
+Table	reclaim_probe	1792919869251	1792919869634		2026-10-25 12:58:02	522.409 MB	0.000 
+du: 631708 KB (pre-drop 631632 KB)
+
+=== 轮询观测（每 ≈30 s：du / trash / metrics / recycle bin 条目） ===
+[2026-10-25 12:58:21] elapsed=18s du=631708KB trash_dir=KB trash_metric=0 avail=976708800512 bin=in-bin
+
+=== 收口 ===
+T0           : 2026-10-25 12:57:57
+BIN_ENTRY_GONE: 未观测到
+T_END        : 2026-10-25 12:58:21 (elapsed 24s)
+END_REASON   : SUCCESS: du 回落到基线+20MB 内（磁盘真实释放）
+du final     : 631708 KB (pre-drop 631632 KB, peak-recorded 631632 KB)
+doris_be_disks_avail_capacity{path="/opt/apache-doris/be/storage"} 976708800512
+doris_be_disks_trash_used_capacity{path="/opt/apache-doris/be/storage"} 0
+
+=== recycle bin 终态（含 DropTime 对照） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-5e05ff53d9eb Creating 
+ Container eco-a-d-platform-client-run-5e05ff53d9eb Created 
+Type	Name	DbId	TableId	PartitionId	DropTime	DataSize	RemoteDataSize
+Table	reclaim_probe	1792919869251	1792919869634		2026-10-25 12:58:02	522.409 MB	0.000 

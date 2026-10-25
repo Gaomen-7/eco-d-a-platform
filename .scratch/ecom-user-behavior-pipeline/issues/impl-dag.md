@@ -78,7 +78,8 @@
 ## Frontier
 
 - **当前**（2026-10-25 晚）：**impl-05 已结清、spec 九节全部有施工落点**；前沿转入 **impl-06 系列四张**（开票未排期，实施须用户触发——06a/06b/06c 为获批实机 task，06d 为 R7-i 修复票）。`reproducibility-boundary.md` §11.1 判据①逐字新句已随同日裁决**追认签字**（spec §7.1 #41，SRS 两行落笔）。
-- ✅ **impl-06a 已结清**（2026-10-25）：HOUR 保留演练实机全 5 项验收达成——505 s（≤1200 s）观测到 `DynamicPartitionScheduler` 真实删除 4 个过期 HOUR 分区（FE 日志逐字），三张 ADS 表行数对账逐表不变；两处判据面修正（动态分区表禁手工 ADD/DROP PARTITION 的官方绕法、`LastDropPartitionMsg` 4.1.5 成功删除后仍 NULL ⇒ 判据改走 SHOW PARTITIONS + FE 日志）随 HLD §8-R7-j 登记。凭证 `evidence/impl-06a/`。剩余前沿：06b（DROP 回盘实测，可直接复用 06a 演练形态）/ 06c / 06d。
+- ✅ **impl-06a 已结清**（2026-10-25）：HOUR 保留演练实机全 5 项验收达成——505 s（≤1200 s）观测到 `DynamicPartitionScheduler` 真实删除 4 个过期 HOUR 分区（FE 日志逐字），三张 ADS 表行数对账逐表不变；两处判据面修正（动态分区表禁手工 ADD/DROP PARTITION 的官方绕法、`LastDropPartitionMsg` 4.1.5 成功删除后仍 NULL ⇒ 判据改走 SHOW PARTITIONS + FE 日志）随 HLD §8-R7-j 登记。凭证 `evidence/impl-06a/`。
+- ✅ **impl-06b 已结清**（2026-10-25）：DROP 后回盘实测全 5 项验收达成——非 force DROP 1 GB 级表后**691 s 实测磁盘真实释放**（`catalog_trash_expire_second=300` 实验条件；FE eraseTable @DropTime+617 s → BE `delete tablet dir ... directly due to trash_file_expire_time_sec is 0` 官方日志逐字 → du 回落基线，trash 全程 0）；新发现**表条目 bin 滞留 ≥600 s 保底、不受 expire<600 加速**（分区条目即时清）随 HLD §8-R7-k 登记；RECOVER 库级/表级路径实机验证通过；三张 ADS 表零接触对账逐表相等。凭证 `evidence/impl-06b/`。剩余前沿：06c / 06d。
 - ✅ **impl-05 已结清**（2026-10-25，8/8 验收勾选）。收口实录（票面 Progress）：①容量双口径——口径①声明 11.5 GiB（10.5 过期订正，R7-g）＋判据①「≤8 GB」结构性不可达待签；口径②带载五采样 5.08–6.04 GiB 全 ≤8 GB。②L2 三轮 `--profile doris down`→`make init` 周期全过（裸 down 不停 profile 服务＝R7-h，判据动作改定）。③L0 实测 2m37.7s（预拉镜像前提）/ L3 全链 save 3m12s + load 20m12s + init 7m14.9s ≤30 min。④附录 A M/N/O 结清核对全过。⑤#40 minio/spark 撤需求落笔。⑥重提作业水位归位（−1000 s 墙钟后侧）＋ `make verify` 两连绿（`T104723Z` 9P1S / `T105307Z` 10P0S0F）。
 - ✅ **impl-04 已结清**（2026-10-25，8/9 验收勾选；GIF 留评审者，数据层对偶证据已取得）。
   收口实录（票面 Progress 下午段）：零账号链机读断言全绿（匿名页面/dashboard API/
