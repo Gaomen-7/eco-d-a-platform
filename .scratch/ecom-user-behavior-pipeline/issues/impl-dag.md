@@ -61,12 +61,13 @@
          │                         impl-03e 反例证伪 F1–F6
          │                              │
          ▼                              ▼
-        impl-05  终验  ◄── impl-04 ✅  impl-03f 对账 + verify 转真 + 收口 ✅
+        impl-05  终验  ◄── impl-04 ✅  impl-03f 对账 + verify 转真 + 收口 ✅   （✅ 2026-10-25 结清——前沿空）
 ```
 
 ## Frontier
 
-- **当前**（2026-10-25 收口 **impl-04** 后）：**impl-05**（终验）——双闸门（impl-03 ✅ + impl-04 ✅）全开
+- **当前**（2026-10-25 收口 **impl-05** 后）：**空——施工票全部结清**（impl-01–05 + 全部副票；spec 九节全部有施工落点）。后续入口：`reproducibility-boundary.md` §11.1 意图类签字追认（用户）、spec §8.2 三张须先获批实机 task、HLD §8-R7-i 三条修复候选（待独立票）。
+- ✅ **impl-05 已结清**（2026-10-25，8/8 验收勾选）。收口实录（票面 Progress）：①容量双口径——口径①声明 11.5 GiB（10.5 过期订正，R7-g）＋判据①「≤8 GB」结构性不可达待签；口径②带载五采样 5.08–6.04 GiB 全 ≤8 GB。②L2 三轮 `--profile doris down`→`make init` 周期全过（裸 down 不停 profile 服务＝R7-h，判据动作改定）。③L0 实测 2m37.7s（预拉镜像前提）/ L3 全链 save 3m12s + load 20m12s + init 7m14.9s ≤30 min。④附录 A M/N/O 结清核对全过。⑤#40 minio/spark 撤需求落笔。⑥重提作业水位归位（−1000 s 墙钟后侧）＋ `make verify` 两连绿（`T104723Z` 9P1S / `T105307Z` 10P0S0F）。
 - ✅ **impl-04 已结清**（2026-10-25，8/9 验收勾选；GIF 留评审者，数据层对偶证据已取得）。
   收口实录（票面 Progress 下午段）：零账号链机读断言全绿（匿名页面/dashboard API/
   chart_data/`?standalone=1`）；三态全谱实机取证（暂定→落定→修订 rev=1/2）；

@@ -28,12 +28,14 @@ Source: `issues/04-reproducibility-boundary.md` · 裁决全文见该票 `## Ans
 仓库此前对「干净机器」**只有一处定义**（`FSR.md:31`），且不可判定：「干净机器上克隆仓库，一条命令拉起整条链路」。
 现拆成四档**互不冒充**的命名契约。每档各自带起始状态、必做动作、判据、计时口径。**「一条命令」只认 L0**（见 §2）。
 
+> ⚠️ **下表「状态」列以 §11.2（2026-10-25 impl-05 实测回填）为最新真相源**；L2 行的动作亦已按 HLD §8-R7-h 改定（裸 `down` 不停 profile 内服务）。下表保留 impl-05 之前的原始行作历史。
+
 | 档 | 名称 | 起始状态 | 必做动作 | 判据（可机读） | 计时口径 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- |
-| **L0** | **制品态** | 镜像已存在（`docker image inspect` 可见）；**卷可存在也可不存在** | `make init`（见 §2 的四段） | `make verify` 退出码 0；`docker compose ps` 全 `healthy` | 受 `REQ-NF-CAP-03` 约束（15 min，**不含出数**） | **待 P1 实测** |
-| **L1** | **零状态冷启** | **无镜像、无卷**（fresh clone 之后） | 先构建 Doris 镜像（≈35 min，见 §6），再走 L0 | 同 L0 | **豁免 30 min**（构建不是「拉镜像」） | **待测** |
-| **L2** | **带卷重启** | 卷存在、容器可停 | `docker compose down`（**不加 `-v`**）→ `make init` | Kafka offsets 不变；Doris `online_backend_num == total_backend_num == 1`；三张 ADS 表仍在；FE `healthy` | 不计时 | **P0 已实测通过**（HLD §7.3 Bug H 修复后两轮 `down`/`up`） |
-| **L3** | **跨机搬运** | 目标机有 Docker、无镜像 | 源机 `docker save` → 目标机 `docker load` → 走 L0 | 同 L0 | 受 `REQ-NF-CAP-04` 约束（30 min） | **待测** |
+| **L0** | **制品态** | 镜像已存在（`docker image inspect` 可见）；**卷可存在也可不存在** | `make init`（见 §2 的四段） | `make verify` 退出码 0；`docker compose ps` 全 `healthy` | 受 `REQ-NF-CAP-03` 约束（15 min，**不含出数**） | **✅ impl-05 实测 2m37.7s（预拉镜像前提；零状态 `down -v` 变体待测）**，见 §11.2 |
+| **L1** | **零状态冷启** | **无镜像、无卷**（fresh clone 之后） | 先构建 Doris 镜像（≈35 min，见 §6），再走 L0 | 同 L0 | **豁免 30 min**（构建不是「拉镜像」） | **豁免（impl-05 维持裁决，未重跑构建）**，见 §11.2 |
+| **L2** | **带卷重启** | 卷存在、容器可停 | `docker compose --profile doris down`（**不加 `-v`**；裸 `down` 不停 profile 内服务，HLD §8-R7-h）→ `make init` | Kafka offsets 不变；Doris `online_backend_num == total_backend_num == 1`；三张 ADS 表仍在；FE `healthy` | 不计时 | **✅ impl-05 三轮周期再实测通过（含 down 停机形态）**，见 §11.2 |
+| **L3** | **跨机搬运** | 目标机有 Docker、无镜像 | 源机 `docker save` → 目标机 `docker load` → 走 L0 | 同 L0 | 受 `REQ-NF-CAP-04` 约束（30 min） | **✅ impl-05 单机模拟实测（save 3m12s / load 20m12s / init 7m14.9s ≤ 30 min）**，见 §11.2 |
 
 **四条边界规则**：
 
@@ -304,3 +306,41 @@ wsl -e bash -lc 'test -S /var/run/docker.sock && echo socket-present'
 - 7 个命名卷全在（`eco-a-d-platform_{kafka-data,doris-fe-meta,doris-fe-log,doris-be-storage,doris-be-log,superset-home,superset-db-data}`）⇒ 当前状态是 **L2 的前置**（卷已存在），不是 L1。
 - `docker system df`：Images 25.69 GB / Containers 1.253 GB（100% reclaimable，**全部是别的项目** `jobproject-*`/`bd-*`/`hive-*`，**未动**）/ Build Cache 20.88 GB（**仅 367.4 MB reclaimable**）/ Local Volumes 2.246 GB。
 - 删除两份 tarball 后 **F: 41.79 → 49.84 GB**。
+
+---
+
+## 11. impl-05 终验（2026-10-25）新增的口径处置与实测回填
+
+> 本节由施工票 [impl-05](issues/impl-05-final-acceptance.md) 产出。§1 的四档表与 §5 的成立性表以本节为最新实测真相源（旧行保留作历史）。
+
+### 11.1 声明上限口径：判据①「≤ 8 GB」的逐字新句（**意图类，待用户签字**）
+
+**事实**：`flink-jm` 的 `mem_limit` 已由 impl-03c 实机证伪钉死在 **2g**（1g ⇒ sql-client 与 JM 同 cgroup 必然 cgroup OOM-kill），`doris-be` 3g / `doris-fe` 2g（受镜像内 `-Xmx1536m` 约束，低于 1.75g 必然 JVM 堆爆）同为实机下限。全量声明合计 **11.5 GiB（11,776 MiB）**，落在 11.68 GiB 天花板内（余 0.18 GiB）。要把声明口径压回 ≤ 8 GB 须再砍 ≈3.5 GiB ⇒ **破坏已验证部署面，结构性不可达**。
+**张力来源**：冲突 I 的签字新句自身同段写有「①声明上限…≤ 8 GB」与「声明上限合计 10.5 GiB」两个互相矛盾的半句；spec.md:406 / 票面验收第 1 条逐字继承了它。
+
+**逐字新句提案**（`REQ-NF-CAP-01` 与 `REQ-F-ORCH-02` 同步替换，需签字）：
+
+> 判据按**两个口径**分别断言：①**声明上限**（全部服务 `mem_limit` 之和，含 profile 内服务）**≤ 执行面内存天花板**（本机 11.68 GiB，`官方给出`口径为宿主 MemTotal；当前 11.5 GiB / 11,776 MiB）；②**实测占用**（`docker stats --no-stream` 合计）**≤ 8 GB**（**设计值**目标，「≤ 8 GB」自 2026-10-25 起只约束口径②——口径①按官方出厂默认显式下调后的实机下限，8 GiB 声明合计结构性不可达，见 HLD §8-R7-g）。⚠️ 两者不可互相冒充。**P1 带载后须复测，带载未实测即未通过**。
+
+**签字前现状**：按冲突 I「保留『≤ 8 GB』为目标」的既有签字意图临时处置——口径①如实给数（11.5 GiB ≤ 天花板 ✓）、口径②以 ≤ 8 GB 断言（实测 5.46–6.04 GiB ✓，见 §11.3）。**票面勾选与本节口径一致：勾选语义＝「按本节处置如实给数并带『待用户追认』注记」，不代表『≤ 8 GB』字面判据已过**（逐字新句签前维持此读法）。
+
+### 11.2 四档契约实测回填（2026-10-25，impl-05）
+
+| 档 | 状态 | 实测记录 |
+| --- | --- | --- |
+| **L0** 制品态 | **✅ P1 后实测通过** | 镜像全在 + 卷存在（L0 允许）+ 容器全无 ⇒ `time make init` **real 2m37.7s** ≤ 15 min（预拉镜像前提；四段全过、doris-assert 全 PASS、全 healthy）。**零状态变体（`down -v`）不在 impl-05**（需销毁已验证卷态），维持待测 |
+| **L1** 零状态冷启 | **豁免 30 min**（维持 §1 裁决） | Doris 镜像必须本地构建 ≈35 min；本票不销毁镜像+卷态复测，豁免口径不变 |
+| **L2** 带卷重启 | **✅ impl-05 再实测通过（动作修正）** | 判据动作改定 `docker compose --profile doris down`（不加 `-v`）→ `make init`（裸 down 不停 profile 服务，HLD §8-R7-h）；3 轮周期全过：Kafka 六分区 offsets 逐字保住、Doris 三表行数逐字保住、FE/BE IP `172.31.88.40/.50` 拿回、FE 日志 `feType:UNKNOWN` 零命中、Superset dashboard/uuid 不变 |
+| **L3** 跨机搬运 | **✅ 单机模拟实测**（见下） | `docker save`（5 镜像单 tar 6.05 GiB / 6,500,272,128 B，**3m12s**）→ `rmi`（doris 12.6 GiB 等 5 镜像真离场；注：`docker.m.daocloud.io/mysql:8.0` 为同 image ID 的另一 tag 未移除，client 小镜像不构成判据项）→ `docker load`（见下）→ 计时 `make init` ≤ 30 min。**「本地构建 Doris 镜像」不计入** ✓。真·跨机（异机 load）机制同源，单机模拟覆盖 save/load 往返与「无镜像冷启」全路径 |
+
+**L3 实测数字**：save 16:31:40→16:34:52（**3m12s**）；load 16:35:49→16:56:01（**20m12s**，12.6 GiB 解包主导；load 属搬运面、不在 30 min 判据内，如实记录）；载入后 `make init` real **7m14.9s**（16:57:02→17:04:17，≤ 30 min ✓，构建 Doris 镜像未发生、不计入 ✓；四段全过、doris-assert 全 PASS）。日志：`evidence/impl-05/l3-save.log`、`l3-load-init.log`。
+
+### 11.3 口径②带载实测（P1 带载，2026-10-25）
+
+P1 作业 + `ecomgen live` 真实流量（topic 45,256 → 53,789 条，窗口/漏斗/超期三表真实增长）下 `docker stats --no-stream` **五次**采样：**5.46 / 5.64 / 6.03 / 6.04 / 5.08 GiB，全部 ≤ 8 GB**（余 ≈2 GiB；第 5 次 18:55 补采＝§9.2 重提作业后，作业 RUNNING 态）。明细表见 [票面 Progress §3](issues/impl-05-final-acceptance.md)。观察项：doris-fe 1.74 GiB / 2 GiB（87%）为全栈最紧。
+
+### 11.4 本票新登记的偏离/发现（详文见 HLD §8-R7-g/h/i）
+
+- **R7-g**：声明口径 10.5→11.5 GiB（impl-03c flink-jm 2g）+ 判据①张力 ⇒ §11.1 逐字新句待签。
+- **R7-h**：裸 `docker compose down` 不停 profile 服务 ⇒ L2 动作改定（§11.2 已按新动作实测）。
+- **R7-i**：live 跨度超界（未来事件）× P1 冷启动全量重放（`OffsetsInitializer.earliest()`，TM 日志逐字）⇒ 水位被 topic 内未来事件钉死 ~2 h、探针必挂。**运维口径**：live 带载用 `--sessions ≤ 40`；作业冷启动前确认 topic 无未陈化未来事件。修复候选三条记档待独立票。

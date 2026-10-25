@@ -1,0 +1,314 @@
+﻿LOAD-START: 2026-10-25T16:35:49.0864677+08:00
+Loaded image: docker.m.daocloud.io/apache/kafka:4.3.1
+Loaded image: mysql:8.0
+LOAD-END: 2026-10-25T16:56:01.6488586+08:00
+
+eco/flink:2.2-paimon
+eco/doris:4.1.5
+docker.m.daocloud.io/apache/superset:6.1.0
+docker.m.daocloud.io/apache/kafka:4.3.1
+mysql:8.0
+docker.m.daocloud.io/mysql:8.0
+
+
+2026-10-25T16:57:02+08:00
+[build-flink-image] 绗竴娈碉細棰勫彇 Paimon jar锛堝箓绛夛紝宸叉湁鍒?SKIP锛?SKIP: /mnt/f/Anaconda practice project/eco-a-d-platform/docker/flink/lib/paimon-flink-2.2-2.1.0.jar 宸插瓨鍦ㄤ笖鏍￠獙閫氳繃
+  size   = 57697871  (鏈熸湜 57697871)
+  sha256 = 43a6416a241ab736fb6ed2b6061a37fc5cca5ba8737d77eac1b977f859107dd1
+SKIP: /mnt/f/Anaconda practice project/eco-a-d-platform/docker/flink/lib/paimon-hadoop-uber-2.1.0.jar 宸插瓨鍦ㄤ笖鏍￠獙閫氳繃
+  size   = 50615937  (鏈熸湜 50615937)
+  sha256 = 54290a429afd0a5c106ea285dc4c5c1bc2376d11f911b149d143e5ecca1fa004
+[build-flink-image] 绗簩娈碉細鏋勫缓鏈湴 Flink 闀滃儚
+ Image eco/flink:2.2-paimon Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 597B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile:
+#2 transferring dockerfile: 13.10kB 0.6s done
+#2 DONE 1.0s
+
+#3 [internal] load metadata for docker.m.daocloud.io/apache/flink:2.2-java17
+#3 DONE 10.7s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.2s
+
+#5 [internal] load build context
+#5 DONE 0.0s
+
+#6 [1/6] FROM docker.m.daocloud.io/apache/flink:2.2-java17@sha256:5e4ea98e0da116cba49f485db61060f785f47f330ae80bc5bc43658a51781835
+#6 resolve docker.m.daocloud.io/apache/flink:2.2-java17@sha256:5e4ea98e0da116cba49f485db61060f785f47f330ae80bc5bc43658a51781835
+#6 resolve docker.m.daocloud.io/apache/flink:2.2-java17@sha256:5e4ea98e0da116cba49f485db61060f785f47f330ae80bc5bc43658a51781835 1.5s done
+#6 DONE 1.6s
+
+#5 [internal] load build context
+#5 transferring context: 131B 0.0s done
+#5 DONE 0.3s
+
+#7 [4/6] COPY lib/paimon-hadoop-uber-2.1.0.jar /opt/flink/lib/
+#7 CACHED
+
+#8 [5/6] RUN set -eux;     jar=/opt/flink/lib/paimon-hadoop-uber-2.1.0.jar;     test -s "$jar";     echo "54290a429afd0a5c106ea285dc4c5c1bc2376d11f911b149d143e5ecca1fa004  $jar" | sha256sum -c -;     ls -l "$jar"
+#8 CACHED
+
+#9 [2/6] COPY lib/paimon-flink-2.2-2.1.0.jar /opt/flink/lib/
+#9 CACHED
+
+#10 [3/6] RUN set -eux;     jar=/opt/flink/lib/paimon-flink-2.2-2.1.0.jar;     test -s "$jar";     echo "43a6416a241ab736fb6ed2b6061a37fc5cca5ba8737d77eac1b977f859107dd1  $jar" | sha256sum -c -;     ls -l "$jar"
+#10 CACHED
+
+#11 [6/6] RUN set -eux;     mkdir -p /warehouse;     chown -R 9999:9999 /warehouse;     chmod 755 /warehouse;     ls -ldn /warehouse
+#11 CACHED
+
+#12 exporting to image
+#12 exporting layers 0.0s done
+#12 exporting manifest sha256:b396095e28702c5f95c98fbbe013e7427b4b5a07b8e1969b105b6030e0324f60
+#12 exporting manifest sha256:b396095e28702c5f95c98fbbe013e7427b4b5a07b8e1969b105b6030e0324f60 0.0s done
+#12 exporting config sha256:679ce97ee778b65e6da8a5faacd55d6d595960549d456b39bbfcf135e7c3a669 0.1s done
+#12 exporting attestation manifest sha256:fa24dec4c763678f8769f20ecf73d573219707e43c6f3f4886e089c10877643a
+#12 exporting attestation manifest sha256:fa24dec4c763678f8769f20ecf73d573219707e43c6f3f4886e089c10877643a 0.4s done
+#12 exporting manifest list sha256:721711ee60e266625804d45e8af17e2d0aad2b673520363ab1cb01d79285c20e
+#12 exporting manifest list sha256:721711ee60e266625804d45e8af17e2d0aad2b673520363ab1cb01d79285c20e 0.3s done
+#12 naming to docker.io/eco/flink:2.2-paimon
+#12 naming to docker.io/eco/flink:2.2-paimon 0.1s done
+#12 unpacking to docker.io/eco/flink:2.2-paimon 0.1s done
+#12 DONE 1.9s
+
+#13 resolving provenance for metadata file
+#13 DONE 0.2s
+ Image eco/flink:2.2-paimon Built 
+docker compose up -d
+ Network eco-a-d-platform_default Creating 
+ Network eco-a-d-platform_default Creating 
+ Network eco-a-d-platform_default Created 
+ Network eco-a-d-platform_default Created 
+ Container eco-superset Creating 
+ Container eco-kafka Creating 
+ Container eco-flink-jm Creating 
+ Container eco-kafka Created 
+ Container eco-kafka-init Creating 
+ Container eco-flink-jm Created 
+ Container eco-flink-tm Creating 
+ Container eco-superset Created 
+ Container eco-flink-tm Created 
+ Container eco-kafka-init Created 
+ Container eco-flink-jm Starting 
+ Container eco-kafka Starting 
+ Container eco-superset Starting 
+ Container eco-flink-jm Started 
+ Container eco-flink-jm Waiting 
+ Container eco-kafka Started 
+ Container eco-kafka Waiting 
+ Container eco-superset Started 
+ Container eco-kafka Healthy 
+ Container eco-kafka-init Starting 
+ Container eco-kafka-init Started 
+ Container eco-flink-jm Healthy 
+ Container eco-flink-tm Starting 
+ Container eco-flink-tm Started 
+[up] 宸叉媺璧凤紱鐢?'make logs' 鐪嬪惎鍔紝鐢?'make verify' 鍒ら摼璺槸鍚︽椿
+[init] 绗竴娈碉細榛樿 profile up -d
+ Container eco-kafka Running 
+ Container eco-flink-jm Running 
+ Container eco-superset Running 
+ Container eco-kafka-init Running 
+ Container eco-flink-tm Running 
+ Container eco-kafka Waiting 
+ Container eco-flink-jm Waiting 
+ Container eco-kafka Healthy 
+ Container eco-flink-jm Healthy 
+ Container eco-kafka-init Waiting 
+ Container eco-flink-tm Waiting 
+ Container eco-kafka Waiting 
+ Container eco-flink-jm Waiting 
+ Container eco-superset Waiting 
+ Container eco-flink-jm Healthy 
+ Container eco-kafka-init Healthy 
+ Container eco-kafka Healthy 
+ Container eco-flink-tm Healthy 
+ Container eco-superset Healthy 
+[init] 绗竴娈碉細kafka-init 宸茬敱 compose 渚濊禆鑷姩鎵ц锛堝缓 topic + retention锛?[init] 绗簩娈碉細Doris profile + 鍒濆鍖栬剼鏈? Container eco-doris-fe Creating 
+ Container eco-doris-fe Created 
+ Container eco-doris-be Creating 
+ Container eco-doris-be Created 
+ Container eco-doris-fe Starting 
+ Container eco-doris-fe Started 
+ Container eco-doris-fe Waiting 
+ Container eco-doris-fe Healthy 
+ Container eco-doris-be Starting 
+ Container eco-doris-be Started 
+ Container eco-doris-fe Waiting 
+ Container eco-doris-be Waiting 
+ Container eco-doris-fe Healthy 
+ Container eco-doris-be Healthy 
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-e5fb093732b4 Creating 
+ Container eco-a-d-platform-client-run-e5fb093732b4 Created 
+[doris-init] FE=doris-fe:9030 user=root
+[doris-init] SQL=/doris/init.sql
+[doris-init] FE MySQL 鍗忚灏辩华锛堢 1 娆℃帰娴嬶級
+[doris-init] 宸叉湁 Alive=true 鐨?BE锛岃烦杩囧厹搴曟敞鍐?[doris-init] 鎵ц init.sql
+Key	Value	Type	IsMutable	MasterOnly	Comment
+dynamic_partition_enable	true	boolean	true	true	
+PartitionId	PartitionName	VisibleVersion	VisibleVersionTime	State	PartitionKey	Range	DistributionKey	Buckets	ReplicationNum	StorageMedium	CooldownTime	RemoteStoragePolicy	LastConsistencyCheckTime	DataSize	IsInMemory	ReplicaAllocation	IsMutable	SyncWithBaseTables	UnsyncTables	CommittedVersion	RowCount
+1792578715091	p20260925	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-09-25 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-09-26 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715092	p20260926	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-09-26 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-09-27 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715093	p20260927	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-09-27 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-09-28 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715094	p20260928	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-09-28 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-09-29 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715095	p20260929	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-09-29 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-09-30 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715096	p20260930	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-09-30 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-01 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715097	p20261001	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-01 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-02 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715098	p20261002	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-02 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-03 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715099	p20261003	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-03 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-04 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715100	p20261004	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-04 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-05 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715101	p20261005	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-05 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-06 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715102	p20261006	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-06 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-07 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715103	p20261007	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-07 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-08 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715104	p20261008	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-08 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-09 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715105	p20261009	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-09 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-10 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715106	p20261010	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-10 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-11 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715107	p20261011	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-11 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-12 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715108	p20261012	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-12 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-13 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715109	p20261013	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-13 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-14 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715110	p20261014	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-14 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-15 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715111	p20261015	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-15 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-16 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715112	p20261016	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-16 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-17 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715113	p20261017	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-17 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-18 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715114	p20261018	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-18 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-19 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715115	p20261019	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-19 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-20 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715116	p20261020	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-20 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-21 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715117	p20261021	1910	2026-10-25 08:17:14	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-21 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-22 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1910	0
+1792578715118	p20261022	5304	2026-10-25 08:30:41	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-22 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-23 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	14.324 KB	false	tag.location.default: 1	true	true	NULL	5304	366
+1792578715119	p20261023	1	2026-10-21 12:26:12	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-23 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-24 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792578715120	p20261024	696	2026-10-25 08:17:14	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-24 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-25 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	696	0
+1792633343566	p20261025	1676	2026-10-25 08:30:41	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-25 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-26 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1676	0
+1792720170463	p20261026	1	2026-10-23 01:59:59	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-26 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-27 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792803450979	p20261027	1	2026-10-24 01:07:35	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-27 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-28 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792894248997	p20261028	1	2026-10-25 02:20:53	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-28 00:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-29 00:00:00]; )	metric_name, dim_key	4	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+TableName	Enable	TimeUnit	Start	End	Prefix	Buckets	ReplicationNum	ReplicaAllocation	StartOf	LastUpdateTime	LastSchedulerTime	State	LastCreatePartitionMsg	LastDropPartitionMsg	ReservedHistoryPeriods
+ads_window_metric	true	DAY	-30	3	p	4	1	tag.location.default: 1	NULL	NULL	2026-10-25 09:00:20	NORMAL	NULL	NULL	NULL
+ads_late_expired_count	true	DAY	-30	3	p	2	1	tag.location.default: 1	NULL	NULL	2026-10-25 09:00:20	NORMAL	NULL	NULL	NULL
+ads_funnel_step	true	DAY	-30	3	p	2	1	tag.location.default: 1	NULL	NULL	2026-10-25 09:00:20	NORMAL	NULL	NULL	NULL
+[doris-init] 鑷锛氬姩鎬佸垎鍖烘€诲紑鍏?Key	Value	Type	IsMutable	MasterOnly	Comment
+dynamic_partition_enable	true	boolean	true	true	
+[doris-init] 鑷锛欱E 瀛樻椿锛堝垽鎹紳Alive=true锛屼笉鏄€岄厤缃彲瑙併€嶏級
+                   Host: 172.31.88.50
+          HeartbeatPort: 9050
+                  Alive: true
+[doris-init] 瀹屾垚
+[init] 绗笁娈碉細Superset 寮曞锛坉b upgrade 鈫?create-admin 鈫?init锛?[superset-init] 鈻?纭 eco-superset 瀹瑰櫒鍦ㄨ繍琛?[superset-init] 鈻?superset db upgrade锛堝缓鍏冩暟鎹簱琛級
+Loaded your LOCAL configuration at [/app/pythonpath/superset_config.py]
+2026-10-25 09:03:03,892:WARNING:py.warnings:/app/.venv/lib/python3.10/site-packages/flask_limiter/extension.py:324: UserWarning: Using the in-memory storage for tracking rate limits as no storage was explicitly specified. This is not recommended for production use. See: https://flask-limiter.readthedocs.io#configuring-a-storage-backend for documentation about configuring the storage backend.
+  warnings.warn(
+
+2026-10-25 09:03:04,564:INFO:alembic.runtime.migration:Context impl SQLiteImpl.
+2026-10-25 09:03:04,564:INFO:alembic.runtime.migration:Will assume non-transactional DDL.
+2026-10-25 09:03:05,276:INFO:superset.app:Syncing configuration to database...
+2026-10-25 09:03:05,281:INFO:superset.app:Configuration sync to database completed successfully
+2026-10-25 09:03:05,870:INFO:superset.core.mcp.core_mcp_injection:fastmcp is not installed, skipping MCP initialization. Install it with: pip install 'apache-superset[fastmcp]'
+WARNI [alembic.env] SQLite Database support for metadata databases will         be removed in a future version of Superset.
+INFO  [alembic.env] Starting the migration scripts.
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.env] Migration scripts completed. Duration: 00:00:00
+[superset-init] 鈻?superset fab create-admin锛堝凡瀛樺湪鍒欒烦杩囷級
+Loaded your LOCAL configuration at [/app/pythonpath/superset_config.py]
+2026-10-25 09:03:09,078:WARNING:py.warnings:/app/.venv/lib/python3.10/site-packages/flask_limiter/extension.py:324: UserWarning: Using the in-memory storage for tracking rate limits as no storage was explicitly specified. This is not recommended for production use. See: https://flask-limiter.readthedocs.io#configuring-a-storage-backend for documentation about configuring the storage backend.
+  warnings.warn(
+
+2026-10-25 09:03:09,474:INFO:alembic.runtime.migration:Context impl SQLiteImpl.
+2026-10-25 09:03:09,474:INFO:alembic.runtime.migration:Will assume non-transactional DDL.
+2026-10-25 09:03:10,018:INFO:superset.app:Syncing configuration to database...
+2026-10-25 09:03:10,024:INFO:superset.app:Configuration sync to database completed successfully
+2026-10-25 09:03:10,596:INFO:superset.core.mcp.core_mcp_injection:fastmcp is not installed, skipping MCP initialization. Install it with: pip install 'apache-superset[fastmcp]'
+Recognized Database Authentications.
+Error! User already exists admin
+[superset-init] 鈻?superset init锛堝缓榛樿瑙掕壊涓庢潈闄愶級
+Loaded your LOCAL configuration at [/app/pythonpath/superset_config.py]
+2026-10-25 09:03:13,826:WARNING:py.warnings:/app/.venv/lib/python3.10/site-packages/flask_limiter/extension.py:324: UserWarning: Using the in-memory storage for tracking rate limits as no storage was explicitly specified. This is not recommended for production use. See: https://flask-limiter.readthedocs.io#configuring-a-storage-backend for documentation about configuring the storage backend.
+  warnings.warn(
+
+2026-10-25 09:03:14,975:INFO:alembic.runtime.migration:Context impl SQLiteImpl.
+2026-10-25 09:03:14,975:INFO:alembic.runtime.migration:Will assume non-transactional DDL.
+2026-10-25 09:03:15,453:INFO:superset.app:Syncing configuration to database...
+2026-10-25 09:03:15,459:INFO:superset.app:Configuration sync to database completed successfully
+2026-10-25 09:03:16,199:INFO:superset.core.mcp.core_mcp_injection:fastmcp is not installed, skipping MCP initialization. Install it with: pip install 'apache-superset[fastmcp]'
+2026-10-25 09:03:17,388:INFO:superset.security.manager:Syncing role definition
+2026-10-25 09:03:17,406:INFO:superset.security.manager:Syncing Admin perms
+2026-10-25 09:03:17,408:INFO:superset.security.manager:Syncing Alpha perms
+2026-10-25 09:03:17,412:INFO:superset.security.manager:Syncing Gamma perms
+2026-10-25 09:03:17,416:INFO:superset.security.manager:Syncing sql_lab perms
+2026-10-25 09:03:17,418:INFO:superset.security.manager:Copy/Merge Gamma to Public
+2026-10-25 09:03:17,422:INFO:superset.security.manager:Fetching a set of all perms to lookup which ones are missing
+2026-10-25 09:03:17,426:INFO:superset.security.manager:Creating missing datasource permissions.
+2026-10-25 09:03:17,468:INFO:superset.security.manager:Creating missing database permissions.
+2026-10-25 09:03:17,471:INFO:superset.security.manager:Cleaning faulty perms
+[superset-init] 鈻?鍋ュ悍鏂█锛欸ET /health 搴旇繑鍥炵函鏂囨湰 OK
+[superset-init] 鉁?/health 杩斿洖 OK锛堢 1 娆℃帰娴嬶級
+[superset-init] 鈻?瀹屾垚
+[init] 绗笁娈靛琛ワ紙impl-04锛夛細鐪嬫澘缃 + 鍖垮悕鍙揪鏂█
+[superset-provision] 鈻?妫€鏌?PyMySQL 椹卞姩锛坉ocker-bootstrap.sh requirements-local 瑁呰浇锛?[superset-provision] 鉁?pymysql 鍦ㄤ綅
+[superset-provision] 鈻?杩愯 superset-provision.py锛堝浐瀹?database_uuid + dataset + 鍥捐〃 + dashboard + Public 鎺堟潈锛?Loaded your LOCAL configuration at [/app/pythonpath/superset_config.py]
+2026-10-25 09:03:22,706:WARNING:py.warnings:/app/.venv/lib/python3.10/site-packages/flask_limiter/extension.py:324: UserWarning: Using the in-memory storage for tracking rate limits as no storage was explicitly specified. This is not recommended for production use. See: https://flask-limiter.readthedocs.io#configuring-a-storage-backend for documentation about configuring the storage backend.
+  warnings.warn(
+
+2026-10-25 09:03:23,135:INFO:alembic.runtime.migration:Context impl SQLiteImpl.
+2026-10-25 09:03:23,135:INFO:alembic.runtime.migration:Will assume non-transactional DDL.
+2026-10-25 09:03:23,617:INFO:superset.app:Syncing configuration to database...
+2026-10-25 09:03:23,622:INFO:superset.app:Configuration sync to database completed successfully
+2026-10-25 09:03:24,503:INFO:superset.core.mcp.core_mcp_injection:fastmcp is not installed, skipping MCP initialization. Install it with: pip install 'apache-superset[fastmcp]'
+[superset-provision] dataset 鎺堟潈 Public锛氭湰娆℃柊鎺?0 涓紙鍏?8 涓級
+[superset-provision] 瀹屾垚锛歞ashboard=ecom-live charts=12 datasets=8 database_uuid=0f4d8a52-9b3e-4c71-a6d8-3f2b1c9e7a04
+[superset-provision] 鈻?鍖垮悕 GET /superset/dashboard/ecom-live/锛堟湡鏈?200锛屼笉閲嶅畾鍚?login锛?[superset-provision] 鉁?鍖垮悕椤甸潰 200
+[superset-provision] 鈻?鍖垮悕 GET 璇勫 URL锛?standalone=1锛岀エ闈?鈶犫€斺€旀紨绀哄共鍑€褰㈡€侊紝CSP 鍚屾簮鏀捐锛?[superset-provision] 鉁??standalone=1 璇勫 URL 200
+[superset-provision] 鈻?鍖垮悕 GET /api/v1/dashboard/ecom-live锛堟湡鏈?200 + json锛?[superset-provision] 鉁?鍖垮悕 dashboard API 200
+[superset-provision] 鈻?瑙ｆ瀽 kpi_current dataset id锛堜笉纭紪鐮侊級
+[superset-provision] 鉁?kpi_current id=1
+[superset-provision] 鈻?鍖垮悕 chart_data 鍑烘暟锛坘pi_current 鐨?UV锛屾湡鏈?status=success锛?[superset-provision] 鉁?鍖垮悕 chart_data 鍑烘暟锛堥摼璺椿鐫€锛?[superset-provision] 鈻?export-dashboards锛堝埛鏂?docker/superset/export/ecom-live.zip锛?Loaded your LOCAL configuration at [/app/pythonpath/superset_config.py]
+2026-10-25 09:03:35,648:WARNING:py.warnings:/app/.venv/lib/python3.10/site-packages/flask_limiter/extension.py:324: UserWarning: Using the in-memory storage for tracking rate limits as no storage was explicitly specified. This is not recommended for production use. See: https://flask-limiter.readthedocs.io#configuring-a-storage-backend for documentation about configuring the storage backend.
+  warnings.warn(
+
+2026-10-25 09:03:36,288:INFO:alembic.runtime.migration:Context impl SQLiteImpl.
+2026-10-25 09:03:36,288:INFO:alembic.runtime.migration:Will assume non-transactional DDL.
+2026-10-25 09:03:36,614:INFO:superset.app:Syncing configuration to database...
+2026-10-25 09:03:36,620:INFO:superset.app:Configuration sync to database completed successfully
+2026-10-25 09:03:37,143:INFO:superset.core.mcp.core_mcp_injection:fastmcp is not installed, skipping MCP initialization. Install it with: pip install 'apache-superset[fastmcp]'
+ eco-superset Copying eco-superset:/tmp/ecom-live.zip to docker/superset/export/ecom-live.zip
+ eco-superset Copied eco-superset:/tmp/ecom-live.zip to docker/superset/export/ecom-live.zip
+[superset-provision] 鉁?zip 宸插鍑猴紙docker/superset/export/ecom-live.zip锛?[superset-provision] 鈻?import-dashboards锛坺ip 鍥炶鏍￠獙锛?.1.0 CLI 蹇呭甫 -u锛? eco-superset Copying docker/superset/export/ecom-live.zip to eco-superset:/tmp/ecom-live-reimport.zip
+ eco-superset Copied docker/superset/export/ecom-live.zip to eco-superset:/tmp/ecom-live-reimport.zip
+Loaded your LOCAL configuration at [/app/pythonpath/superset_config.py]
+2026-10-25 09:03:41,332:WARNING:py.warnings:/app/.venv/lib/python3.10/site-packages/flask_limiter/extension.py:324: UserWarning: Using the in-memory storage for tracking rate limits as no storage was explicitly specified. This is not recommended for production use. See: https://flask-limiter.readthedocs.io#configuring-a-storage-backend for documentation about configuring the storage backend.
+  warnings.warn(
+
+2026-10-25 09:03:41,832:INFO:alembic.runtime.migration:Context impl SQLiteImpl.
+2026-10-25 09:03:41,832:INFO:alembic.runtime.migration:Will assume non-transactional DDL.
+2026-10-25 09:03:42,242:INFO:superset.app:Syncing configuration to database...
+2026-10-25 09:03:42,248:INFO:superset.app:Configuration sync to database completed successfully
+2026-10-25 09:03:42,853:INFO:superset.core.mcp.core_mcp_injection:fastmcp is not installed, skipping MCP initialization. Install it with: pip install 'apache-superset[fastmcp]'
+[superset-provision] 鉁?zip 瀵煎叆鍥炶鎴愬姛
+[superset-provision] 鈻?鑴忕巼鍩虹嚎鍚屾锛坉ocker/scripts/superset-dirty-rate-sync.sh锛?[dirty-rate-sync] 鈻?璇诲熀绾?artifacts/verify/dirty-rate-baseline.json
+[dirty-rate-sync] 鍩虹嚎锛歞lq_offset=9802 input_events=53741
+[dirty-rate-sync] 鈻?璇?Kafka DLQ 鎬?offset
+[dirty-rate-sync] 鈻?璇?Kafka 杈撳叆 topic 鎬?offset
+[dirty-rate-sync] 褰撳墠锛歞lq=14809 input=53789
+[dirty-rate-sync] 鈻?鍐欏叆 ads_window_metric锛坉lq_total_offset / dlq_count_delta锛宎nchor=2026-10-25锛?[dirty-rate-sync] 瀹屾垚锛毼?5007锛坉lq 9802鈫?4809锛宨nput=53789锛?[dirty-rate-sync] 闈㈡澘璇绘硶锛歞lq_count_delta / total_events = 5007/53789
+[superset-provision] 鉁?鑴忕巼鍩虹嚎宸插悓姝?[superset-provision] 鈻?瀹屾垚
+[init] 绗洓娈碉細鏂█缁?client 鏌?ADS 鐪熸湁琛岋紙涓嶆槸鏌?FE 鍋ュ悍锛?[doris-assert] 鈻?鍓嶇疆锛歝lient 鏈嶅姟鍙媺璧凤紙profile client锛?[doris-assert] 鈻?COUNT(*) FROM ecom_ads.ads_window_metric
+[doris-assert]   PASS ads_window_metric count=25027 vs 鏈熸湜 >0
+[doris-assert] 鈻?COUNT(*) FROM ecom_ads.ads_funnel_step
+[doris-assert]   PASS ads_funnel_step count=1965 vs 鏈熸湜 >0
+[doris-assert] 鈻?COUNT(*) FROM ecom_ads.ads_late_expired_count
+[doris-assert]   PASS ads_late_expired_count count=9129 vs 鏈熸湜 >0
+[doris-assert] 鈻?SHOW FRONTEND CONFIG LIKE 'dynamic_partition_enable'锛堟湡鏈?true锛?[doris-assert]   PASS dynamic_partition_enable=true
+[doris-assert] 鍏ㄩ儴鏂█閫氳繃
+
+real	7m14.856s
+user	0m26.220s
+sys	0m25.548s
+2026-10-25T17:04:17+08:00

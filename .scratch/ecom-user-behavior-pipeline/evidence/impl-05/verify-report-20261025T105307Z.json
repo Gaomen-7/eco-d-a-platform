@@ -1,0 +1,127 @@
+{
+  "generated_at": "2026-10-25T10:53:07.010035+00:00",
+  "counts": {
+    "PASS": 10,
+    "FAIL": 0,
+    "SKIP": 0
+  },
+  "exit_code": 0,
+  "degradation": {
+    "threshold": 2,
+    "threshold_basis": "设计值（spec 附录 A·Q 用户裁决，非官方保证）",
+    "oom_killed_count": 0,
+    "degraded": false,
+    "containers": [
+      {
+        "name": "eco-client",
+        "oom_killed": false,
+        "exit_code": 255,
+        "counted": false
+      },
+      {
+        "name": "eco-doris-be",
+        "oom_killed": false,
+        "exit_code": 0,
+        "counted": false
+      },
+      {
+        "name": "eco-doris-fe",
+        "oom_killed": false,
+        "exit_code": 0,
+        "counted": false
+      },
+      {
+        "name": "eco-flink-jm",
+        "oom_killed": false,
+        "exit_code": 0,
+        "counted": false
+      },
+      {
+        "name": "eco-flink-tm",
+        "oom_killed": false,
+        "exit_code": 0,
+        "counted": false
+      },
+      {
+        "name": "eco-kafka",
+        "oom_killed": false,
+        "exit_code": 0,
+        "counted": false
+      },
+      {
+        "name": "eco-kafka-init",
+        "oom_killed": false,
+        "exit_code": 0,
+        "counted": false
+      },
+      {
+        "name": "eco-superset",
+        "oom_killed": false,
+        "exit_code": 0,
+        "counted": false
+      }
+    ]
+  },
+  "checks": [
+    {
+      "status": "PASS",
+      "name": "kafka-topic-retention",
+      "actual": "retention.ms=604800000 retention.bytes=2147483648",
+      "expected": "retention.ms=604800000 且 retention.bytes=2147483648（gdd §A.2）"
+    },
+    {
+      "status": "PASS",
+      "name": "flink-job-running",
+      "actual": "RUNNING",
+      "expected": "jobs[].state==RUNNING"
+    },
+    {
+      "status": "PASS",
+      "name": "paimon-five-layers",
+      "actual": "ods=3145728 PASS dwd=1048576 PASS dim=105430 PASS dws=1550285 PASS ads=90348 PASS",
+      "expected": "五层各 COUNT(*)>0（走 Flink SQL，非 total_record_count）"
+    },
+    {
+      "status": "PASS",
+      "name": "doris-ads-rows",
+      "actual": "ads_window_metric=30122 PASS ads_funnel_step=2425 PASS ads_late_expired_count=9146 PASS",
+      "expected": "每张 ADS 表 COUNT(*)>0（逐表判定）"
+    },
+    {
+      "status": "PASS",
+      "name": "superset-health",
+      "actual": "OK",
+      "expected": "OK"
+    },
+    {
+      "status": "PASS",
+      "name": "funnel-cnt-inferred-monotone",
+      "actual": "[681, 662, 591, 491]",
+      "expected": "沿 step 1→4 非增"
+    },
+    {
+      "status": "PASS",
+      "name": "dlq-rate-no-increase",
+      "actual": "0.275968（dlq=14854/53825） vs 基线 0.276153（14854/53789）",
+      "expected": "脏率 ≤ 基线（分子只含 DLQ，分母＝输入事件总数）"
+    },
+    {
+      "status": "PASS",
+      "name": "is-settled-two-states",
+      "actual": "pending=2777 settled=27345",
+      "expected": "is_settled=0 与 =1 都 >0（暂定与落定两态同表可见）"
+    },
+    {
+      "status": "PASS",
+      "name": "recon-offline-mirror-doris",
+      "actual": "rows=3 探针键集逐值全等",
+      "expected": "探针批 is_settled=1 逐值严格相等（键集隔离）"
+    },
+    {
+      "status": "PASS",
+      "name": "degradation-ladder",
+      "actual": "oom_killed=0（阈值 2，设计值）",
+      "expected": "OOM 杀 < 2 次（阈值 2 为设计值，非官方保证）"
+    }
+  ]
+}

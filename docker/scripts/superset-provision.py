@@ -76,12 +76,13 @@ def _eq_filter(subject: str, comparator: str) -> dict:
         "comparator": comparator,
         "clause": "WHERE",
     }
+
+
 VIZ_TABLE = "table"
 
 # 三态 CASE 表达式（票面 ③ B 主载体，逐字）：
 STATE_CASE = (
-    "CASE WHEN is_settled=0 THEN '暂定' "
-    "WHEN revision>0 THEN '已修订' ELSE '落定' END"
+    "CASE WHEN is_settled=0 THEN '暂定' WHEN revision>0 THEN '已修订' ELSE '落定' END"
 )
 
 
@@ -103,9 +104,7 @@ def main() -> None:
 
         # ── ① Database（固定 UUID：zip 重导入的硬约束）──────────────────
         dbobj = (
-            db.session.query(Database)
-            .filter_by(database_name="ecom_ads")
-            .one_or_none()
+            db.session.query(Database).filter_by(database_name="ecom_ads").one_or_none()
         )
         if dbobj is None:
             dbobj = Database(
@@ -155,15 +154,28 @@ def main() -> None:
             db.session.flush()
             for col_name, col_type in columns:
                 tbl.columns.append(
-                    TableColumn(column_name=col_name, type=col_type, groupby=True, filterable=True)
+                    TableColumn(
+                        column_name=col_name,
+                        type=col_type,
+                        groupby=True,
+                        filterable=True,
+                    )
                 )
             for old in list(tbl.metrics):
                 db.session.delete(old)
             db.session.flush()
             for metric_name, expr in metrics or [
-                (f"sum__{c}", f"SUM({c})") for c, t in columns if t in ("BIGINT", "LONG", "INTEGER")
+                (f"sum__{c}", f"SUM({c})")
+                for c, t in columns
+                if t in ("BIGINT", "LONG", "INTEGER")
             ]:
-                tbl.metrics.append(SqlMetric(metric_name=metric_name, expression=expr, verbose_name=metric_name))
+                tbl.metrics.append(
+                    SqlMetric(
+                        metric_name=metric_name,
+                        expression=expr,
+                        verbose_name=metric_name,
+                    )
+                )
             db.session.flush()
             datasets[name] = tbl
             return tbl
@@ -303,7 +315,9 @@ def main() -> None:
         db.session.commit()
 
         # ── ③ 图表（7 张：五面板 + 三态 B 载体 + 脏率）──────────────────
-        def upsert_chart(name: str, dataset: SqlaTable, viz: str, params: dict) -> Slice:
+        def upsert_chart(
+            name: str, dataset: SqlaTable, viz: str, params: dict
+        ) -> Slice:
             slc = db.session.query(Slice).filter_by(slice_name=name).one_or_none()
             payload = {
                 "datasource": f"{dataset.id}__table",
@@ -416,8 +430,13 @@ def main() -> None:
             VIZ_TABLE,
             {
                 "all_columns": [
-                    "window_start", "metric_name", "dim_key",
-                    "metric_value", "revision", "state", "updated_at",
+                    "window_start",
+                    "metric_name",
+                    "dim_key",
+                    "metric_value",
+                    "revision",
+                    "state",
+                    "updated_at",
                 ],
                 "granularity_sqla": "window_start",
                 "row_limit": 50,  # 设计值：三态表取近 30 分钟头部行
@@ -554,14 +573,20 @@ def main() -> None:
 
         # ── ④ Dashboard（单一载体；refresh=10s 进 json_metadata）────────
         charts = [
-            pv_now, uv_now, gmv_now, pv_series, funnel, treemap,
-            region, states, funnel_dual, dirty, prov_number, settled_number,
+            pv_now,
+            uv_now,
+            gmv_now,
+            pv_series,
+            funnel,
+            treemap,
+            region,
+            states,
+            funnel_dual,
+            dirty,
+            prov_number,
+            settled_number,
         ]
-        dash = (
-            db.session.query(Dashboard)
-            .filter_by(slug=DASHBOARD_SLUG)
-            .one_or_none()
-        )
+        dash = db.session.query(Dashboard).filter_by(slug=DASHBOARD_SLUG).one_or_none()
         json_metadata = {
             # 票面 ④：10 s 是 DASHBOARD_AUTO_REFRESH_INTERVALS 最小自动档；
             # refresh_frequency 作用于打开页面的自动刷新。
@@ -598,7 +623,9 @@ def main() -> None:
                 pub.permissions.append(pvm)
                 granted += 1
         db.session.commit()
-        print(f"[superset-provision] dataset 授权 Public：本次新授 {granted} 个（共 {len(datasets)} 个）")
+        print(
+            f"[superset-provision] dataset 授权 Public：本次新授 {granted} 个（共 {len(datasets)} 个）"
+        )
 
         print(
             f"[superset-provision] 完成：dashboard={DASHBOARD_SLUG} "

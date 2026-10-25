@@ -56,10 +56,13 @@ echo "[superset-provision] ✓ 匿名 dashboard API 200"
 # ★ dataset id 不硬编码（code-review 指出 id=1 是未断言的假设）：先查列表拿
 #   kpi_current 的真实 id（列表 API 缺省只回 id 数组，要带 q 才回 result 行；
 #   键序是 table_name 在 id **之后**，grep 邻接匹配不可靠 ⇒ python -c 解析），再探 chart_data。
+#   ★ 解析器用 ${PYTHON:-python3}（impl-05 实测：WSL 宿主只有 python3，无 `python`；
+#     2026-10-25 make init 在此步 `python: command not found` 退 1。与 Makefile
+#     PYBIN=python3 的口径对齐，PYTHON 环境变量可覆盖。）
 step "解析 kpi_current dataset id（不硬编码）"
 DS_ID="$(curl -s -m 20 "http://${SUPERSET_HOST}:${SUPERSET_PORT}/api/v1/dataset/?q=(order_columns:table_name,order_direction:asc)" \
   -H "Accept: application/json" \
-  | python -c 'import json,sys
+  | "${PYTHON:-python3}" -c 'import json,sys
 try:
     d = json.load(sys.stdin)
     rows = d.get("result", [])

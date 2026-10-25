@@ -26,11 +26,14 @@ step() { echo "[dirty-rate-sync] ▶ $*"; }
 fail() { echo "[dirty-rate-sync] ✗ $*" >&2; exit 1; }
 
 # ── ① 基线文件在位且可解析 ─────────────────────────────────────────────
+# ★ 解析器用 ${PYTHON:-python3}（impl-05 实测 2026-10-25）：WSL 宿主只有 python3；
+#   旧写法 `python` command not found 时 stderr 被 2>/dev/null 吞掉 ⇒ 误报
+#   「基线文件不可解析（缺 dlq_offset 字段？）」——文件其实完好，是解释器缺席。
 step "读基线 ${BASELINE_FILE}"
 [ -f "$BASELINE_FILE" ] || fail "基线文件不存在——先跑 make verify-fault（首跑落盘基线）"
-baseline_dlq="$(python -c "import json,sys;print(json.load(open(sys.argv[1]))['dlq_offset'])" "$BASELINE_FILE" 2>/dev/null)" \
+baseline_dlq="$("${PYTHON:-python3}" -c "import json,sys;print(json.load(open(sys.argv[1]))['dlq_offset'])" "$BASELINE_FILE" 2>/dev/null)" \
   || fail "基线文件不可解析（缺 dlq_offset 字段？）"
-baseline_input="$(python -c "import json,sys;print(json.load(open(sys.argv[1]))['input_events'])" "$BASELINE_FILE" 2>/dev/null)" \
+baseline_input="$("${PYTHON:-python3}" -c "import json,sys;print(json.load(open(sys.argv[1]))['input_events'])" "$BASELINE_FILE" 2>/dev/null)" \
   || fail "基线文件不可解析（缺 input_events 字段？）"
 echo "[dirty-rate-sync] 基线：dlq_offset=${baseline_dlq} input_events=${baseline_input}"
 
