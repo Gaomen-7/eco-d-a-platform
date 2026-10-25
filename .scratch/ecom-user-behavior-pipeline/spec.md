@@ -447,6 +447,7 @@ SELECT '<断言名>' AS assertion, COUNT(*)>0 AS ok FROM …
 | **33** | HLD §5 设计面 | 新增：`paimon-warehouse` named volume、Paimon jar 构建期 COPY、`sql/replay_*.sql` 目录布局、迟到计数表名入冻结面清单（FC-2）、`artifacts/verify/` 报告目录与 JSON 结构 |
 | **34** | HLD §7.1 | 登记偏离行（原口径把「构建 Doris 镜像」隐含在「拉镜像」内，实测 ≈35 min ⇒ 原口径不可达） |
 | **39** | HLD §8-R5 ＋ §7.1（**2026-10-21 签**·附录 A N） | Paimon 主键表**默认 MOR 而非 MOW**（MOW 需显式 `deletion-vectors.enabled`）⇒ §8-R5 的空间放大前提原按 MOW 估算，须**按 MOR 复核**；本仓五张主键表固定 MOR，官方 bucket 指引 "200 MB–1 GB per bucket" 是 MOR 口径。偏离进 §8-R7 登记 |
+| **40** | `REQ-F-ORCH-08`（**2026-10-25 签**·缺口 #36 收口·impl-05 用户裁决） | **撤需求**：~~SHOULD 可选 profile `minio`/`spark`~~ → **不实现**。理由：① spark 半条已在 spec §8.1/`map.md` Out of scope 判「只留判据」，SRS 不同步即第二真相源矛盾；② minio 需把 Paimon warehouse 从 `file://` 切 `s3://`，动 impl-03a/03b 已验收的具名卷部署面，且无下游判据消费者；③ SHOULD 级偏离本属可裁决项。湖存储对象化（S3）另记 COULD 留档。落笔：SRS `REQ-F-ORCH-08` 行已改写；spec §8.1 与 `map.md` Out of scope 的「Spark 只留判据」句同步订正；gdd §1.11 标注随撤失效 |
 
 ### 7.4 冻结项变更（已批准，随本批落笔）
 
@@ -460,7 +461,7 @@ SELECT '<断言名>' AS assertion, COUNT(*)>0 AS ok FROM …
 | # | 缺口 | 处置 |
 | --- | --- | --- |
 | **35** | Doris 断言在宿主跑（`Makefile:76-78` 宿主侧 `curl 127.0.0.1:8030/api/health`，只查 FE 健康不查 ADS 有行），与 HLD §4.4/§8-R2「Doris 断言必须经 `client`」矛盾 | 随 P1 施工**改为经 `client`** 并补真实断言（查 ADS 有行） |
-| **36** | `minio`/`spark` profile 不存在（`REQ-F-ORCH-08` SHOULD 要求两个可选 profile） | **待签字的意图类**（实现 or 撤需求），挂 P2——**不在本 spec 默认范围**，见第 ⑧ 节 |
+| **36** | `minio`/`spark` profile 不存在（`REQ-F-ORCH-08` SHOULD 要求两个可选 profile） | ✅ **已结清（2026-10-25 签·impl-05）**：用户裁决**撤需求**，落 spec §7.1 **#40**（SRS 已改写） |
 | **37** | `research-notes.md` 两处非官方清单（`$files`/`$snapshots` 列名；`partial_columns=true` 作为表属性） | 事实类**直接订正**（[08] D-5/D-9） |
 
 ---
@@ -476,7 +477,7 @@ SELECT '<断言名>' AS assertion, COUNT(*)>0 AS ok FROM …
 - **推送与 GitHub Issues**——本仓 issue 后端是本地 markdown，`deck_*` GitHub 后端不适用。
 - **面试材料与简历 bullet 的成稿**（P3 的一部分，不属 spec-ready 判据）。
 - **亿级回放的实际执行**（`REQ-NF-CAP-06`）——只定口径，不排期。
-- **Spark 离线对照 profile 的实现**（`REQ-F-ORCH-08` 的一半）——只留判据。
+- **Spark 离线对照 profile 的实现**（`REQ-F-ORCH-08` 的一半）——只留判据。⚠️ **随 #40 撤签订正（2026-10-25）**：本句按「不复制 map.md、只单向引用」原则本不应在此出现；现 `REQ-F-ORCH-08` 整条已撤（含 spark 半条），本行仅存档引用历史，现行为——**两个 profile 均不实现**。
 
 ### 8.2 各票判不做项
 

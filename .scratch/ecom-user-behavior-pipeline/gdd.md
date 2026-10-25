@@ -284,6 +284,8 @@
 
 ### 1.11 加强项 C · 可选 profile（SHOULD）
 
+> ⚠️ **本节随 `REQ-F-ORCH-08` 撤需求而失效（2026-10-25 签·spec §7.1 #40）**：minio/spark 两个 profile 均不实现。以下原文保留作决策档案。
+
 **触发条件**：`docker compose --profile minio up`（S3 协议演示）；`--profile spark up`（离线对照，用完即停）。
 **流程**
 1. 不启用 profile 时，默认链路**完全不受影响**（湖存储走本地 `file://`）。

@@ -73,7 +73,7 @@ Progress: 9 票，**9 已落子（全部）**（P1 最小可证集 · 唯一真�
 - **推送与 GitHub Issues**：本仓 issue 后端是本地 markdown；`deck_*` 的 GitHub 后端不适用，命中即停。
 - **面试材料与简历 bullet 的成稿**：P3 的一部分，但不属 spec-ready 判据。
 - **亿级回放的实际执行**（`REQ-NF-CAP-06`）：只定口径，不排期。
-- **Spark 离线对照 profile 的实现**（`REQ-F-ORCH-08` 的一半）：只留判据。
+- ~~**Spark 离线对照 profile 的实现**（`REQ-F-ORCH-08` 的一半）：只留判据。~~ **随 #40 撤签订正（2026-10-25）**：`REQ-F-ORCH-08` 整条已撤需求（minio+spark 均不实现，spec §7.1 #40），本行历史存档。
 
 ## 为什么 [01] 已经先做掉了（历史记录，2026-10-20）
 

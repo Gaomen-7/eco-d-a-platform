@@ -200,7 +200,7 @@ Superset 6.1.0（看板）
 | `REQ-F-ORCH-05` | MUST | Kafka / Paimon / Doris / Superset 元数据用 named volume 持久化 | `docker compose down` 后再 `up`，数据仍在 |
 | `REQ-F-ORCH-06` | MUST | 端口仅绑 `127.0.0.1`（含 Flink UI :8081、Superset、Doris、Kafka） | 从局域网其它机器不可访问 |
 | `REQ-F-ORCH-07` | MUST | 容器日志轮转上限 **10 MB × 3** | 日志驱动配置可见 |
-| `REQ-F-ORCH-08` | SHOULD | 可选 profile：`minio`（S3 协议演示）、`spark`（离线对照，按需拉起用完即停） | 不启用 profile 时不影响默认链路 |
+| `REQ-F-ORCH-08` | ~~SHOULD~~ → **撤需求（2026-10-25 签·spec #36/#40）** | ~~可选 profile：`minio`（S3 协议演示）、`spark`（离线对照，按需拉起用完即停）~~ **不实现**。撤签理由：① spark 半条已在 spec §8.1/`map.md` Out of scope 判「只留判据不实现」（SRS 不同步即第二真相源矛盾）；② minio 半条需把 Paimon warehouse 从 `file://` 切 `s3://`，动 impl-03a/03b 已验收的具名卷部署面，且无下游判据消费者；③ SHOULD 级偏离本属可裁决项。湖存储对象化（S3）另记 COULD 留档 | 不适用（需求撤销；`spec §8.1` 与 `map.md` Out of scope 的「Spark 只留判据」随本条同步订正） |
 
 #### 3.1.8 可复现校验（模块⑧）
 

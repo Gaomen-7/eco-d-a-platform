@@ -18,7 +18,7 @@ Blocked by: impl-03, impl-04
 
 **④ 附录 A 三条冲突结清**（2026-10-21 已签）：M 已落为 spec §⑦ #38（SRS `REQ-F-LAKE-06` catalog/database 层级）· N 已落为 #39（HLD §8-R5 按 MOR 复核空间放大前提，偏离进 §8-R7 登记）· O 不新增条目、按 §⑦ #18 执行。本票核对三条确已在上游文档生效，并在 `reproducibility-boundary.md` 或 HLD §8-R7 登记本轮新增的偏离行。
 
-**⑤ 未签字意图类的收口** —— spec §7.5 #36：`minio`/`spark` 两个可选 profile（`REQ-F-ORCH-08` SHOULD）在 SRS 里要求但 compose 里不存在。本票请用户裁决：**实现 or 撤需求**（撤需求需走 SRS 意图类改写 + 签字）。这是本票唯一需要停下问人的点。
+**⑤ 未签字意图类的收口** —— spec §7.5 #36：`minio`/`spark` 两个可选 profile（`REQ-F-ORCH-08` SHOULD）在 SRS 里要求但 compose 里不存在。✅ **已结清（2026-10-25 用户裁决：撤需求）**——落 spec §7.1 **#40**：SRS `REQ-F-ORCH-08` 已改写为「不实现」（spark 半条 map 层早已判「只留判据」；minio 需动 impl-03a/03b 已验收的 warehouse 部署面且无下游消费者；S3 对象化记 COULD 留档）；spec §8.1、`map.md` Out of scope、gdd §1.11 已同步订正。**本票不再有需要停下问人的点**（Notes 的三张实机 task 仍须先获批）。
 
 **Blocked by:** impl-03, impl-04
 
@@ -31,7 +31,9 @@ Blocked by: impl-03, impl-04
 - [ ] L0 从 `make init` 到全 healthy 的实测耗时 ≤ 15 分钟（记录起止时刻），且明确标注「预拉镜像前提」
 - [ ] L3 用 `docker save`/`docker load` 路径实测冷启 ≤ 30 分钟，**构建 Doris 镜像的时间不计入**
 - [ ] 附录 A 的 M/N/O 三条已在上游文档生效；本轮新增的偏离行已登记进 HLD §8-R7 或 `reproducibility-boundary.md`
-- [ ] `minio`/`spark` profile 拿到用户裁决（实现 or 撤需求），撤需求时 SRS 已按意图类改写并留签字记录
+- [x] `minio`/`spark` profile 拿到用户裁决（实现 or 撤需求），撤需求时 SRS 已按意图类改写并留签字记录
+      ★ 2026-10-25 用户裁决**撤需求**：SRS `REQ-F-ORCH-08` 已改写（spec §7.1 #40 签字记录）；
+      spec §8.1 / `map.md` Out of scope / gdd §1.11 同步订正；spec §7.5 #36 标已结清。
 - [ ] 所有数字标注 `官方给出` 或 `设计值`，**没有把设计值当官方保证**
 - [ ] 全部本地提交，未推送
 
