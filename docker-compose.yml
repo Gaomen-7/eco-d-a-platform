@@ -378,6 +378,18 @@ services:
     memswap_limit: 1g
     ports:
       - "127.0.0.1:8088:8088"
+    # ★ impl-04 实机证伪（2026-10-25）：镜像 Entrypoint 为 null、CMD 直接是
+    #   run-server.sh（gunicorn）——官方 compose（6.1.0 docker-compose-image-tag.yml
+    #   逐字）是 `command: ["/app/docker/docker-bootstrap.sh", "app-gunicorn"]` +
+    #   `user: "root"`：bootstrap 以 root 装 requirements-local（写 /app/.venv，
+    #   该目录 root 所有），再派发 CMD。本仓 compose 此前没写这层 ⇒ PyMySQL
+    #   从未随 make init 装上，ecom_ads 连接在 recreated 容器上必断链
+    #   （No module named 'pymysql'）。
+    #   注意 bootstrap 的 app-gunicorn 分支走 /usr/bin/run-server.sh，
+    #   与镜像默认 CMD（/app/docker/entrypoints/run-server.sh）等价。
+    #   user: root 与官方一致；服务本身由 bootstrap 末段 exec 的进程承接。
+    user: "root"
+    command: ["/app/docker/docker-bootstrap.sh", "app-gunicorn"]
     environment:
       SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:?须在 .env 设置，勿入库}
       # R3 降配 A：CELERY_CONFIG=None 关闭全部 celery 配置 ⇒ worker/beat 可整段不写
@@ -388,6 +400,10 @@ services:
     volumes:
       - ./docker/superset/superset_config.py:/app/pythonpath/superset_config.py:ro
       - ./docker/superset/requirements-local.txt:/app/docker/requirements-local.txt:ro
+      # ★ impl-04：置备脚本只读挂载进容器（superset-provision.py 在容器内跑：
+      #   需要 ORM + PyMySQL 驱动，宿主侧都没有）。挂 /docker/scripts 而非
+      #   /scripts：kafka-init 用的是 /scripts（99 行），互不干扰。
+      - ./docker/scripts:/docker/scripts:ro
       - superset-home:/app/superset_home
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8088/health | grep -q OK || exit 1"]

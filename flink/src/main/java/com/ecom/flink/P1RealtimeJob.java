@@ -71,9 +71,13 @@ public final class P1RealtimeJob {
         // ── ⑤ 侧路指标：UV 精确去重 / 重复计数 ─────────────────────
         var uv = MetricSegment.uv(clean);
         var duplicates = MetricSegment.duplicates(GateSegment.duplicates(clean));
+        // ── ⑤b impl-04 新增侧路：GMV（分类目）/ 地域 PV（分省）────────
+        //   词表 gmv / region_pv 不进 event_* 对账面；见 MetricSegment 注释。
+        var gmv = MetricSegment.gmv(clean);
+        var regionPv = MetricSegment.regionPv(clean);
 
         // ── ⑥ 合并进窗口指标流（同表同键，三态同行）──────────────────
-        var metrics = windowed.union(uv, duplicates, provisional);
+        var metrics = windowed.union(uv, duplicates, provisional, gmv, regionPv);
 
         // ── ⑦ 落 Doris：全部 sink 一个 StatementSet，只提交一个作业 ──
         DorisSinkSegment.registerSinks(tEnv);

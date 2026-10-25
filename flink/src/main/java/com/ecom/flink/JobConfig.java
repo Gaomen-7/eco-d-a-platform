@@ -42,6 +42,20 @@ public final class JobConfig {
     public static final String METRIC_UV = "uv";
     /** 暂定行发出的累计条数（dim_key=''，用于证明「暂定→落定」存在）。 */
     public static final String METRIC_PROVISIONAL = "provisional_emitted";
+    /**
+     * GMV（分）：窗口内 purchase 的 amount 之和，按品类分维度（dim_key=category_id）。
+     * impl-04 新增——REQ-F-RT-02/REQ-F-BI-01 的「实时 GMV」此前实时侧无供数。
+     * 单位＝分（与 ads_window_metric 的 BIGINT「以整数存（分）」DDL 注释一致；
+     * 离线 Paimon 侧 gmv 是 DECIMAL 元——单位差异已由 impl-03c「仍待裁」第 4 条登记）。
+     */
+    public static final String METRIC_GMV = "gmv";
+    /**
+     * 地域 PV：窗口内事件数按省聚合（dim_key=province）。impl-04 新增——
+     * REQ-F-RT-02/REQ-F-BI-01 的「地域分布」此前实时侧无供数。
+     * 名字带 `_pv` 后缀以与「事件数」家族区分；词表新增不进 verify 的
+     * event_* 对账面（reconcile 只认 event_ 前缀）。
+     */
+    public static final String METRIC_REGION_PV = "region_pv";
 
     // ── Kafka（冻结项，SRS §3.4）────────────────────────────────
     public static final String TOPIC_MAIN = "ecom.behavior.event.v1";

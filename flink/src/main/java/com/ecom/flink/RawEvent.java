@@ -28,6 +28,12 @@ public final class RawEvent {
     public String currency;
     public Integer quantity;
     public String payload;
+    /**
+     * 省级行政区（SRS §3.3 `province` 字段）。impl-04 新增：地域分布面板
+     * （REQ-F-RT-02/REQ-F-BI-01 的「地域分布」）需要按省聚合，此前未解析。
+     * 质量闸门不校验它（缺省落 dim_key=''，与 SQL 段 dim 缺省同语义）。
+     */
+    public String province;
 
     /** 原始 JSON 原文（DLQ 落原文用；主流不需要）。 */
     public String rawJson;
@@ -60,6 +66,7 @@ public final class RawEvent {
         String q = field(json, "quantity");
         e.quantity = q == null ? null : parseIntOrNull(q);
         e.payload = field(json, "payload");
+        e.province = field(json, "province");
         return e;
     }
 
@@ -83,6 +90,7 @@ public final class RawEvent {
         e.currency = s.currency;
         e.quantity = s.quantity;
         e.payload = s.payload;
+        e.province = s.province;
         e.rawJson = s.rawJson;
         e.reason = s.reason;
         return e;

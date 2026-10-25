@@ -10,3 +10,14 @@
 # 选 PyMySQL 而非 mysqlclient：纯 Python，不需要编译 mysql 客户端库，
 # 在 127.0.0.1 单机场景够用，且安装失败面小。
 PyMySQL==1.1.2
+# ★ impl-04 实机证伪（2026-10-25）：Superset 的 MySQL engine spec
+#   （db_engine_specs/mysql.py:405 `import MySQLdb`，取 FIELD_TYPE 类型码表）
+#   **硬编码 import MySQLdb**——PyMySQL 只提供 `pymysql` 包名，没有 `MySQLdb`
+#   模块名 ⇒ 任何真实查询（fetch_data 的列类型解码）必炸
+#   ModuleNotFoundError: No module named 'MySQLdb'。
+#   ★ 实测 mysqlclient==2.2.7 在 6.1.0 镜像内**编译失败**（无 pkg-config 与
+#   libmysqlclient 头文件，"Can not find valid pkg-config name"）⇒ 走官方推荐的
+#   替代：PyMySQL 自带 `pymysql.install_as_MySQLdb()` 兼容层。落点＝
+#   superset_config.py 顶部（见该文件同日注释）——配置先于任何 engine spec
+#   被加载，install_as_MySQLdb 把 MySQLdb 模块名注册进 sys.modules。
+#   官方依据：PyMySQL 文档 "MySQLdb Compatibility"（pymysql.install_as_MySQLdb）。

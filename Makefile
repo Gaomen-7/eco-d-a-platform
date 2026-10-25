@@ -75,6 +75,8 @@ init: up
 	@$(COMPOSE) run --rm client /scripts/doris-init.sh
 	@echo "[init] 第三段：Superset 引导（db upgrade → create-admin → init）"
 	@bash docker/scripts/superset-init.sh
+	@echo "[init] 第三段增补（impl-04）：看板置备 + 匿名可达断言"
+	@bash docker/scripts/superset-provision.sh
 	@echo "[init] 第四段：断言经 client 查 ADS 真有行（不是查 FE 健康）"
 	@bash docker/scripts/doris-assert.sh
 

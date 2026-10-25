@@ -18,6 +18,12 @@
 *.md5
 # 说明：若确实需要提交小型样例夹具，请显式 force-add（git add -f），
 # 不要为个别文件放宽上面的目录与后缀规则。
+# 例外（impl-04 票面 ⑥）：`docker/superset/export/` 的 dashboard zip 是
+#   **make init 的复现手段**（import-dashboards -p <zip>），不是数据产物。
+#   它必须能被提交，否则全新检出的 `make init` 拿不到 zip ⇒ 复现链断。
+#   30 KB 的 YAML 压缩包，零数据（只有 dataset/dashboard 定义），不违
+#   REQ-F-LAKE-09 的「零原始数据」本意。
+!docker/superset/export/*.zip
 
 # ── 2. 日志与运行时产物 ─────────────────────────────────────────
 *.log
@@ -94,3 +100,4 @@ Thumbs.db
 #   若要彻底移出仓库，需 `git rm --cached <该文件>`（会删远端，须用户另批）。
 .scratch/handoff/
 .scratch/backups/
+pytest-of-Administrator/
