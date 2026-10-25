@@ -194,7 +194,7 @@ Superset 6.1.0（看板）
 | 编号 | 优先级 | 需求 | 验收判据 |
 | --- | --- | --- | --- |
 | `REQ-F-ORCH-01` | MUST | **`make init`** 一键拉起整条链路（**含 Doris profile 与初始化脚本**） | **在已有 Docker + make 的机器上**（L0 制品态）`make init` 后 `make verify` 退出码 0、`docker compose ps` 全 `healthy`；四档契约见 `reproducibility-boundary.md` §1 |
-| `REQ-F-ORCH-02` | MUST | **逐服务显式 `mem_limit`**，常驻总和 **≤ 8 GB**（**设计值**）。判据按**两个口径**分别断言：①**声明上限**（全部服务 `mem_limit` 之和，含 profile 内服务）≤ 8 GB；②**实测占用**（`docker stats --no-stream` 合计）≤ 8 GB。⚠️ 两者不可互相冒充（口径定义同 `REQ-NF-CAP-01`） | ①`docker compose --profile doris --profile client config` 求和 ≤ 8 GB；②`docker stats --no-stream` 合计 ≤ 8 GB。**P1 带载后须复测，带载未实测即未通过** |
+| `REQ-F-ORCH-02` | MUST | **逐服务显式 `mem_limit`**，常驻占用 **≤ 8 GB**（**设计值**目标）。判据按**两个口径**分别断言：①**声明上限**（全部服务 `mem_limit` 之和，含 profile 内服务）**≤ 执行面内存天花板**（本机 11.68 GiB，`官方给出`口径为宿主 MemTotal；当前 11.5 GiB / 11,776 MiB）；②**实测占用**（`docker stats --no-stream` 合计）**≤ 8 GB**（**设计值**目标，「≤ 8 GB」自 2026-10-25 起只约束口径②——口径①按官方出厂默认显式下调后的实机下限，8 GiB 声明合计结构性不可达，见 HLD §8-R7-g）。⚠️ 两者不可互相冒充（口径定义同 `REQ-NF-CAP-01`；**2026-10-25 签**·spec §7.1 #41） | ①`docker compose --profile doris --profile client config` 求和 ≤ 11.68 GiB 天花板；②`docker stats --no-stream` 合计 ≤ 8 GB。**P1 带载后须复测，带载未实测即未通过** |
 | `REQ-F-ORCH-03` | MUST | Makefile 目标：`up` / `down` / `init` / `replay` / `verify` / `logs` / `spike` | 各目标均可执行成功 |
 | `REQ-F-ORCH-04` | MUST | 重启策略 `restart: unless-stopped` | 主机重启后链路自动恢复 |
 | `REQ-F-ORCH-05` | MUST | Kafka / Paimon / Doris / Superset 元数据用 named volume 持久化 | `docker compose down` 后再 `up`，数据仍在 |
@@ -227,7 +227,7 @@ Superset 6.1.0（看板）
 
 | 编号 | 优先级 | 需求 | 性质 |
 | --- | --- | --- | --- |
-| `REQ-NF-CAP-01` | MUST | 容器群常驻内存 **≤ 8 GB**（天花板约束，**设计值**）。判据按**两个口径**分别断言：①**声明上限**（全部服务 `mem_limit` 之和，含 profile 内服务）≤ 8 GB；②**实测占用**（`docker stats --no-stream` 合计）≤ 8 GB。⚠️ 两者不可互相冒充：P0 实测空载六服务合计 ≈3.83 GiB，声明上限合计 10.5 GiB（10,752 MiB，含 `client` 256m），已按官方默认下调后落在 11.68 GiB 天花板内。**P1 带载后须复测，带载未实测即未通过** | 设计目标；官方未给出各家最低内存（A2） |
+| `REQ-NF-CAP-01` | MUST | 容器群常驻**实测占用 ≤ 8 GB**（**设计值**目标）。判据按**两个口径**分别断言：①**声明上限**（全部服务 `mem_limit` 之和，含 profile 内服务）**≤ 执行面内存天花板**（本机 11.68 GiB，`官方给出`口径为宿主 MemTotal；当前 11.5 GiB / 11,776 MiB）；②**实测占用**（`docker stats --no-stream` 合计）**≤ 8 GB**（**设计值**目标，「≤ 8 GB」自 2026-10-25 起只约束口径②——口径①按官方出厂默认显式下调后的实机下限，8 GiB 声明合计结构性不可达，见 HLD §8-R7-g）。⚠️ 两者不可互相冒充：P0 实测空载六服务合计 ≈3.83 GiB；带载实测 5.08–6.04 GiB（impl-05）。**P1 带载后须复测，带载未实测即未通过**（**2026-10-25 签**·spec §7.1 #41） | 设计目标；官方未给出各家最低内存（A2） |
 | `REQ-NF-CAP-02` | MUST | 磁盘占用（含数据卷）**≤ 20 GB** | 设计目标 |
 | `REQ-NF-CAP-03` | MUST | **预拉镜像前提下**，`make init` 到**链路全 healthy** **≤ 15 分钟**（**不含出数**：看板出数依赖 P1 的真实 Flink 作业与 Doris 写数，P1 未实现即不可测）。「到看板出数 ≤ 15 分钟」作为**同一需求的第二截**，判据转 P1 实测 | 两档之一；`make init` 计时至 `docker compose ps` 全 `healthy` |
 | `REQ-NF-CAP-04` | MUST | **预构建镜像经 `docker save`/`docker load` 导入后**，L3 跨机搬运冷启动 ≤ 30 分钟。⚠️ **「本地构建 Doris 镜像」不计入本判据**（实测构建 ≈35 min；Doris 无官方版本化镜像，构建不可避免） | 两档之二；构建耗时单独记录、**不设上限** |

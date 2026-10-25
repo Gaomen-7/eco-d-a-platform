@@ -40,6 +40,17 @@
 | **impl-02d** | [impl-02d-verify-fault-live.md](impl-02d-verify-fault-live.md) | impl-02b, impl-02c | verify-fault 实机**两连绿 + 反例证伪**（验票 6/7/9）；定位第 7/8 个判据缺陷（水印 tick、scoped 比对）；code-review 加固的六处假通过路径**已取得实机凭证**（§19） |
 | **impl-02e** | [impl-02e-p1-acceptance-closeout.md](impl-02e-p1-acceptance-closeout.md) | impl-02b, impl-02c, impl-02d | P1 收口验收 + 勾票 + code-review + commit |
 
+### impl-06 系列四张（2026-10-25 晚开票，用户裁决「开票不实施」——实施须另行触发）
+
+| 票 | 文件 | Blocked by | 交付 |
+| --- | --- | --- | --- |
+| **impl-06a** | [impl-06a-hour-retention-drill.md](impl-06a-hour-retention-drill.md) | — | HOUR 分级保留演练实机（`REQ-F-OLAP-03` 行为层证据；独立表，破坏面最小） |
+| **impl-06b** | [impl-06b-drop-reclaim-measurement.md](impl-06b-drop-reclaim-measurement.md) | — | DROP 后回盘时间线实测（recycle bin + BE GC；官方未给出 ⇒ 实机取证） |
+| **impl-06c** | [impl-06c-compaction-collision.md](impl-06c-compaction-collision.md) | — | compaction ×20 GB 对撞（耗时/放大/内存形态三数；与 06b 可联动回盘） |
+| **impl-06d** | [impl-06d-r7i-replay-watermark-fixes.md](impl-06d-r7i-replay-watermark-fixes.md) | — | R7-i 三案一张票收口（live 跨度 / committedOffsets / 时间戳-质量门次序） |
+
+> 06a/06b/06c 出处＝spec §8.2（**2026-10-25 用户批准**，实施前须复述风险再触发）；06d 出处＝HLD §8-R7-i（用户裁决三案同票）。四张互不阻塞，均独立可开工。
+
 ## 依赖图
 
 ```
@@ -66,7 +77,7 @@
 
 ## Frontier
 
-- **当前**（2026-10-25 收口 **impl-05** 后）：**空——施工票全部结清**（impl-01–05 + 全部副票；spec 九节全部有施工落点）。后续入口：`reproducibility-boundary.md` §11.1 意图类签字追认（用户）、spec §8.2 三张须先获批实机 task、HLD §8-R7-i 三条修复候选（待独立票）。
+- **当前**（2026-10-25 晚）：**impl-05 已结清、spec 九节全部有施工落点**；前沿转入 **impl-06 系列四张**（开票未排期，实施须用户触发——06a/06b/06c 为获批实机 task，06d 为 R7-i 修复票）。`reproducibility-boundary.md` §11.1 判据①逐字新句已随同日裁决**追认签字**（spec §7.1 #41，SRS 两行落笔）。
 - ✅ **impl-05 已结清**（2026-10-25，8/8 验收勾选）。收口实录（票面 Progress）：①容量双口径——口径①声明 11.5 GiB（10.5 过期订正，R7-g）＋判据①「≤8 GB」结构性不可达待签；口径②带载五采样 5.08–6.04 GiB 全 ≤8 GB。②L2 三轮 `--profile doris down`→`make init` 周期全过（裸 down 不停 profile 服务＝R7-h，判据动作改定）。③L0 实测 2m37.7s（预拉镜像前提）/ L3 全链 save 3m12s + load 20m12s + init 7m14.9s ≤30 min。④附录 A M/N/O 结清核对全过。⑤#40 minio/spark 撤需求落笔。⑥重提作业水位归位（−1000 s 墙钟后侧）＋ `make verify` 两连绿（`T104723Z` 9P1S / `T105307Z` 10P0S0F）。
 - ✅ **impl-04 已结清**（2026-10-25，8/9 验收勾选；GIF 留评审者，数据层对偶证据已取得）。
   收口实录（票面 Progress 下午段）：零账号链机读断言全绿（匿名页面/dashboard API/

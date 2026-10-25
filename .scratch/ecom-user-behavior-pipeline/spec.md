@@ -448,6 +448,7 @@ SELECT '<断言名>' AS assertion, COUNT(*)>0 AS ok FROM …
 | **34** | HLD §7.1 | 登记偏离行（原口径把「构建 Doris 镜像」隐含在「拉镜像」内，实测 ≈35 min ⇒ 原口径不可达） |
 | **39** | HLD §8-R5 ＋ §7.1（**2026-10-21 签**·附录 A N） | Paimon 主键表**默认 MOR 而非 MOW**（MOW 需显式 `deletion-vectors.enabled`）⇒ §8-R5 的空间放大前提原按 MOW 估算，须**按 MOR 复核**；本仓五张主键表固定 MOR，官方 bucket 指引 "200 MB–1 GB per bucket" 是 MOR 口径。偏离进 §8-R7 登记 |
 | **40** | `REQ-F-ORCH-08`（**2026-10-25 签**·缺口 #36 收口·impl-05 用户裁决） | **撤需求**：~~SHOULD 可选 profile `minio`/`spark`~~ → **不实现**。理由：① spark 半条已在 spec §8.1/`map.md` Out of scope 判「只留判据」，SRS 不同步即第二真相源矛盾；② minio 需把 Paimon warehouse 从 `file://` 切 `s3://`，动 impl-03a/03b 已验收的具名卷部署面，且无下游判据消费者；③ SHOULD 级偏离本属可裁决项。湖存储对象化（S3）另记 COULD 留档。落笔：SRS `REQ-F-ORCH-08` 行已改写；spec §8.1 与 `map.md` Out of scope 的「Spark 只留判据」句同步订正；gdd §1.11 标注随撤失效 |
+| **41** | `REQ-NF-CAP-01` ＋ `REQ-F-ORCH-02`（**2026-10-25 签**·HLD §8-R7-g 追认·impl-05 终验用户裁决） | 判据①「声明上限 ≤ 8 GB」与实机证伪钉死的声明合计 **11.5 GiB** 自相矛盾（flink-jm 2g / doris-be 3g / doris-fe 2g 均实机下限，压回 8 GiB 须再砍 ≈3.5 GiB 已验证部署面 ⇒ **结构性不可达**）。签字新句：判据按**两个口径**分别断言——①**声明上限 ≤ 执行面内存天花板**（本机 11.68 GiB，`官方给出`口径为宿主 MemTotal；当前 11.5 GiB / 11,776 MiB）；②**实测占用 ≤ 8 GB**（**设计值**目标，「≤ 8 GB」自 2026-10-25 起只约束口径②）。⚠️ 两者不可互相冒充；P1 带载后须复测。落笔：SRS 两行已按新句改写（`REQ-F-ORCH-02` 需求句「常驻总和」→「常驻占用」）；`reproducibility-boundary.md` §11.1 标已签；HLD §8-R7-g 与 §4.2 张力注同步结案 |
 
 ### 7.4 冻结项变更（已批准，随本批落笔）
 
@@ -495,7 +496,7 @@ SELECT '<断言名>' AS assertion, COUNT(*)>0 AS ok FROM …
 | **`make check` 新目标** | `make lint typecheck` 原生多目标并列，零冻结项变更（FC-1 已新增 `lint`/`typecheck`，不加 `check`） |
 | **L0 零状态实测（`down -v`）** | 需销毁 P0 已验证的卷态成果；L0/L1/L3 标「待测」 |
 | **工具链自举进「一条命令」** | JDK/Maven 只服务 Flink 作业构建，不在起链路路径上；bootstrap 脚本留 P1 |
-| **三张实机 task（自开）** | HOUR 演练实机 / DROP 后回盘实测 / compaction×20 GB 对撞——**须先获批**，不可自开 |
+| **三张实机 task（自开）** | HOUR 演练实机 / DROP 后回盘实测 / compaction×20 GB 对撞——**须先获批**，不可自开。✅ **2026-10-25 用户批准并裁决「开票不实施」**：三张已开票（`issues/impl-06a/06b/06c-*.md`），实施须另行触发 |
 
 ### 8.3 官方未给出（不猜、只登记）
 

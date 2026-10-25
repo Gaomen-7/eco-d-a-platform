@@ -30,7 +30,7 @@ Blocked by: impl-03, impl-04
 ## Acceptance criteria
 
 - [x] 容量两个口径各自给出数字：声明上限之和 ≤ 8 GB、`docker stats` 带载实测合计 ≤ 8 GB，且**实测是 P1 带载状态下测的**（不是空载）
-      ★ 口径①：实测求和 **11.5 GiB（11,776 MiB）≤ 11.68 GiB 天花板**；「≤ 8 GB」字面对声明口径判**结构性不可达**（压回须再砍 ≈3.5 GiB 已验证部署面），按冲突 I 签字意图处置为「8 GB 只约束口径②」——逐字新句待签（`reproducibility-boundary.md` §11.1 / HLD §8-R7-g），**本条注记「待用户追认」**。口径②：带载五次采样 **5.46/5.64/6.03/6.04/5.08 GiB 全部 ≤ 8 GB**（§3 表，末次 18:55 重提作业后补采）。
+      ★ 口径①：实测求和 **11.5 GiB（11,776 MiB）≤ 11.68 GiB 天花板**；「≤ 8 GB」字面对声明口径判**结构性不可达**（压回须再砍 ≈3.5 GiB 已验证部署面），按冲突 I 签字意图处置为「8 GB 只约束口径②」——逐字新句见 `reproducibility-boundary.md` §11.1 / HLD §8-R7-g。**✅ 2026-10-25 用户追认已签**（SRS 两行落笔，spec §7.1 #41），本条勾选语义完全成立。口径②：带载五次采样 **5.46/5.64/6.03/6.04/5.08 GiB 全部 ≤ 8 GB**（§3 表，末次 18:55 重提作业后补采）。
 - [x] 三个状态进卷的组件各完成一次不删卷的重启周期，重启后数据仍在；Doris FE 无 `feType:UNKNOWN` 卡死
       ★ 判据动作修正为 `docker compose --profile doris down`（裸 down 不停 profile 服务，R7-h）；**3 轮周期全过**，Kafka offsets / Doris 行数 / FE-BE IP / Superset uuid 逐字保住，`feType:UNKNOWN` 零命中（§1）。机器重启后又复核一轮全过（17:2x 复核：Kafka 53,789/DLQ 14,809、Doris 25027/1965/9129、FE/BE IP 不变）。
 - [x] L0 从 `make init` 到全 healthy 的实测耗时 ≤ 15 分钟（记录起止时刻），且明确标注「预拉镜像前提」
@@ -133,6 +133,7 @@ Blocked by: impl-03, impl-04
 - **`make verify` 两连绿**：第 1 跑 `T104723Z` PASS=9/FAIL=0/SKIP=1（SKIP=dlq 首跑落基线）退 0，**`recon-offline-mirror-doris` 首跑即 PASS**（rows=3 逐值全等）；第 2 跑 `T105307Z` **PASS=10/FAIL=0/SKIP=0 退 0**，脏率 0.275968 ≤ 基线 0.276153。凭证：`evidence/impl-05/verify-report-20261025T104723Z.json`、`verify-report-20261025T105307Z.json`（自 gitignore 的 `artifacts/verify/` 摘出入库）。
 - **带载 stats 补采**（18:55 +08，作业 RUNNING）：fe 1.797G / be 1.403G / tm 1.24G / jm 979.5M / kafka 700.7M / superset 245.4M，合计 **≈5.08 GiB ≤ 8 GB**（已入 §3 表）。
 - 票面验收勾选 + impl-dag frontier + code-review + 本地提交：**随本次收尾完成**。
+- **同日追认（四项裁决，见对话 2026-10-25 晚）**：①§11.1 逐字新句**追认签字**（SRS 两行落笔、spec §7.1 #41、HLD R7-g/§4.2 结案）；②spec §8.2 三张实机 task **全部批准开票、不实施**（to-tickets 开票）；③R7-i 三条修复候选**开一张独立票**；④分支维持本地不推送。
 
 ### 9. 续跑入口（**2026-10-25 17:05 用户重启电脑前中断**；✅ §9.1/§9.2 已于 18:36–18:56 全部执行完毕，实录见 §8——本节留作断点续跑方法论档案）
 
