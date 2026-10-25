@@ -1,0 +1,4 @@
+now: 2026-10-25 14:50:12 UTC (T0_DROP was 14:48:30 UTC)
+Type	Name	DbId	TableId	PartitionId	DropTime	DataSize	RemoteDataSize
+Table	compaction_probe	1792919870120	1792919870122		2026-10-25 14:48:34	10.211 GB	0.000 
+=== 08B DONE ===

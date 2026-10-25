@@ -1,0 +1,8 @@
+ts	be_mem	be_pct	fe_mem	fe_pct	alloc_mb	score	size_score	flush_q	flush_act	db_kb	data_kb	base_run	cumu_run	pswpin	pswpout
+13:47:09	1.929GiB / 3GiB	64.31%	1.965GiB / 2GiB	98.24%	1736019968	0	5	2147483647
+0	0	95684	10124	77427	38991	316	3600		
+13:47:26	1.929GiB / 3GiB	64.31%	1.964GiB / 2GiB	98.21%	1736036352	0	6	2147483647
+0	0	95684	10124	77555	39023	316	3600		
+13:47:44	1.937GiB / 3GiB	64.56%	1.965GiB / 2GiB	98.23%	1743962112	0	5	2147483647
+0	0	95748	10188	77624	39071	316	3600		
+04-observer.sh: line 36: unexpected EOF while looking for matching `"'

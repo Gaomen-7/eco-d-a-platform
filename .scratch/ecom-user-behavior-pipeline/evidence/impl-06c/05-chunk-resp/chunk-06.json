@@ -1,0 +1,20 @@
+{
+    "TxnId": 41760,
+    "Label": "coll_chunk_20261025T134946Z_06",
+    "Comment": "",
+    "TwoPhaseCommit": "false",
+    "Status": "Success",
+    "Message": "OK",
+    "NumberTotalRows": 600000,
+    "NumberLoadedRows": 600000,
+    "NumberFilteredRows": 0,
+    "NumberUnselectedRows": 0,
+    "LoadBytes": 1025400000,
+    "LoadTimeMs": 80133,
+    "BeginTxnTimeMs": 0,
+    "StreamLoadPutTimeMs": 2,
+    "ReadDataTimeMs": 58588,
+    "WriteDataTimeMs": 79942,
+    "ReceiveDataTimeMs": 17472,
+    "CommitAndPublishTimeMs": 191
+}

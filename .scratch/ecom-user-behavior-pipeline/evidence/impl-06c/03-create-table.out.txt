@@ -1,0 +1,40 @@
+=== [1] 三张已验证 ADS 表基线行数（06c 零接触对账基线） ===
+t	c
+ads_funnel_step	2427
+ads_late_expired_count	9146
+ads_window_metric	30132
+
+=== [2] 建库 ecom_collision（不存在则建） ===
+Database
+__internal_schema
+ecom_ads
+ecom_collision
+information_schema
+mysql
+
+=== [3] 建 compaction_probe（DUPLICATE KEY，BUCKETS 8，副本 1——形状同 06b reclaim_probe） ===
+*************************** 1. row ***************************
+       Table: compaction_probe
+Create Table: CREATE TABLE `compaction_probe` (
+  `id` bigint NOT NULL,
+  `payload` varchar(2048) NULL
+) ENGINE=OLAP
+DUPLICATE KEY(`id`)
+DISTRIBUTED BY HASH(`id`) BUCKETS 8
+PROPERTIES (
+"replication_allocation" = "tag.location.default: 1",
+"min_load_replica_num" = "-1",
+"is_being_synced" = "false",
+"storage_medium" = "hdd",
+"storage_format" = "V2",
+"inverted_index_storage_format" = "V3",
+"light_schema_change" = "true",
+"disable_auto_compaction" = "false",
+"group_commit_interval_ms" = "10000",
+"group_commit_data_bytes" = "134217728"
+);
+
+=== [4] 灌数前 du 基线 ===
+95692	/opt/apache-doris/be/storage
+=== CREATE DONE ===
+end: 2026-10-25 13:44:33 UTC

@@ -1,0 +1,141 @@
+=== [1] 六容器 health ===
+eco-doris-be	Up 4 hours (healthy)
+eco-doris-fe	Up 4 hours (healthy)
+eco-flink-jm	Up 4 hours (healthy)
+eco-flink-tm	Up 4 hours (healthy)
+eco-kafka	Up 4 hours (healthy)
+eco-superset	Up 4 hours (healthy)
+
+=== [2] 磁盘余量（WSL ext4，前置条件 ≥ 对撞量×2=40GB） ===
+/dev/sdf       1007G   25G  932G   3% /
+/dev/sdd       1007G   46G  911G   5% /opt/apache-doris/be/storage
+
+=== [3] BE du 基线 ===
+95540	/opt/apache-doris/be/storage
+76668	/opt/apache-doris/be/storage/meta
+9976	/opt/apache-doris/be/storage/data
+8732	/opt/apache-doris/be/storage/stream_load
+128	/opt/apache-doris/be/storage/error_log
+8	/opt/apache-doris/be/storage/wal
+
+=== [4] FE 关键配置基线 ===
+Key	Value	Type	IsMutable	MasterOnly	Comment
+catalog_trash_expire_second	86400	long	true	true	
+Key	Value	Type	IsMutable	MasterOnly	Comment
+min_version_count_indicate_replica_compaction_too_slow	200	int	true	false	
+skip_compaction_slower_replica	true	boolean	true	false	
+
+=== [5] 库名占用确认（ecom_collision 应不存在） ===
+Database
+__internal_schema
+ecom_ads
+information_schema
+mysql
+
+=== [6] 三张已验证 ADS 表基线行数 ===
+
+=== [7] docker stats 基线（空载） ===
+eco-doris-be	1.914GiB / 3GiB	63.81%
+eco-doris-fe	1.964GiB / 2GiB	98.21%
+eco-flink-jm	914.2MiB / 2GiB	44.64%
+eco-flink-tm	1.262GiB / 2GiB	63.10%
+eco-kafka	690.9MiB / 1GiB	67.47%
+eco-superset	265.6MiB / 1GiB	25.94%
+
+=== [8] BE metrics 基线（memory/compaction/memtable/flush 相关） ===
+doris_be_query_cache_memory_total_byte 118
+doris_be_all_segments_num 75
+doris_be_memory_allocated_bytes 1725685760
+doris_be_memory_jemalloc_tcache_bytes 420272648
+doris_be_memory_jemalloc_pactive_num 355889
+doris_be_thread_pool_max_threads{id="91492e16b9521dc8-de1a7576ca7a8faa",workload_group="",thread_pool_name="TaskWP_SUBMIT_TABLE_COMPACTION"} 1
+doris_be_thread_pool_max_threads{id="9b4937ad45bf3766-7a704bfd3313c0ba",workload_group="",thread_pool_name="CumuCompactionTaskThreadPool"} 2
+doris_be_thread_pool_max_threads{id="be4289097632b08b-838032e6af8345bc",workload_group="",thread_pool_name="MemTableHighPriorityFlushThreadPool"} 6
+doris_be_thread_pool_max_threads{id="9a447e5be71e3bca-54eee375a3327083",workload_group="",thread_pool_name="MemTableFlushThreadPool"} 6
+doris_be_thread_pool_max_threads{id="d947671a76ba983b-8f5f2db09abb9584",workload_group="",thread_pool_name="SegCompactionTaskThreadPool"} 5
+doris_be_thread_pool_max_threads{id="3643dbe47bc36b3b-8db3d61590673ba5",workload_group="",thread_pool_name="LazyReleaseMemoryThreadPool"} 1
+doris_be_thread_pool_max_threads{id="f74f33b661d0f514-8ed95be8485a2794",workload_group="",thread_pool_name="SegmentPrefetchThreadPool"} 2000
+doris_be_thread_pool_max_threads{id="74475f9bd84c2a4b-b39770bd4152c5a7",workload_group="",thread_pool_name="SegmentFileWriterThreadPool"} 6
+doris_be_thread_pool_max_threads{id="b7479f09a6729d3e-8a501288fb720d88",workload_group="",thread_pool_name="BaseCompactionTaskThreadPool"} 4
+doris_be_thread_pool_max_threads{id="0d4f1c85aea8f9cb-874ed4c4195b05a5",workload_group="",thread_pool_name="ColdDataCompactionTaskThreadPool"} 2
+doris_be_memory_pswpin 312
+doris_be_memory_jemalloc_allocated_bytes 1364147152
+doris_be_memory_jemalloc_dirty_purged_num 16421609
+doris_be_memory_jemalloc_mapped_bytes 1549213696
+doris_be_memory_pswpout 3600
+doris_be_memory_jemalloc_muzzy_purged_num 10436477
+doris_be_memory_jemalloc_active_bytes 1457721344
+doris_be_thread_pool_task_wait_worker_time_ns_total{id="9b4937ad45bf3766-7a704bfd3313c0ba",workload_group="",thread_pool_name="CumuCompactionTaskThreadPool"} 113046994081
+doris_be_thread_pool_task_wait_worker_time_ns_total{id="d947671a76ba983b-8f5f2db09abb9584",workload_group="",thread_pool_name="SegCompactionTaskThreadPool"} 23050561730
+doris_be_thread_pool_task_wait_worker_time_ns_total{id="74475f9bd84c2a4b-b39770bd4152c5a7",workload_group="",thread_pool_name="SegmentFileWriterThreadPool"} 9020445970
+doris_be_thread_pool_task_wait_worker_time_ns_total{id="b7479f09a6729d3e-8a501288fb720d88",workload_group="",thread_pool_name="BaseCompactionTaskThreadPool"} 160806
+doris_be_memory_jemalloc_pdirty_num 1374
+doris_be_cache_stampede_count{name="SegmentCache"} 85
+doris_be_cache_hit_count{name="SegmentCache"} 11185
+doris_be_cache_capacity{name="SegmentCache"} 128849024
+doris_be_memory_jemalloc_pmuzzy_num 995
+doris_be_cache_hit_ratio{name="SegmentCache"} 0.490872
+doris_be_engine_requests_total{status="total",type="cumulative_compaction"} 38219
+doris_be_engine_requests_total{status="total",type="base_compaction"} 75952
+doris_be_memory_jemalloc_retained_bytes 2145443840
+doris_be_thread_pool_task_wait_worker_count_total{id="9b4937ad45bf3766-7a704bfd3313c0ba",workload_group="",thread_pool_name="CumuCompactionTaskThreadPool"} 1894
+doris_be_thread_pool_task_wait_worker_count_total{id="d947671a76ba983b-8f5f2db09abb9584",workload_group="",thread_pool_name="SegCompactionTaskThreadPool"} 112
+doris_be_thread_pool_task_wait_worker_count_total{id="74475f9bd84c2a4b-b39770bd4152c5a7",workload_group="",thread_pool_name="SegmentFileWriterThreadPool"} 1996
+doris_be_thread_pool_task_wait_worker_count_total{id="b7479f09a6729d3e-8a501288fb720d88",workload_group="",thread_pool_name="BaseCompactionTaskThreadPool"} 4
+doris_be_memory_pgpgout 6824951
+doris_be_thread_pool_task_execution_time_ns_total{id="9b4937ad45bf3766-7a704bfd3313c0ba",workload_group="",thread_pool_name="CumuCompactionTaskThreadPool"} 237766122216
+doris_be_thread_pool_task_execution_time_ns_total{id="d947671a76ba983b-8f5f2db09abb9584",workload_group="",thread_pool_name="SegCompactionTaskThreadPool"} 47182147479
+doris_be_thread_pool_task_execution_time_ns_total{id="74475f9bd84c2a4b-b39770bd4152c5a7",workload_group="",thread_pool_name="SegmentFileWriterThreadPool"} 7688025816
+doris_be_thread_pool_task_execution_time_ns_total{id="b7479f09a6729d3e-8a501288fb720d88",workload_group="",thread_pool_name="BaseCompactionTaskThreadPool"} 1213480432
+doris_be_cache_element_count{name="SegmentCache"} 180
+doris_be_thread_pool_max_queue_size{id="91492e16b9521dc8-de1a7576ca7a8faa",workload_group="",thread_pool_name="TaskWP_SUBMIT_TABLE_COMPACTION"} 2147483647
+doris_be_thread_pool_max_queue_size{id="9b4937ad45bf3766-7a704bfd3313c0ba",workload_group="",thread_pool_name="CumuCompactionTaskThreadPool"} 2147483647
+doris_be_thread_pool_max_queue_size{id="be4289097632b08b-838032e6af8345bc",workload_group="",thread_pool_name="MemTableHighPriorityFlushThreadPool"} 2147483647
+doris_be_thread_pool_max_queue_size{id="9a447e5be71e3bca-54eee375a3327083",workload_group="",thread_pool_name="MemTableFlushThreadPool"} 2147483647
+doris_be_thread_pool_max_queue_size{id="d947671a76ba983b-8f5f2db09abb9584",workload_group="",thread_pool_name="SegCompactionTaskThreadPool"} 2147483647
+doris_be_thread_pool_max_queue_size{id="3643dbe47bc36b3b-8db3d61590673ba5",workload_group="",thread_pool_name="LazyReleaseMemoryThreadPool"} 1000000
+doris_be_thread_pool_max_queue_size{id="f74f33b661d0f514-8ed95be8485a2794",workload_group="",thread_pool_name="SegmentPrefetchThreadPool"} 2147483647
+doris_be_thread_pool_max_queue_size{id="74475f9bd84c2a4b-b39770bd4152c5a7",workload_group="",thread_pool_name="SegmentFileWriterThreadPool"} 2147483647
+doris_be_thread_pool_max_queue_size{id="b7479f09a6729d3e-8a501288fb720d88",workload_group="",thread_pool_name="BaseCompactionTaskThreadPool"} 2147483647
+doris_be_thread_pool_max_queue_size{id="0d4f1c85aea8f9cb-874ed4c4195b05a5",workload_group="",thread_pool_name="ColdDataCompactionTaskThreadPool"} 2147483647
+doris_be_thread_pool_task_execution_count_total{id="9b4937ad45bf3766-7a704bfd3313c0ba",workload_group="",thread_pool_name="CumuCompactionTaskThreadPool"} 1894
+doris_be_thread_pool_task_execution_count_total{id="d947671a76ba983b-8f5f2db09abb9584",workload_group="",thread_pool_name="SegCompactionTaskThreadPool"} 112
+doris_be_thread_pool_task_execution_count_total{id="74475f9bd84c2a4b-b39770bd4152c5a7",workload_group="",thread_pool_name="SegmentFileWriterThreadPool"} 1996
+doris_be_thread_pool_task_execution_count_total{id="b7479f09a6729d3e-8a501288fb720d88",workload_group="",thread_pool_name="BaseCompactionTaskThreadPool"} 4
+doris_be_compaction_rows_total{type="write"} 169862
+
+=== [9] BE compaction 状态端点探测（存在性确认） ===
+--- /api/compaction/run_status:
+{
+    "BaseCompaction": {
+        "/opt/apache-doris/be/storage": []
+    },
+    "CumulativeCompaction": {
+        "/opt/apache-doris/be/storage": []
+    },
+    "FullCompaction": {}
+}
+--- /api/show_data (tablet 数):
+<HTML><HEAD>
+<TITLE>404 Not Found</TITLE>
+</HEAD><BODY>
+<H1>Not Found</H1>
+</BODY></HTML>
+
+
+=== [10] SHOW PROC '/statistic'（compaction score 口径探测） ===
+DbId	DbName	TableNum	PartitionNum	IndexNum	TabletNum	ReplicaNum
+1792479754704	__internal_schema	3	11	11	32	32
+1792479919714	ecom_ads	3	102	102	272	272
+1	mysql	2	0	0	0	0
+Total	3	8	113	113	304	304
+
+=== [11] BE 日志基线（最近 compaction 相关行，应为空或历史行） ===
+grep: /opt/apache-doris/be/log/be.INFO: binary file matches
+RuntimeLogger I20261021 10:05:49.362033  1140 merger.cpp:753] Vertical compaction density update: tablet_id=1792479755345, total_cells=903, total_null_count=0, density=1
+RuntimeLogger I20261021 10:05:49.453920  1141 merger.cpp:502] Vertical compaction segment context statistics, tablet_id: 1792479755343, vertical_compaction_active_segment_contexts_peak: 4
+RuntimeLogger I20261021 10:05:49.476604  1141 compaction.cpp:688] succeed to do cumulative compaction is_vertical=1. tablet=1792479755343, output_version=[2-6], current_max_version=6, disk=/opt/apache-doris/be/storage, input_segments=4, input_rowsets_data_size=52.64 KB, input_rowsets_index_size=0, input_rowsets_total_size=52.64 KB, output_rowset_data_size=14.80 KB, output_rowset_index_size=0, output_rowset_total_size=14.80 KB, input_row_num=17, output_row_num=17, filtered_row_num=0, merged_row_num=0. elapsed time=0.399297s. cumulative_compaction_policy=size_based, compact_row_per_second=42.5746
+RuntimeLogger I20261021 10:05:49.487269  1140 merger.cpp:502] Vertical compaction segment context statistics, tablet_id: 1792479755345, vertical_compaction_active_segment_contexts_peak: 5
+RuntimeLogger I20261021 10:05:49.487819  1140 compaction.cpp:688] succeed to do cumulative compaction is_vertical=1. tablet=1792479755345, output_version=[2-6], current_max_version=6, disk=/opt/apache-doris/be/storage, input_segments=5, input_rowsets_data_size=65.03 KB, input_rowsets_index_size=0, input_rowsets_total_size=65.03 KB, output_rowset_data_size=15.22 KB, output_rowset_index_size=0, output_rowset_total_size=15.22 KB, input_row_num=21, output_row_num=21, filtered_row_num=0, merged_row_num=0. elapsed time=0.410466s. cumulative_compaction_policy=size_based, compact_row_per_second=51.1612
+=== BASELINE DONE ===
+end: 2026-10-25 13:42:11 UTC

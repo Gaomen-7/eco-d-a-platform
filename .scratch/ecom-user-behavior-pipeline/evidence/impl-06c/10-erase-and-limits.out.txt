@@ -1,0 +1,52 @@
+=== [1] 本表 8 tablet 的 BE erase/trash 逐字行 ===
+RuntimeLogger I20261025 15:00:30.038223  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919870132, schema_hash=954062573, tablet_path=/opt/apache-doris/be/storage/data/21/1792919870132/954062573
+RuntimeLogger I20261025 15:00:30.038277  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919870132 from map, reason=move to trash, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:30.038314  1607 tablet_manager.cpp:1357] add tablet_id= 1792919870136 to map, reason=move to trash, lock times=1, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:30.087702  1607 tablet_manager.cpp:1295] start to move tablet to trash. /opt/apache-doris/be/storage/data/23/1792919870136/954062573. rocksdb get meta cost 100 us, rocksdb save meta cost 49271 us
+RuntimeLogger I20261025 15:00:30.087767  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/23/1792919870136/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:30.119647  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919870136, schema_hash=954062573, tablet_path=/opt/apache-doris/be/storage/data/23/1792919870136/954062573
+RuntimeLogger I20261025 15:00:30.119714  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919870136 from map, reason=move to trash, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:30.119740  1607 tablet_manager.cpp:1357] add tablet_id= 1792919870138 to map, reason=move to trash, lock times=1, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:30.174166  1607 tablet_manager.cpp:1295] start to move tablet to trash. /opt/apache-doris/be/storage/data/24/1792919870138/954062573. rocksdb get meta cost 196 us, rocksdb save meta cost 54194 us
+RuntimeLogger I20261025 15:00:30.174268  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/24/1792919870138/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:30.192836  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919870138, schema_hash=954062573, tablet_path=/opt/apache-doris/be/storage/data/24/1792919870138/954062573
+RuntimeLogger I20261025 15:00:30.192889  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919870138 from map, reason=move to trash, thread_id_in_map=137866099226176
+
+=== [2] BE 删除动作时刻（delete tablet dir 行，15:00 前后） ===
+RuntimeLogger I20261025 14:51:29.262655  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/2/1792919869261/318059799 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 14:51:29.371591  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/0/1792919869255/318059799 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:29.497560  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/17/1792919870124/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:29.588812  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/18/1792919870126/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:29.710167  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/19/1792919870128/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:29.812515  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/20/1792919870130/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:29.890717  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/22/1792919870134/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:30.017673  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/21/1792919870132/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:30.087767  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/23/1792919870136/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:30.174268  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/24/1792919870138/954062573 directly due to trash_file_expire_time_sec is 0
+
+=== [3] load+compaction 窗口（13:49–15:01）内存限流/OOM 痕迹检索 ===
+--- 'memory limit' / 'MemLimit' / 'MemTracker' 告警:
+1388
+--- '-235'（load 内存超限错误码）:
+92
+--- 'oom' / 'OOM' / 'killed' 相关:
+216
+--- 'memtable flush' 限流/等待痕迹（memtable_flush_running_count_limit=2）:
+RuntimeLogger I20261025 15:06:13.873847  3144 memtable_memory_limiter.cpp:343] reached hard limit, load mem: 0, memtable writers num: 0, active: 0, queue: 0, flush: 0
+RuntimeLogger I20261025 15:06:14.904101  3144 memtable_memory_limiter.cpp:343] reached hard limit, load mem: 0, memtable writers num: 0, active: 0, queue: 0, flush: 0
+RuntimeLogger I20261025 15:06:15.935695  3144 memtable_memory_limiter.cpp:343] reached hard limit, load mem: 0, memtable writers num: 0, active: 0, queue: 0, flush: 0
+RuntimeLogger I20261025 15:06:16.968833  3144 memtable_memory_limiter.cpp:343] reached hard limit, load mem: 0, memtable writers num: 0, active: 0, queue: 0, flush: 0
+RuntimeLogger I20261025 15:06:18.005017  3144 memtable_memory_limiter.cpp:343] reached hard limit, load mem: 0, memtable writers num: 0, active: 0, queue: 0, flush: 0
+--- BE 容器 OOMKilled 状态复核:
+OOMKilled=false Status=running RestartCount=0
+
+=== [4] memtable flush 计数终值 ===
+doris_be_memtable_memory_limiter_mem_consumption{type="load"} 0
+doris_be_memtable_flush_total 11642
+doris_be_memtable_flush_duration_us 8270189701
+
+=== [5] 观测器终态采样 ===
+15:05:48	1.978GiB / 3GiB	65.93%	1.968GiB / 2GiB	98.41%	1706684416	0	5	0	0	96484	10272	93453	48443	1040	13648		
+15:06:06	1.973GiB / 3GiB	65.78%	1.97GiB / 2GiB	98.51%	1694728192	0	6	0	0	96532	10320	93581	48492	1040	13648		
+=== 10 DONE ===
+end: 2026-10-25 15:06:19 UTC

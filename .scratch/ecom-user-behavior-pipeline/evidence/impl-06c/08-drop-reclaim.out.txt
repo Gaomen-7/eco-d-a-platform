@@ -1,0 +1,116 @@
+=== [0] 三张已验证 ADS 表对账（DROP 前） ===
+t	c
+ads_window_metric	30132
+ads_late_expired_count	9146
+ads_funnel_step	2427
+
+=== [1] 实验参数切换：catalog_trash_expire_second 86400→300 ===
+Key	Value	Type	IsMutable	MasterOnly	Comment
+catalog_trash_expire_second	300	long	true	true	
+
+=== [2] DROP 前 du 基线 ===
+10804264	/opt/apache-doris/be/storage
+
+=== [3] DROP TABLE（非 force） ===
+T0_DROP: 2026-10-25 14:48:30 UTC
+T0_DROP_RETURNED: 2026-10-25 14:48:37 UTC
+
+=== [4] 回收站可见性（立即查） ===
+
+=== [5] 回盘观测循环：30s tick，直到 du(data) 回落至 ≈灌数前基线（±2%）或 25 min 上限 ===
+14:48:43	storage=10804356KB	data=10718144KB	bin_entries=0	be_delete_dir_total=1140
+    fe_last_erase: RuntimeLogger 2026-10-25 14:48:20,222 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+14:49:21	storage=10804032KB	data=10717820KB	bin_entries=0	be_delete_dir_total=1140
+    fe_last_erase: RuntimeLogger 2026-10-25 14:49:21,577 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+14:49:58	storage=10804112KB	data=10717900KB	bin_entries=0	be_delete_dir_total=1140
+    fe_last_erase: RuntimeLogger 2026-10-25 14:49:51,575 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+14:50:37	storage=10804248KB	data=10718036KB	bin_entries=0	be_delete_dir_total=1140
+    fe_last_erase: RuntimeLogger 2026-10-25 14:50:21,574 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+14:51:15	storage=10804452KB	data=10718240KB	bin_entries=0	be_delete_dir_total=1140
+    fe_last_erase: RuntimeLogger 2026-10-25 14:51:21,571 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+14:51:52	storage=10804068KB	data=10717856KB	bin_entries=0	be_delete_dir_total=1145
+    fe_last_erase: RuntimeLogger 2026-10-25 14:51:51,570 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+14:52:29	storage=10804132KB	data=10717920KB	bin_entries=0	be_delete_dir_total=1145
+    fe_last_erase: RuntimeLogger 2026-10-25 14:52:21,569 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+14:53:09	storage=10804300KB	data=10718088KB	bin_entries=0	be_delete_dir_total=1145
+    fe_last_erase: RuntimeLogger 2026-10-25 14:52:51,567 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+14:53:46	storage=10804412KB	data=10718200KB	bin_entries=0	be_delete_dir_total=1145
+    fe_last_erase: RuntimeLogger 2026-10-25 14:53:51,565 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+14:54:23	storage=10804476KB	data=10718264KB	bin_entries=0	be_delete_dir_total=1145
+    fe_last_erase: RuntimeLogger 2026-10-25 14:54:21,564 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+14:55:00	storage=10804196KB	data=10717984KB	bin_entries=0	be_delete_dir_total=1145
+    fe_last_erase: RuntimeLogger 2026-10-25 14:54:51,562 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+14:55:39	storage=10804308KB	data=10718096KB	bin_entries=0	be_delete_dir_total=1145
+    fe_last_erase: RuntimeLogger 2026-10-25 14:55:21,561 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+14:56:16	storage=10804432KB	data=10718220KB	bin_entries=0	be_delete_dir_total=1145
+    fe_last_erase: RuntimeLogger 2026-10-25 14:56:21,590 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+14:56:54	storage=10804536KB	data=10718324KB	bin_entries=0	be_delete_dir_total=1145
+    fe_last_erase: RuntimeLogger 2026-10-25 14:56:51,589 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+14:57:31	storage=10804616KB	data=10718404KB	bin_entries=0	be_delete_dir_total=1145
+    fe_last_erase: RuntimeLogger 2026-10-25 14:57:21,588 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+14:58:10	storage=10804292KB	data=10718080KB	bin_entries=0	be_delete_dir_total=1145
+    fe_last_erase: RuntimeLogger 2026-10-25 14:57:51,586 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+14:58:47	storage=10804368KB	data=10718156KB	bin_entries=0	be_delete_dir_total=1145
+    fe_last_erase: RuntimeLogger 2026-10-25 14:58:51,710 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 1 cost: 125ms
+14:59:24	storage=10804448KB	data=10718236KB	bin_entries=0	be_delete_dir_total=1145
+    fe_last_erase: RuntimeLogger 2026-10-25 14:59:21,709 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+15:00:01	storage=10804528KB	data=10718316KB	bin_entries=0	be_delete_dir_total=1145
+    fe_last_erase: RuntimeLogger 2026-10-25 14:59:51,707 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+15:00:41	storage=96744KB	data=10532KB	bin_entries=0	be_delete_dir_total=1153
+    fe_last_erase: RuntimeLogger 2026-10-25 15:00:21,706 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+15:01:18	storage=96456KB	data=10244KB	bin_entries=0	be_delete_dir_total=1153
+    fe_last_erase: RuntimeLogger 2026-10-25 15:01:21,704 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+15:01:55	storage=96520KB	data=10308KB	bin_entries=0	be_delete_dir_total=1153
+    fe_last_erase: RuntimeLogger 2026-10-25 15:01:51,703 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+15:02:32	storage=96600KB	data=10388KB	bin_entries=0	be_delete_dir_total=1153
+    fe_last_erase: RuntimeLogger 2026-10-25 15:02:21,702 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+15:03:11	storage=96772KB	data=10560KB	bin_entries=0	be_delete_dir_total=1153
+    fe_last_erase: RuntimeLogger 2026-10-25 15:02:51,700 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+15:03:48	storage=96136KB	data=9924KB	bin_entries=0	be_delete_dir_total=1153
+    fe_last_erase: RuntimeLogger 2026-10-25 15:03:51,770 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+T_RECLAIMED: 2026-10-25 15:03:55 UTC
+reclaimed: data=9924KB ≈ baseline 9976KB
+
+=== [6] FE 日志逐字：dropTable/eraseTable 相关行 ===
+RuntimeLogger 2026-10-25 15:00:21,706 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+RuntimeLogger 2026-10-25 15:00:51,705 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+RuntimeLogger 2026-10-25 15:01:21,704 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+RuntimeLogger 2026-10-25 15:01:51,703 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+RuntimeLogger 2026-10-25 15:02:21,702 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+RuntimeLogger 2026-10-25 15:02:51,700 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+RuntimeLogger 2026-10-25 15:03:21,772 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+RuntimeLogger 2026-10-25 15:03:51,770 INFO (recycle bin|67) [CatalogRecycleBin.eraseTable():508] eraseTable eraseNum: 0 cost: 0ms
+
+=== [7] BE 日志逐字：本表 tablet 的 erase 行（tablet 清单本地 grep -F 过滤） ===
+RuntimeLogger I20261025 15:00:30.038223  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919870132, schema_hash=954062573, tablet_path=/opt/apache-doris/be/storage/data/21/1792919870132/954062573
+RuntimeLogger I20261025 15:00:30.038277  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919870132 from map, reason=move to trash, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:30.038314  1607 tablet_manager.cpp:1357] add tablet_id= 1792919870136 to map, reason=move to trash, lock times=1, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:30.087702  1607 tablet_manager.cpp:1295] start to move tablet to trash. /opt/apache-doris/be/storage/data/23/1792919870136/954062573. rocksdb get meta cost 100 us, rocksdb save meta cost 49271 us
+RuntimeLogger I20261025 15:00:30.087767  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/23/1792919870136/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:30.119647  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919870136, schema_hash=954062573, tablet_path=/opt/apache-doris/be/storage/data/23/1792919870136/954062573
+RuntimeLogger I20261025 15:00:30.119714  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919870136 from map, reason=move to trash, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:30.119740  1607 tablet_manager.cpp:1357] add tablet_id= 1792919870138 to map, reason=move to trash, lock times=1, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:30.174166  1607 tablet_manager.cpp:1295] start to move tablet to trash. /opt/apache-doris/be/storage/data/24/1792919870138/954062573. rocksdb get meta cost 196 us, rocksdb save meta cost 54194 us
+RuntimeLogger I20261025 15:00:30.174268  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/24/1792919870138/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:30.192836  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919870138, schema_hash=954062573, tablet_path=/opt/apache-doris/be/storage/data/24/1792919870138/954062573
+RuntimeLogger I20261025 15:00:30.192889  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919870138 from map, reason=move to trash, thread_id_in_map=137866099226176
+--- 全量 erase/trash 行副本: 08-be-erase-all.log
+
+=== [8] 恢复配置：catalog_trash_expire_second 300→86400 + 复核 ===
+Key	Value	Type	IsMutable	MasterOnly	Comment
+catalog_trash_expire_second	86400	long	true	true	
+
+=== [9] 收尾：DROP DATABASE ecom_collision（非 force，同 06b bin 滞留终态） ===
+Database
+__internal_schema
+ecom_ads
+information_schema
+mysql
+
+=== [10] 三张已验证 ADS 表对账（DROP 后） ===
+t	c
+ads_late_expired_count	9146
+ads_funnel_step	2427
+ads_window_metric	30132
+=== DROP-RECLAIM DONE ===
+end: 2026-10-25 15:04:30 UTC

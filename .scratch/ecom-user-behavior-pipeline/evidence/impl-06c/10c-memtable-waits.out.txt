@@ -1,0 +1,12 @@
+window lines: 130225
+waited lines: total=637 load_window=637 compaction_window=0
+  load-window wait ms: N=637 min=659 p50=1000 p90=3001 max=8011
+  first=13:50:31 last=14:20:00
+  load mem peak in waited lines: 61.41 MB at 13:54:14
+  process mem peak in waited lines: 2.27 GB at 14:08:10
+reached hard limit: total=7447 in [load..compaction] window=4121
+  first=13:49:46 last=15:01:00
+Traceback (most recent call last):
+  File "<stdin>", line 50, in <module>
+AttributeError: 'NoneType' object has no attribute 'group'
+=== 10C-v2 DONE ===

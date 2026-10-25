@@ -1,0 +1,29 @@
+=== load+compaction 窗口 I20261025 [13:49–15:01] 内的痕迹 ===
+129280 /tmp/impl06c-window.log
+--- 窗口内 'reached hard limit'（memtable_memory_limiter）:
+7352
+--- 窗口内 'reached hard limit' 首末时刻:
+I20261025 13:00:00.207509
+I20261025 15:06:43.837493
+--- 窗口内 -235（需人工看上下文，可能含版本号等）:
+RuntimeLogger I20261025 14:52:41.663815  1614 compaction.cpp:676] start cumulative compaction. tablet=1792633343557, output_version=[227-235], permits: 5
+RuntimeLogger I20261025 14:52:41.757705  1614 compaction.cpp:688] succeed to do cumulative compaction is_vertical=1. tablet=1792633343557, output_version=[227-235], current_max_version=235, disk=/opt/apache-doris/be/storage, input_segments=3, input_rowsets_data_size=38.92 KB, input_rowsets_index_size=0, input_rowsets_total_size=38.92 KB, output_rowset_data_size=14.33 KB, output_rowset_index_size=0, output_rowset_total_size=14.33 KB, input_row_num=10, output_row_num=10, filtered_row_num=0, merged_row_num=0. elapsed time=0.093973s. cumulative_compaction_policy=size_based, compact_row_per_second=106.412
+--- 窗口内 OOM/OutOfMemory:
+--- 窗口内 'memory limit' 逐条样本（前 5）:
+RuntimeLogger I20261025 13:50:31.475062  1957 memtable_memory_limiter.cpp:254] waited 1s000ms for memtable memory limit, process memory used 1.81 GB(= 1.81 GB[vm/rss] + 0[reserved] + 0B[waiting_refresh]), sys available memory 1.22 GB(= 1.22 GB[proc/available] - 0[reserved] - 0B[waiting_refresh]), load mem: 42.74 MB, memtable writers num: 8, active: 0, queue: 0, flush: 42.74 MB
+RuntimeLogger I20261025 13:50:31.704011  1954 memtable_memory_limiter.cpp:254] waited 2s021ms for memtable memory limit, process memory used 1.82 GB(= 1.82 GB[vm/rss] + 4.59 MB[reserved] + 0B[waiting_refresh]), sys available memory 1.20 GB(= 1.21 GB[proc/available] - 4.59 MB[reserved] - 0B[waiting_refresh]), load mem: 48.85 MB, memtable writers num: 16, active: 16.22 MB, queue: 82.00 KB, flush: 32.55 MB
+RuntimeLogger I20261025 13:50:31.734932  1956 memtable_memory_limiter.cpp:254] waited 2s023ms for memtable memory limit, process memory used 1.83 GB(= 1.83 GB[vm/rss] + 4.59 MB[reserved] + 0B[waiting_refresh]), sys available memory 1.20 GB(= 1.21 GB[proc/available] - 4.59 MB[reserved] - 0B[waiting_refresh]), load mem: 48.87 MB, memtable writers num: 16, active: 0, queue: 16.32 MB, flush: 32.55 MB
+RuntimeLogger I20261025 13:50:35.997439  1966 memtable_memory_limiter.cpp:254] waited 1s000ms for memtable memory limit, process memory used 1.91 GB(= 1.91 GB[vm/rss] + 6.35 MB[reserved] + 0B[waiting_refresh]), sys available memory 1.19 GB(= 1.19 GB[proc/available] - 6.35 MB[reserved] - 0B[waiting_refresh]), load mem: 33.91 MB, memtable writers num: 8, active: 0, queue: 0, flush: 33.91 MB
+RuntimeLogger I20261025 13:50:42.521486  1969 memtable_memory_limiter.cpp:254] waited 1s000ms for memtable memory limit, process memory used 1.82 GB(= 1.82 GB[vm/rss] + 0[reserved] + 0B[waiting_refresh]), sys available memory 1.22 GB(= 1.22 GB[proc/available] - 0[reserved] - 0B[waiting_refresh]), load mem: 25.43 MB, memtable writers num: 8, active: 0, queue: 0, flush: 25.43 MB
+
+--- 窗口内 memtable_memory_limiter 的非零 load mem 行（真限流形态）:
+RuntimeLogger I20261025 13:00:00.207509  3144 memtable_memory_limiter.cpp:343] reached hard limit, load mem: 112.50 KB, memtable writers num: 4, active: 0, queue: 0, flush: 112.50 KB
+RuntimeLogger I20261025 13:00:31.166836  3144 memtable_memory_limiter.cpp:343] reached hard limit, load mem: 240.94 KB, memtable writers num: 4, active: 0, queue: 0, flush: 240.94 KB
+RuntimeLogger I20261025 13:00:34.256425  3144 memtable_memory_limiter.cpp:343] reached hard limit, load mem: 31.57 KB, memtable writers num: 2, active: 0, queue: 0, flush: 31.57 KB
+RuntimeLogger I20261025 13:01:00.016238  3144 memtable_memory_limiter.cpp:343] reached hard limit, load mem: 259.09 KB, memtable writers num: 12, active: 0, queue: 0, flush: 259.09 KB
+RuntimeLogger I20261025 13:01:01.048955  3144 memtable_memory_limiter.cpp:343] reached hard limit, load mem: 240.94 KB, memtable writers num: 4, active: 0, queue: 0, flush: 240.94 KB
+RuntimeLogger I20261025 13:01:29.913187  3144 memtable_memory_limiter.cpp:343] reached hard limit, load mem: 259.09 KB, memtable writers num: 12, active: 0, queue: 0, flush: 259.09 KB
+RuntimeLogger I20261025 13:01:59.788156  3144 memtable_memory_limiter.cpp:343] reached hard limit, load mem: 723.31 KB, memtable writers num: 16, active: 0, queue: 408.00 KB, flush: 315.31 KB
+RuntimeLogger I20261025 13:02:00.817757  3144 memtable_memory_limiter.cpp:343] reached hard limit, load mem: 168.72 KB, memtable writers num: 4, active: 0, queue: 0, flush: 168.72 KB
+(以上为空=全程 load mem 0，未真实触限)
+=== 10B DONE ===

@@ -1,0 +1,11 @@
+samples: total=197 load_window=94
+be_mem peak: ('13:54:02', 2.711) GiB / 3GiB limit
+be_mem peak top5: [('13:54:02', 2.711), ('13:57:28', 2.644), ('13:51:12', 2.643), ('13:51:30', 2.623), ('13:57:09', 2.614)]
+alloc peak: ('14:11:17', 2317942784.0) B = 2.159 GiB
+flush queue peak: ('13:49:16', 0.0)
+flush active peak: ('13:49:16', 0.0)
+compaction score peak: ('14:03:12', 19.0)
+size_based score peak: ('13:55:37', 23.0)
+pswpout: start=('13:48:55', 3600.0) peak=('14:19:38', 13648.0) end=('14:50:37', 13648.0)
+du storage: pre-load=95500 KB, final=10804388 KB
+=== 09 DONE ===

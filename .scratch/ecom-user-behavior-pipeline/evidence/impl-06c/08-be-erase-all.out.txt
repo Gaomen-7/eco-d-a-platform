@@ -1,0 +1,80 @@
+RuntimeLogger I20261025 14:51:29.053261  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/8/1792919869611/2032708762 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 14:51:29.053624  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919869611, schema_hash=2032708762, tablet_path=/opt/apache-doris/be/storage/data/8/1792919869611/2032708762
+RuntimeLogger I20261025 14:51:29.065171  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919869611 from map, reason=move to trash, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 14:51:29.065249  1607 tablet_manager.cpp:1357] add tablet_id= 1792919869258 to map, reason=move to trash, lock times=1, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 14:51:29.161566  1607 tablet_manager.cpp:1295] start to move tablet to trash. /opt/apache-doris/be/storage/data/1/1792919869258/318059799. rocksdb get meta cost 148 us, rocksdb save meta cost 96145 us
+RuntimeLogger I20261025 14:51:29.161653  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/1/1792919869258/318059799 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 14:51:29.162194  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919869258, schema_hash=318059799, tablet_path=/opt/apache-doris/be/storage/data/1/1792919869258/318059799
+RuntimeLogger I20261025 14:51:29.162266  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919869258 from map, reason=move to trash, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 14:51:29.162293  1607 tablet_manager.cpp:1357] add tablet_id= 1792919869264 to map, reason=move to trash, lock times=1, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 14:51:29.211596  1607 tablet_manager.cpp:1295] start to move tablet to trash. /opt/apache-doris/be/storage/data/3/1792919869264/318059799. rocksdb get meta cost 134 us, rocksdb save meta cost 49150 us
+RuntimeLogger I20261025 14:51:29.211685  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/3/1792919869264/318059799 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 14:51:29.212293  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919869264, schema_hash=318059799, tablet_path=/opt/apache-doris/be/storage/data/3/1792919869264/318059799
+RuntimeLogger I20261025 14:51:29.212357  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919869264 from map, reason=move to trash, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 14:51:29.212383  1607 tablet_manager.cpp:1357] add tablet_id= 1792919869261 to map, reason=move to trash, lock times=1, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 14:51:29.262516  1607 tablet_manager.cpp:1295] start to move tablet to trash. /opt/apache-doris/be/storage/data/2/1792919869261/318059799. rocksdb get meta cost 152 us, rocksdb save meta cost 49937 us
+RuntimeLogger I20261025 14:51:29.262655  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/2/1792919869261/318059799 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 14:51:29.263099  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919869261, schema_hash=318059799, tablet_path=/opt/apache-doris/be/storage/data/2/1792919869261/318059799
+RuntimeLogger I20261025 14:51:29.263167  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919869261 from map, reason=move to trash, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 14:51:29.263195  1607 tablet_manager.cpp:1357] add tablet_id= 1792919869255 to map, reason=move to trash, lock times=1, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 14:51:29.371515  1607 tablet_manager.cpp:1295] start to move tablet to trash. /opt/apache-doris/be/storage/data/0/1792919869255/318059799. rocksdb get meta cost 123 us, rocksdb save meta cost 108172 us
+RuntimeLogger I20261025 14:51:29.371591  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/0/1792919869255/318059799 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 14:51:29.372015  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919869255, schema_hash=318059799, tablet_path=/opt/apache-doris/be/storage/data/0/1792919869255/318059799
+RuntimeLogger I20261025 14:51:29.372071  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919869255 from map, reason=move to trash, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 14:51:29.375458  1607 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261025 14:54:29.375584  1607 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261025 14:54:29.386801  1607 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261025 14:57:29.386922  1607 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261025 14:57:29.399997  1607 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261025 14:58:51.585623  1813 tablet_manager.cpp:1400] erase tablet_id= 1792919870124 from map, reason=drop tablet, thread_id_in_map=137864357865024
+RuntimeLogger I20261025 14:58:51.585649  1811 tablet_manager.cpp:1400] erase tablet_id= 1792919870126 from map, reason=drop tablet, thread_id_in_map=137864374650432
+RuntimeLogger I20261025 14:58:51.585783  1812 tablet_manager.cpp:1400] erase tablet_id= 1792919870128 from map, reason=drop tablet, thread_id_in_map=137864366257728
+RuntimeLogger I20261025 14:58:51.587358  1813 tablet_manager.cpp:1400] erase tablet_id= 1792919870130 from map, reason=drop tablet, thread_id_in_map=137864357865024
+RuntimeLogger I20261025 14:58:51.587400  1811 tablet_manager.cpp:1400] erase tablet_id= 1792919870134 from map, reason=drop tablet, thread_id_in_map=137864374650432
+RuntimeLogger I20261025 14:58:51.587716  1812 tablet_manager.cpp:1400] erase tablet_id= 1792919870132 from map, reason=drop tablet, thread_id_in_map=137864366257728
+RuntimeLogger I20261025 14:58:51.588201  1813 tablet_manager.cpp:1400] erase tablet_id= 1792919870136 from map, reason=drop tablet, thread_id_in_map=137864357865024
+RuntimeLogger I20261025 14:58:51.588522  1811 tablet_manager.cpp:1400] erase tablet_id= 1792919870138 from map, reason=drop tablet, thread_id_in_map=137864374650432
+RuntimeLogger I20261025 15:00:29.400136  1607 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261025 15:00:29.408021  1607 tablet_manager.cpp:1357] add tablet_id= 1792919870124 to map, reason=move to trash, lock times=1, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:29.497480  1607 tablet_manager.cpp:1295] start to move tablet to trash. /opt/apache-doris/be/storage/data/17/1792919870124/954062573. rocksdb get meta cost 77 us, rocksdb save meta cost 89329 us
+RuntimeLogger I20261025 15:00:29.497560  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/17/1792919870124/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:29.530234  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919870124, schema_hash=954062573, tablet_path=/opt/apache-doris/be/storage/data/17/1792919870124/954062573
+RuntimeLogger I20261025 15:00:29.530294  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919870124 from map, reason=move to trash, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:29.530344  1607 tablet_manager.cpp:1357] add tablet_id= 1792919870126 to map, reason=move to trash, lock times=1, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:29.588737  1607 tablet_manager.cpp:1295] start to move tablet to trash. /opt/apache-doris/be/storage/data/18/1792919870126/954062573. rocksdb get meta cost 154 us, rocksdb save meta cost 58186 us
+RuntimeLogger I20261025 15:00:29.588812  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/18/1792919870126/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:29.621255  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919870126, schema_hash=954062573, tablet_path=/opt/apache-doris/be/storage/data/18/1792919870126/954062573
+RuntimeLogger I20261025 15:00:29.621335  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919870126 from map, reason=move to trash, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:29.621377  1607 tablet_manager.cpp:1357] add tablet_id= 1792919870128 to map, reason=move to trash, lock times=1, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:29.709985  1607 tablet_manager.cpp:1295] start to move tablet to trash. /opt/apache-doris/be/storage/data/19/1792919870128/954062573. rocksdb get meta cost 140 us, rocksdb save meta cost 88387 us
+RuntimeLogger I20261025 15:00:29.710167  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/19/1792919870128/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:29.730742  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919870128, schema_hash=954062573, tablet_path=/opt/apache-doris/be/storage/data/19/1792919870128/954062573
+RuntimeLogger I20261025 15:00:29.730806  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919870128 from map, reason=move to trash, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:29.730827  1607 tablet_manager.cpp:1357] add tablet_id= 1792919870130 to map, reason=move to trash, lock times=1, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:29.812433  1607 tablet_manager.cpp:1295] start to move tablet to trash. /opt/apache-doris/be/storage/data/20/1792919870130/954062573. rocksdb get meta cost 138 us, rocksdb save meta cost 81443 us
+RuntimeLogger I20261025 15:00:29.812515  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/20/1792919870130/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:29.831149  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919870130, schema_hash=954062573, tablet_path=/opt/apache-doris/be/storage/data/20/1792919870130/954062573
+RuntimeLogger I20261025 15:00:29.831203  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919870130 from map, reason=move to trash, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:29.831225  1607 tablet_manager.cpp:1357] add tablet_id= 1792919870134 to map, reason=move to trash, lock times=1, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:29.890658  1607 tablet_manager.cpp:1295] start to move tablet to trash. /opt/apache-doris/be/storage/data/22/1792919870134/954062573. rocksdb get meta cost 105 us, rocksdb save meta cost 59312 us
+RuntimeLogger I20261025 15:00:29.890717  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/22/1792919870134/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:29.922080  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919870134, schema_hash=954062573, tablet_path=/opt/apache-doris/be/storage/data/22/1792919870134/954062573
+RuntimeLogger I20261025 15:00:29.922134  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919870134 from map, reason=move to trash, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:29.922155  1607 tablet_manager.cpp:1357] add tablet_id= 1792919870132 to map, reason=move to trash, lock times=1, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:30.017593  1607 tablet_manager.cpp:1295] start to move tablet to trash. /opt/apache-doris/be/storage/data/21/1792919870132/954062573. rocksdb get meta cost 157 us, rocksdb save meta cost 95264 us
+RuntimeLogger I20261025 15:00:30.017673  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/21/1792919870132/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:30.038223  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919870132, schema_hash=954062573, tablet_path=/opt/apache-doris/be/storage/data/21/1792919870132/954062573
+RuntimeLogger I20261025 15:00:30.038277  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919870132 from map, reason=move to trash, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:30.038314  1607 tablet_manager.cpp:1357] add tablet_id= 1792919870136 to map, reason=move to trash, lock times=1, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:30.087702  1607 tablet_manager.cpp:1295] start to move tablet to trash. /opt/apache-doris/be/storage/data/23/1792919870136/954062573. rocksdb get meta cost 100 us, rocksdb save meta cost 49271 us
+RuntimeLogger I20261025 15:00:30.087767  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/23/1792919870136/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:30.119647  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919870136, schema_hash=954062573, tablet_path=/opt/apache-doris/be/storage/data/23/1792919870136/954062573
+RuntimeLogger I20261025 15:00:30.119714  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919870136 from map, reason=move to trash, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:30.119740  1607 tablet_manager.cpp:1357] add tablet_id= 1792919870138 to map, reason=move to trash, lock times=1, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:30.174166  1607 tablet_manager.cpp:1295] start to move tablet to trash. /opt/apache-doris/be/storage/data/24/1792919870138/954062573. rocksdb get meta cost 196 us, rocksdb save meta cost 54194 us
+RuntimeLogger I20261025 15:00:30.174268  1607 data_dir.cpp:947] delete tablet dir /opt/apache-doris/be/storage/data/24/1792919870138/954062573 directly due to trash_file_expire_time_sec is 0
+RuntimeLogger I20261025 15:00:30.192836  1607 tablet_manager.cpp:1312] successfully move tablet to trash. tablet_id=1792919870138, schema_hash=954062573, tablet_path=/opt/apache-doris/be/storage/data/24/1792919870138/954062573
+RuntimeLogger I20261025 15:00:30.192889  1607 tablet_manager.cpp:1400] erase tablet_id= 1792919870138 from map, reason=move to trash, thread_id_in_map=137866099226176
+RuntimeLogger I20261025 15:00:30.195709  1607 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0
+RuntimeLogger I20261025 15:03:30.195819  1607 storage_engine.cpp:850] start trash and snapshot sweep. is_clean=0
+RuntimeLogger I20261025 15:03:30.209110  1607 data_dir.cpp:909] path: /opt/apache-doris/be/storage trash capacity: 0

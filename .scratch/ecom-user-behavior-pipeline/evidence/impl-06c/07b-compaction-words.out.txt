@@ -1,0 +1,51 @@
+=== [5-fix] 本表 tablet 的 compaction succeed/failed 行（-a 修复版） ===
+122 /tmp/impl06c-compaction-words.log
+--- cumulative 成功行:
+77
+N=77 total_elapsed=2877.26s
+--- base 成功行（含 ordered data base）:
+45
+N=45 total_elapsed=2.50s
+--- 失败行:
+0
+0
+--- compaction 首末时刻（本表）:
+I20261025 13:53:49.166796
+I20261025 14:21:32.087576
+--- 输入行数/输出行数合计（merged 应=0，DUPLICATE 表）:
+merged_total=0
+input_rows_total=41475001
+output_rows_total=41475001
+
+=== [6-fix] BE 关键 compaction/内存配置取值 ===
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+AttributeError: 'list' object has no attribute 'get'
+=== 07B DONE ===
+end: 2026-10-25 14:47:07 UTC
+base_compaction_max_compaction_score = int64_t
+compaction_max_rowset_count = int32_t
+compaction_memory_bytes_limit = int64_t
+compaction_min_size_mbytes = int64_t
+compaction_promotion_size_mbytes = int64_t
+compaction_task_num_per_disk = int32_t
+cumulative_compaction_max_deltas = int64_t
+flush_thread_num_per_store = int32_t
+load_process_max_memory_limit_percent = int32_t
+mem_limit = std::string
+memtable_flush_running_count_limit = int32_t
+write_buffer_size = int64_t
+=== 07C DONE ===
+base_compaction_max_compaction_score = 20 (mutable=true)
+compaction_max_rowset_count = 10000 (mutable=true)
+compaction_memory_bytes_limit = 1073741824 (mutable=true)
+compaction_min_size_mbytes = 64 (mutable=true)
+compaction_promotion_size_mbytes = 1024 (mutable=true)
+compaction_task_num_per_disk = 4 (mutable=true)
+cumulative_compaction_max_deltas = 1000 (mutable=true)
+flush_thread_num_per_store = 6 (mutable=true)
+load_process_max_memory_limit_percent = 50 (mutable=false)
+mem_limit = 80% (mutable=false)
+memtable_flush_running_count_limit = 2 (mutable=true)
+write_buffer_size = 209715200 (mutable=true)
+=== 07C DONE ===
