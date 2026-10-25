@@ -1,0 +1,111 @@
+=== [0] 记录观测起点 T0（UTC + 本地） ===
+T0(UTC): 2026-10-25 12:18:05
+T0(local): 2026-10-25 20:18:05 (CST)
+
+=== [1] 由 FE 时钟核对：host 侧推算的 UTC 小时与 FE NOW() 一致 ===
+now-6h => p2026102506  [2026-10-25 06:00:00, 2026-10-25 07:00:00)
+now-5h => p2026102507  [2026-10-25 07:00:00, 2026-10-25 08:00:00)
+now-4h => p2026102508  [2026-10-25 08:00:00, 2026-10-25 09:00:00)
+now-3h => p2026102509  [2026-10-25 09:00:00, 2026-10-25 10:00:00)
+now-2h => p2026102510  [2026-10-25 10:00:00, 2026-10-25 11:00:00)
+now-1h => p2026102511  [2026-10-25 11:00:00, 2026-10-25 12:00:00)
+now-0h => p2026102512  [2026-10-25 12:00:00, 2026-10-25 13:00:00)
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-546578f0c7db Creating 
+ Container eco-a-d-platform-client-run-546578f0c7db Created 
+fe_now_utc
+2026-10-25 12:18:09
+
+=== [2] ADD PARTITION ×4（now-6h .. now-3h，均落在保留窗口 [now-2h,∞) 之外） ===
+★ 实机发现（4.1.5）：动态分区表上直接 ADD PARTITION 被拒——
+  "Cannot add/drop partition on a Dynamic Partition Table, Use command
+   `ALTER TABLE ... SET ("dynamic_partition.enable" = "false")` firstly."
+  ⇒ 官方指定的绕法：临时关表级 enable → 手工 ADD → 再开回。删除仍由调度器执行。
+ALTER TABLE ecom_rehearsal.ads_window_metric_rehearsal SET ("dynamic_partition.enable" = "false");
+ALTER TABLE ecom_rehearsal.ads_window_metric_rehearsal ADD PARTITION p2026102506 VALUES [("2026-10-25 06:00:00"),("2026-10-25 07:00:00"));
+ALTER TABLE ecom_rehearsal.ads_window_metric_rehearsal ADD PARTITION p2026102507 VALUES [("2026-10-25 07:00:00"),("2026-10-25 08:00:00"));
+ALTER TABLE ecom_rehearsal.ads_window_metric_rehearsal ADD PARTITION p2026102508 VALUES [("2026-10-25 08:00:00"),("2026-10-25 09:00:00"));
+ALTER TABLE ecom_rehearsal.ads_window_metric_rehearsal ADD PARTITION p2026102509 VALUES [("2026-10-25 09:00:00"),("2026-10-25 10:00:00"));
+ALTER TABLE ecom_rehearsal.ads_window_metric_rehearsal SET ("dynamic_partition.enable" = "true");
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-45b1f6d23da5 Creating 
+ Container eco-a-d-platform-client-run-45b1f6d23da5 Created 
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-6a65af3dee9f Creating 
+ Container eco-a-d-platform-client-run-6a65af3dee9f Created 
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-0a42dad7d1a2 Creating 
+ Container eco-a-d-platform-client-run-0a42dad7d1a2 Created 
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-205a137a3c5f Creating 
+ Container eco-a-d-platform-client-run-205a137a3c5f Created 
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-1126650cb9d0 Creating 
+ Container eco-a-d-platform-client-run-1126650cb9d0 Created 
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-b6f59139b1cb Creating 
+ Container eco-a-d-platform-client-run-b6f59139b1cb Created 
+-- ALTER ADD PARTITION OK（2026102506 2026102507 2026102508 2026102509）
+
+=== [3] 写入行：4 行落过期分区 + 1 行落当前小时分区（p2026102512） ===
+INSERT INTO ecom_rehearsal.ads_window_metric_rehearsal (window_start, metric_name, dim_key, metric_value) VALUES
+  ('2026-10-25 06:30:00', 'pv', 'rehearsal', 1),
+  ('2026-10-25 07:30:00', 'pv', 'rehearsal', 1),
+  ('2026-10-25 08:30:00', 'pv', 'rehearsal', 1),
+  ('2026-10-25 09:30:00', 'pv', 'rehearsal', 1),
+  ('2026-10-25 12:30:00', 'pv', 'rehearsal', 1);
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-ddd9a8d49f5a Creating 
+ Container eco-a-d-platform-client-run-ddd9a8d49f5a Created 
+
+=== [4] 写后状态：8 个分区 + 全表 5 行 ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-c247c77e4f05 Creating 
+ Container eco-a-d-platform-client-run-c247c77e4f05 Created 
+PartitionId	PartitionName	VisibleVersion	VisibleVersionTime	State	PartitionKey	Range	DistributionKey	Buckets	ReplicationNum	StorageMedium	CooldownTime	RemoteStoragePolicy	LastConsistencyCheckTime	DataSize	IsInMemory	ReplicaAllocation	IsMutable	SyncWithBaseTables	UnsyncTables	CommittedVersion	RowCount
+1792919869297	p2026102506	2	2026-10-25 12:18:49	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-25 06:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-25 07:00:00]; )	metric_name, dim_key	1	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	2	0
+1792919869301	p2026102507	2	2026-10-25 12:18:49	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-25 07:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-25 08:00:00]; )	metric_name, dim_key	1	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	2	0
+1792919869308	p2026102508	2	2026-10-25 12:18:49	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-25 08:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-25 09:00:00]; )	metric_name, dim_key	1	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	2	0
+1792919869311	p2026102509	2	2026-10-25 12:18:49	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-25 09:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-25 10:00:00]; )	metric_name, dim_key	1	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	2	0
+1792919869254	p2026102510	1	2026-10-25 12:14:55	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-25 10:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-25 11:00:00]; )	metric_name, dim_key	1	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792919869257	p2026102511	1	2026-10-25 12:14:55	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-25 11:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-25 12:00:00]; )	metric_name, dim_key	1	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792919869260	p2026102512	2	2026-10-25 12:18:49	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-25 12:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-25 13:00:00]; )	metric_name, dim_key	1	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	2	0
+1792919869263	p2026102513	1	2026-10-25 12:14:55	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-25 13:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-25 14:00:00]; )	metric_name, dim_key	1	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-3e9e79dc67ea Creating 
+ Container eco-a-d-platform-client-run-3e9e79dc67ea Created 
+rehearsal_rows_total
+5
+
+=== [5] 观测基准：SHOW DYNAMIC PARTITION TABLES（LastDropPartitionMsg 此时应为 NULL） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-d00c58517ce8 Creating 
+ Container eco-a-d-platform-client-run-d00c58517ce8 Created 
+TableName	Enable	TimeUnit	Start	End	Prefix	Buckets	ReplicationNum	ReplicaAllocation	StartOf	LastUpdateTime	LastSchedulerTime	State	LastCreatePartitionMsg	LastDropPartitionMsg	ReservedHistoryPeriods
+ads_window_metric_rehearsal	true	HOUR	-2	1	p	1	1	tag.location.default: 1	NULL	2026-10-25 12:18:44	2026-10-25 12:17:50	NORMAL	NULL	NULL	NULL
+
+=== [6] T0 重述（观测窗从此刻起算，≤1200 s） ===
+T0(UTC): 2026-10-25 12:19:09
+T0(local): 2026-10-25 20:19:09 (CST)

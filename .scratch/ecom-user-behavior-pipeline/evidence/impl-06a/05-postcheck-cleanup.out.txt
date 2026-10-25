@@ -1,0 +1,44 @@
+=== [1] 三张已验证 ADS 表 COUNT(*)（与 01 步基线对账；预期逐表相等） ===
+基线（01 步）：ads_funnel_step=2427, ads_window_metric=30132, ads_late_expired_count=9146
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-e47c72057574 Creating 
+ Container eco-a-d-platform-client-run-e47c72057574 Created 
+tbl	rows_after
+ads_funnel_step	2427
+ads_late_expired_count	9146
+ads_window_metric	30132
+
+=== [2] 演练库只删自己：DROP DATABASE ecom_rehearsal（不触碰 ecom_ads） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-f81640e360d1 Creating 
+ Container eco-a-d-platform-client-run-f81640e360d1 Created 
+-- DROP DATABASE OK（分区/表进 catalog recycle bin，非 force；BE 侧磁盘异步回收，官方未给出时限）
+
+=== [3] 清理后状态：ecom_rehearsal 已不在库列表；三张 ADS 表俱在 ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-2cda98e3789a Creating 
+ Container eco-a-d-platform-client-run-2cda98e3789a Created 
+Database
+__internal_schema
+ecom_ads
+information_schema
+mysql
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-86c4c8e56d61 Creating 
+ Container eco-a-d-platform-client-run-86c4c8e56d61 Created 
+Tables_in_ecom_ads
+ads_funnel_step
+ads_late_expired_count
+ads_window_metric
+
+=== [4] 收尾时刻（UTC + 本地） ===
+UTC: 2026-10-25 12:30:09
+local: 2026-10-25 20:30:09 (CST)

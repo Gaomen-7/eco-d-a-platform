@@ -1,0 +1,78 @@
+=== [1] 墙钟与磁盘余量（实施前置） ===
+UTC now: 2026-10-25 12:13:05
+local now: 2026-10-25 20:13:05 (CST)
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sdf       1007G   25G  932G   3% /
+
+=== [2] 六服务 healthy（实施前置） ===
+eco-doris-be  Up 3 hours (healthy)
+eco-doris-fe  Up 3 hours (healthy)
+eco-flink-jm  Up 3 hours (healthy)
+eco-flink-tm  Up 3 hours (healthy)
+eco-kafka  Up 3 hours (healthy)
+eco-superset  Up 3 hours (healthy)
+
+=== [3] SHOW FRONTENDS / SHOW BACKENDS 全 Alive（实施前置） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-bc2360e3c452 Creating 
+ Container eco-a-d-platform-client-run-bc2360e3c452 Created 
+Name	Host	EditLogPort	HttpPort	QueryPort	RpcPort	ArrowFlightSqlPort	Role	IsMaster	ClusterId	Join	Alive	ReplayedJournalId	LastStartTime	LastHeartbeat	IsHelper	ErrMsg	Version	CurrentConnected	LiveSince
+fe_d7d829b2_4f8d_4eac_9c4c_dd2496899311	172.31.88.40	9010	8030	9030	9020	8070	FOLLOWER	true	492875358	true	true	57165	2026-10-25 09:17:48	2026-10-25 12:13:09	true		doris-4.1.5-release-917b20be838	Yes	2026-10-25 09:17:47
+
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-7bae1ec29a5b Creating 
+ Container eco-a-d-platform-client-run-7bae1ec29a5b Created 
+BackendId	Host	HeartbeatPort	BePort	HttpPort	BrpcPort	ArrowFlightSqlPort	LastStartTime	LastHeartbeat	Alive	SystemDecommissioned	TabletNum	DataUsedCapacity	TrashUsedCapacity	AvailCapacity	TotalCapacity	UsedPct	MaxDiskUsedPct	RemoteUsedCapacity	Tag	ErrMsg	Version	Status	HeartbeatFailureCounter	CpuCores	Memory	LiveSince	RunningTasks	NodeRole
+1792479754706	172.31.88.50	9050	9060	8040	8060	8050	2026-10-25 09:18:21	2026-10-25 12:13:09	true	false	312	1.274 MB	0.000 	910.173 GB	1006.854 GB	9.60 %	9.60 %	0.000 	{"location" : "default"}		doris-4.1.5-release-917b20be838	{"lastSuccessReportTabletsTime":"2026-10-25 12:12:15","lastStreamLoadTime":-1,"isQueryDisabled":false,"isLoadDisabled":false,"isActive":true,"isShutdown":false,"currentFragmentNum":4,"lastFragmentUpdateTime":1792930381503}	0	12	3.00 GB	2026-10-25 12:13:09	4	mix
+
+=== [4] 三张已验证 ADS 表基线 COUNT(*)（验收③：演练前对账口径） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-aeb688c88c91 Creating 
+ Container eco-a-d-platform-client-run-aeb688c88c91 Created 
+tbl	rows_before
+ads_funnel_step	2427
+ads_window_metric	30132
+ads_late_expired_count	9146
+
+=== [5] FE 时区与当前时刻（供分区命名推算） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-6886fdd2692c Creating 
+ Container eco-a-d-platform-client-run-6886fdd2692c Created 
+fe_now	tz	sys_tz
+2026-10-25 12:13:25	Etc/UTC	Etc/UTC
+
+=== [6] 调度间隔配置（官方给出：600 s）当前生效值 ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-440b9fa73779 Creating 
+ Container eco-a-d-platform-client-run-440b9fa73779 Created 
+Key	Value	Type	IsMutable	MasterOnly	Comment
+dynamic_partition_check_interval_seconds	600	long	true	true	
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-25504375af66 Creating 
+ Container eco-a-d-platform-client-run-25504375af66 Created 
+Key	Value	Type	IsMutable	MasterOnly	Comment
+dynamic_partition_enable	true	boolean	true	true	
+
+=== [7] 已存在的库（确认 ecom_rehearsal 尚不存在） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-ae7583ea430a Creating 
+ Container eco-a-d-platform-client-run-ae7583ea430a Created 
+Database
+__internal_schema
+ecom_ads
+information_schema
+mysql

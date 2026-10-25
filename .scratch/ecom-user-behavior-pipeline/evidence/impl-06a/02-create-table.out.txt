@@ -1,0 +1,66 @@
+=== [1] 建独立演练库（ecom_ads 之外） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-0769f4a53bd6 Creating 
+ Container eco-a-d-platform-client-run-0769f4a53bd6 Created 
+CREATE DATABASE IF NOT EXISTS ecom_rehearsal; -- OK
+
+=== [2] 建 HOUR 演练表：time_unit=HOUR + 小 start(-2) + create_history_partition=true ===
+CREATE TABLE ecom_rehearsal.ads_window_metric_rehearsal (
+    window_start    DATETIMEV2(0)  NOT NULL COMMENT '1 分钟窗口起点（演练表）',
+    metric_name     VARCHAR(64)    NOT NULL COMMENT '指标名',
+    dim_key         VARCHAR(128)   NOT NULL DEFAULT '' COMMENT '维度值',
+    metric_value    BIGINT         NOT NULL DEFAULT 0,
+    revision        INT            NOT NULL DEFAULT 0,
+    is_settled      TINYINT        NOT NULL DEFAULT 0,
+    updated_at      DATETIMEV2(0)  NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE = OLAP
+UNIQUE KEY (window_start, metric_name, dim_key)
+PARTITION BY RANGE (window_start)()
+DISTRIBUTED BY HASH (metric_name, dim_key) BUCKETS 1
+PROPERTIES (
+    "dynamic_partition.enable" = "true",
+    "dynamic_partition.time_unit" = "HOUR",
+    "dynamic_partition.start" = "-2",
+    "dynamic_partition.end" = "1",
+    "dynamic_partition.prefix" = "p",
+    "dynamic_partition.create_history_partition" = "true",
+    "replication_allocation" = "tag.location.default: 1"
+);
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-53bdb1ac1319 Creating 
+ Container eco-a-d-platform-client-run-53bdb1ac1319 Created 
+-- CREATE TABLE OK
+
+=== [3] FE 当前时刻（UTC，分区边界基准） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-a8f4ca50fa22 Creating 
+ Container eco-a-d-platform-client-run-a8f4ca50fa22 Created 
+fe_now_utc
+2026-10-25 12:15:01
+
+=== [4] 建表当场分区清单（预期 4 个：now-2h/now-1h/now/now+1h，名形 p<yyyyMMddHH>） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-f02f99142cf4 Creating 
+ Container eco-a-d-platform-client-run-f02f99142cf4 Created 
+PartitionId	PartitionName	VisibleVersion	VisibleVersionTime	State	PartitionKey	Range	DistributionKey	Buckets	ReplicationNum	StorageMedium	CooldownTime	RemoteStoragePolicy	LastConsistencyCheckTime	DataSize	IsInMemory	ReplicaAllocation	IsMutable	SyncWithBaseTables	UnsyncTables	CommittedVersion	RowCount
+1792919869254	p2026102510	1	2026-10-25 12:14:55	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-25 10:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-25 11:00:00]; )	metric_name, dim_key	1	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	-1
+1792919869257	p2026102511	1	2026-10-25 12:14:55	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-25 11:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-25 12:00:00]; )	metric_name, dim_key	1	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	-1
+1792919869260	p2026102512	1	2026-10-25 12:14:55	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-25 12:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-25 13:00:00]; )	metric_name, dim_key	1	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	-1
+1792919869263	p2026102513	1	2026-10-25 12:14:55	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-25 13:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-25 14:00:00]; )	metric_name, dim_key	1	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	-1
+
+=== [5] SHOW DYNAMIC PARTITION TABLES（注册态） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-6924ab87a8dd Creating 
+ Container eco-a-d-platform-client-run-6924ab87a8dd Created 
+TableName	Enable	TimeUnit	Start	End	Prefix	Buckets	ReplicationNum	ReplicaAllocation	StartOf	LastUpdateTime	LastSchedulerTime	State	LastCreatePartitionMsg	LastDropPartitionMsg	ReservedHistoryPeriods
+ads_window_metric_rehearsal	true	HOUR	-2	1	p	1	1	tag.location.default: 1	NULL	2026-10-25 12:14:55	2026-10-25 12:14:55	NORMAL	NULL	NULL	NULL

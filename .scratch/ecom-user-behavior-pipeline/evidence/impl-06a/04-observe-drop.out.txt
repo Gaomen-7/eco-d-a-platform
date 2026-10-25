@@ -1,0 +1,56 @@
+T0(UTC): 2026-10-25 12:19:48  —— 观测窗 ≤1200 s（2 个调度周期，interval=600 s 官方给出）
+待观测删除的目标分区: p2026102506 p2026102507 p2026102508 p2026102509
+轮询间隔 30 s；每行格式：<UTC时刻> | 剩余过期分区数 n/4 | 剩余名单 | LastDropPartitionMsg
+---------------------------------------------------------------
+12:19:59 | elapsed=   0s | remaining 4/4 | p2026102506 p2026102507 p2026102508 p2026102509 | LastDropPartitionMsg=NULL
+12:20:41 | elapsed=  41s | remaining 4/4 | p2026102506 p2026102507 p2026102508 p2026102509 | LastDropPartitionMsg=NULL
+12:21:21 | elapsed=  83s | remaining 4/4 | p2026102506 p2026102507 p2026102508 p2026102509 | LastDropPartitionMsg=NULL
+12:22:02 | elapsed= 123s | remaining 4/4 | p2026102506 p2026102507 p2026102508 p2026102509 | LastDropPartitionMsg=NULL
+12:22:43 | elapsed= 164s | remaining 4/4 | p2026102506 p2026102507 p2026102508 p2026102509 | LastDropPartitionMsg=NULL
+12:23:24 | elapsed= 205s | remaining 4/4 | p2026102506 p2026102507 p2026102508 p2026102509 | LastDropPartitionMsg=NULL
+12:24:05 | elapsed= 246s | remaining 4/4 | p2026102506 p2026102507 p2026102508 p2026102509 | LastDropPartitionMsg=NULL
+12:24:46 | elapsed= 287s | remaining 4/4 | p2026102506 p2026102507 p2026102508 p2026102509 | LastDropPartitionMsg=NULL
+12:25:26 | elapsed= 328s | remaining 4/4 | p2026102506 p2026102507 p2026102508 p2026102509 | LastDropPartitionMsg=NULL
+12:26:09 | elapsed= 368s | remaining 4/4 | p2026102506 p2026102507 p2026102508 p2026102509 | LastDropPartitionMsg=NULL
+12:26:50 | elapsed= 411s | remaining 4/4 | p2026102506 p2026102507 p2026102508 p2026102509 | LastDropPartitionMsg=NULL
+12:27:32 | elapsed= 452s | remaining 4/4 | p2026102506 p2026102507 p2026102508 p2026102509 | LastDropPartitionMsg=NULL
+12:28:13 | elapsed= 494s | remaining 0/4 | | LastDropPartitionMsg=NULL
+---------------------------------------------------------------
+✓ T_END(UTC): 2026-10-25 12:28:13  elapsed=505s —— 全部过期 HOUR 分区已消失
+
+=== 收口证据 [A] 终态分区清单（应只剩 4 个保留窗内分区 p10-p13，随后滚动+1） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-ec7c1582f5ba Creating 
+ Container eco-a-d-platform-client-run-ec7c1582f5ba Created 
+PartitionId	PartitionName	VisibleVersion	VisibleVersionTime	State	PartitionKey	Range	DistributionKey	Buckets	ReplicationNum	StorageMedium	CooldownTime	RemoteStoragePolicy	LastConsistencyCheckTime	DataSize	IsInMemory	ReplicaAllocation	IsMutable	SyncWithBaseTables	UnsyncTables	CommittedVersion	RowCount
+1792919869254	p2026102510	1	2026-10-25 12:14:55	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-25 10:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-25 11:00:00]; )	metric_name, dim_key	1	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792919869257	p2026102511	1	2026-10-25 12:14:55	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-25 11:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-25 12:00:00]; )	metric_name, dim_key	1	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+1792919869260	p2026102512	2	2026-10-25 12:18:49	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-25 12:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-25 13:00:00]; )	metric_name, dim_key	1	1	HDD	9999-12-31 15:59:59		NULL	2.387 KB	false	tag.location.default: 1	true	true	NULL	2	1
+1792919869263	p2026102513	1	2026-10-25 12:14:55	NORMAL	window_start	[types: [DATETIMEV2]; keys: [2026-10-25 13:00:00]; ..types: [DATETIMEV2]; keys: [2026-10-25 14:00:00]; )	metric_name, dim_key	1	1	HDD	9999-12-31 15:59:59		NULL	0.000 	false	tag.location.default: 1	true	true	NULL	1	0
+
+=== 收口证据 [B] SHOW DYNAMIC PARTITION TABLES（LastDropPartitionMsg 应有删除记录） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-4a98cf493608 Creating 
+ Container eco-a-d-platform-client-run-4a98cf493608 Created 
+TableName	Enable	TimeUnit	Start	End	Prefix	Buckets	ReplicationNum	ReplicaAllocation	StartOf	LastUpdateTime	LastSchedulerTime	State	LastCreatePartitionMsg	LastDropPartitionMsg	ReservedHistoryPeriods
+ads_window_metric_rehearsal	true	HOUR	-2	1	p	1	1	tag.location.default: 1	NULL	2026-10-25 12:18:44	2026-10-25 12:27:50	NORMAL	NULL	NULL	NULL
+
+=== 收口证据 [C] 演练表行数（预期 1：只剩当前小时那行，过期分区内 4 行随分区删除） ===
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-20585839fb11 Creating 
+ Container eco-a-d-platform-client-run-20585839fb11 Created 
+rehearsal_rows_after
+1
+ Container eco-kafka Running 
+ Container eco-kafka Waiting 
+ Container eco-kafka Healthy 
+ Container eco-a-d-platform-client-run-fc6d45324c85 Creating 
+ Container eco-a-d-platform-client-run-fc6d45324c85 Created 
+window_start	metric_name	dim_key	metric_value
+2026-10-25 12:30:00	pv	rehearsal	1
