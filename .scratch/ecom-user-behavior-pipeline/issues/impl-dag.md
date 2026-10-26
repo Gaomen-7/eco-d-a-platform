@@ -49,6 +49,8 @@
 | **impl-06c** | [impl-06c-compaction-collision.md](impl-06c-compaction-collision.md) | — | compaction ×20 GB 对撞（耗时/放大/内存形态三数；与 06b 可联动回盘） |
 | **impl-06d** | [impl-06d-r7i-replay-watermark-fixes.md](impl-06d-r7i-replay-watermark-fixes.md) | — | R7-i 三案一张票收口（live 跨度 / committedOffsets / 时间戳-质量门次序）｜**✅ 2026-10-26 已结案（resolved）**：三案全部落地 + 反例证伪先行；`make r7i-falsify` 0、`_before_r7i.sh` 必红（4 条）、`make verify` 两连绿 10/10、`verify-fault` 12/12、`verify-fault-corrupt` 按预期失败、pytest 314 passed；HLD §8-R7-i 已回填（adjudication + 两条新环境事实），`reproducibility-boundary.md` §11.4 运维口径已划除；本地提交未推送 |
 
+| **impl-06e** | [impl-06e-deploy-check-usrlib.md](impl-06e-deploy-check-usrlib.md) | impl-03a, impl-06d | 部署面判据 ④ 改口径：作业 jar 验在 `/opt/flink/usrlib/`（两端同一字节）+ `lib/` 不得有副本；原 Paimon connector 断言下移 4d｜**✅ 2026-10-26 已结案（反例 A/B/C 全被抓、还原后 PASS）** |
+
 > 06a/06b/06c 出处＝spec §8.2（**2026-10-25 用户批准**，实施前须复述风险再触发）；06d 出处＝HLD §8-R7-i（用户裁决三案同票）。四张互不阻塞，均独立可开工。
 
 ## 依赖图
@@ -93,6 +95,7 @@
   差 1 行）与 is_settled=0 负例闭环；`make verify` 两连续绿
   （`T135604Z` / `T140141Z`，10 PASS / 0 SKIP / 退 0，第三项以真断言
   形态 PASS）；dlq-rate 增量归因为 fixture 段重放（环境冲击）后基线重立。
+- ✅ **impl-06e 已结清**（2026-10-26）：部署面判据 ④ 从「Paimon jar 在两容器 lib + sha256」改为「作业 jar 在 `/opt/flink/usrlib/`（两端同一字节）+ `lib/` 零副本」，原断言语义下移为 4d。反例 A（lib 混入副本）/ B（半部署）/ C（usrlib 多版本）**各自 FAIL、还原后 PASS**，每轮各 1 条 FAIL（无重复计数）。⚠️ ③⑤⑥⑧ 本轮未复跑。
 - **impl-02 已结清**（P1 实时闭环，含五张副票全部完成）；spec §4.3 的 P1 闸门**已开**
 
 ### impl-03 内部的 Frontier（2026-10-24 22:00 收口）

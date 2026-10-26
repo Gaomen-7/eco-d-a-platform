@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # ══════════════════════════════════════════════════════════════════════════════
-# deploy_surface_check.sh —— impl-03a 部署面验收实证（票面 8 条）
+# deploy_surface_check.sh —— 部署面验收实证（impl-03a 票面 8 条 + 演进新增）
+#
+# ⚠️ 判据条数**不**以本条注释为准：先按「票面 8 条」建立，impl-03a 自己加了
+#    4b/4c，2026-10-26 又按 impl-06d 实测把 ④ 从「jar 在两容器 + sha256」改成
+#    「作业 jar 在 /opt/flink/usrlib/」并把原断言下移为 4d ⇒ 现在是 **11 条**
+#    （①②③④ 4b 4c 4d ⑤⑥⑦⑧）。条数以 main() 里的调用清单为准。
+#    票面 impl-03a §A 里写的「10 项判据」是当日快照，此后语义已变更。
+
 #
 # 定位：本脚本是本票的**证伪面**。票面判据本身可能**恒真**，恒真判据等于没判，
 #       所以每条都设计成「构造反例也能被它抓到」的形式。
@@ -32,11 +39,20 @@
 #        被 compose_down_preserving_volumes() 包住，该函数在真正执行前会逐字
 #        扫描参数，发现 -v/--volumes 即**拒绝执行并 FAIL**（防止后人误改）。
 #
-#  ④ jar 在 JM 与 TM **两个**容器 —— 恒真风险中等
-#     反例：只改了 JM 的镜像/只给 JM 挂了 lib 目录，TM 仍是原版镜像 ⇒
-#     「jar 存在」在 JM 侧成立。Paimon 官方逐字要求 "Install one matching Paimon
-#     bundled connector in **each** Flink process." ⇒ 必须**两端各查一次**，
-#     两端都必须命中同一个 jar 名。
+#  ④ 作业 jar 在 **/opt/flink/usrlib/**（impl-06d 实测口径，取代原「jar 在两容器
+#     + sha256」判据）—— 恒真风险中等偏高
+#     原判据**结构上抓不到真正的缺陷**：它只查 Paimon connector 在不在 lib/，
+#     **完全不看作业 jar 放在哪个目录**。而 impl-06d 实测：作业 jar 放 lib/ 会
+#     LinkageError: loader constraint violation … committedOffsets
+#     （作业 shade jar 含 org/apache/kafka/**，flink-dist-2.2.1.jar 不含
+#     ⇒ 父子类加载器各加载一份 Kafka 的 OffsetResetStrategy）。
+#     反例（本条必须能抓到它）：usrlib 放一份、lib 里也留一份历史 docker cp 副本
+#     ⇒ 原判据照样 PASS，缺陷原样放过。
+#     对策：拆成阳性 + **阴性**两条一起判 ——
+#       (a) 两端 /opt/flink/usrlib/ 各有一份 ecom 作业 jar，且两端**逐字节相同**
+#           （size + sha256 逐字相等；只给一端拷过 = 半部署）；
+#       (b) 两端 /opt/flink/lib/ **不许**有作业 jar 副本 —— 承重点，抓 null 形态。
+#     Paimon connector 在两端 lib/ 的断言保留为 4d（部署面事实，语义不变）。
 #
 #  ⑤ 无 ADD JAR 指向宿主路径 —— 恒真风险：路径写错就扫不到
 #     对策：全仓 grep（排除 .git/.scratch/artifacts），零命中才 PASS；
@@ -68,7 +84,7 @@
 # 也可在 Windows 侧跑（脚本自带 MSYS_NO_PATHCONV=1 封装，见 dc()），
 # 但**推荐 WSL**：down/up 会重建容器，Windows 侧路径转换更易出岔子。
 #
-# 退出码：0 = 8 条全 PASS；1 = 有 FAIL（供 make / CI 判）。
+# 退出码：0 = 全部判据 PASS；1 = 有 FAIL（供 make / CI 判）。
 #
 # ⚠️ 副作用声明：条目 ③ 会 docker compose down 再 up -d（**不带 -v**），
 #    期间全部容器会重启。这是**票面要求的实证**，不是可选项。
@@ -440,11 +456,151 @@ check_persistence_across_down_up() {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ④ Paimon jar 在 JM 与 TM **两个**容器内可见
+# ④ 作业 jar 与 Paimon connector：**目录必须分开**（impl-06d 登记的环境事实）
 # ══════════════════════════════════════════════════════════════════════════════
-check_jar_both_containers() {
-  sec "④ Paimon bundled connector 在 JM 与 TM 两端 /opt/flink/lib 各查一次"
-  local item="④ jar 在 JM 与 TM 两个容器"
+# ★ 2026-10-26 口径变更（impl-06d 实测，用户裁决）：本判据原为「Paimon
+#   bundled connector 在 JM/TM 两容器 /opt/flink/lib + size/sha256」。
+#   原口径判的是**部署面 jar**（Paimon 的两个 jar，Dockerfile 构建期 COPY 进
+#   /opt/flink/lib），它仍然成立 —— 但**作业 jar** 走的是另一条路：
+#   flink/target/ecom-flink-0.1.0-SNAPSHOT.jar 在运行时 docker cp 进容器，
+#   且**必须放 /opt/flink/usrlib/，放 lib/ 会 LinkageError**：
+#
+#     LinkageError: loader constraint violation … committedOffsets
+#
+#   根因（impl-06d 实测，非推断）：作业 jar 是 shade jar，**内含
+#   org/apache/kafka/** 的类；而 flink-dist-2.2.1.jar 不含 kafka 类。作业 jar
+#   一旦进 /opt/flink/lib，父子类加载器各加载一份 Kafka 的 OffsetResetStrategy
+#   ⇒ 同名类来自两个加载器 ⇒ loader constraint violation。usrlib 走**用户类
+#   加载器**，与 flink-dist 的父子关系不冲突。
+#   ⇒ 原判据**结构上抓不到**这个缺陷：它只看 lib/ 有没有 Paimon connector，
+#     **完全不查作业 jar 在哪个目录**（放错目录时它照样 PASS）。
+#
+# ⇒ 本条判据要**两边都查**，只查一边都是恒真：
+#   (a) **阳性**：两端 /opt/flink/usrlib/ 下必须有作业 jar，且两端**同一字节**
+#       （size + sha256 逐字相等 ⇒ 排除「只给一端拷了」这种半部署）。
+#   (b) **阴性（承重点）**：清点 /opt/flink/lib/ **不许有任何作业 jar 副本**
+#       —— 这正是原口径抓不到的缺陷形态。只查 (a) 会让「usrlib 有、lib 也有」
+#       照样 PASS，而那正是 LinkageError 的形态。
+#   旧的「/opt/flink/lib 里有 Paimon connector」断言**保留但下移为 4d**（它是
+#   部署面事实，不是本条要判的作业面事实；两类对象混在一条判据里会让 FAIL
+#   文案指不准病因——见 impl-03a §D 未采纳项的同一条理由）。
+check_job_jar_usrlib() {
+  sec "④ 作业 jar 在 /opt/flink/usrlib/（两端同一字节；lib/ 不许有副本）"
+  local item="④ 作业 jar 在 usrlib 且 lib 无副本"
+  local ok=1
+  local c out rc size sha n path
+  # 任一侧在 (a) 段已经失败时，不再跑「两端比对」——否则同一个缺陷
+  # 会计两次 FAIL（impl-03a §D #2 的计数重复缺陷，勿重踩）。
+  local side_bad=0
+
+  # ── (a) 两端 usrlib 里的 ecom 作业 jar：必须存在、字节一致 ──────────────
+  # ★ 不用固定文件名锚死：实测部署名是 ecom-flink.jar（.uv-cache/deploy-job.sh），
+  #   而构建产物名是 ecom-flink-0.1.0-SNAPSHOT.jar —— 两者都可接受，
+  #   故按**模式**匹配 ecom.*.jar（与 deploy-job.sh 的清点口径一致）。
+  local jm_read="" tm_read=""
+  for c in "$JM_CONTAINER" "$TM_CONTAINER"; do
+    printf '    docker exec %s ls -l /opt/flink/usrlib/ 原始输出：\n' "$c" | raw
+    out="$(dcx exec "$c" ls -l /opt/flink/usrlib/ 2>&1)"; rc=$?
+    printf '%s\n' "$out" | raw
+    if [[ $rc -ne 0 ]]; then
+      fail "$item（$c 侧 ls /opt/flink/usrlib 失败 rc=$rc）"
+      ok=0; side_bad=1
+      continue
+    fi
+    # 只认**常规文件**且名字匹配 ecom：目录、改名残留、非 jar 都不算命中
+    if ! printf '%s\n' "$out" | grep -qE '^-.*ecom.*\.jar$'; then
+      fail "$item（$c 侧 /opt/flink/usrlib/ 里没有 ecom 作业 jar）"
+      ok=0; side_bad=1
+      continue
+    fi
+    printf '    命中行（%s）：\n' "$c" | raw
+    printf '%s\n' "$out" | grep -E 'ecom.*\.jar$' | raw
+
+    # 「恰 1 个 ecom jar」不是洁癖：多版本共存时类加载器可能命中旧版本，
+    # 而 (a) 的字节校验只校第一个 ⇒ 不判条数就会给「usrlib 里新旧两份」放行。
+    n="$(printf '%s\n' "$out" | grep -cE '^-.*ecom.*\.jar$')"
+    path="$(printf '%s\n' "$out" | awk '/^-.*ecom.*\.jar$/ {print $NF; exit}')"
+    printf '    %s: ecom jar 条目数=%s，校验对象=%s\n' "$c" "$n" "$path" | raw
+    if [[ "$n" != "1" ]]; then
+      fail "$item（$c 侧 usrlib 里有 $n 个 ecom jar，期望恰 1 —— 多版本共存会让类加载器命中旧版本）"
+      ok=0; side_bad=1
+      continue
+    fi
+    # ls -l 的最后一列是文件名（usrlib 是平铺目录，无空格名，故 $NF 安全）
+    size="$(dcx exec "$c" stat -c '%s' "/opt/flink/usrlib/$path" 2>&1)"
+    sha="$(dcx exec "$c" sha256sum "/opt/flink/usrlib/$path" 2>&1 | cut -d' ' -f1)"
+    printf '    %s: size=%s sha256=%s\n' "$c" "$size" "$sha" | raw
+    if [[ -z "$size" || ! "$size" =~ ^[0-9]+$ ]]; then
+      fail "$item（$c 侧 usrlib jar 体积为 0/不可读：[/$size]）"
+      ok=0; side_bad=1
+      continue
+    fi
+    # 两端读数各落一个标量：末尾要**逐字**比「两端是不是同一字节」。
+    if [[ "$c" == "$JM_CONTAINER" ]]; then
+      jm_read="$size:$sha"
+    else
+      tm_read="$size:$sha"
+    fi
+    info "$c 侧 usrlib 命中作业 jar（$path, size=$size）"
+  done
+
+  # 两端必须**同一字节**：只给一端拷过 = 半部署 ⇒ TM 侧加载不到作业类。
+  # side_bad=1 时上面已经为「该侧缺失/多版本/不可读」记过一次 FAIL，
+  # 这里再比一次会把同一个缺陷计两遍 ⇒ 只在两侧都读到读数时才比。
+  printf '    两端读数比对（size:sha256）：\n' | raw
+  printf '      %s\n' "${jm_read:-<缺>}" | raw
+  printf '      %s\n' "${tm_read:-<缺>}" | raw
+  if [[ $side_bad -eq 1 ]]; then
+    info "（(a) 段已有失败 ⇒ 跳过两端比对，避免同一缺陷重复计数）"
+  elif [[ -z "$jm_read" || -z "$tm_read" ]]; then
+    fail "$item（两端读数不齐：JM=[$jm_read] TM=[$tm_read]）"
+    ok=0
+  elif [[ "$jm_read" != "$tm_read" ]]; then
+    fail "$item（两端 usrlib 作业 jar 不是同一字节：J=[$jm_read] T=[$tm_read]）"
+    ok=0
+  else
+    info "两端 usrlib 作业 jar 逐字节相同（$jm_read）"
+  fi
+
+  # ── (b) 承重点：两端 /opt/flink/lib 里**不许**有作业 jar 副本 ──────────────
+  # 反例形态：usrlib 放一份，lib 里还留着历史 docker cp 的副本。
+  #   ⇒ 父子类加载器各加载一份 ⇒ LinkageError: loader constraint violation。
+  #   只判 (a) 这条**永远抓不到**，故 (b) 是独立判据，不是 (a) 的补充说明。
+  for c in "$JM_CONTAINER" "$TM_CONTAINER"; do
+    printf '    docker exec %s ls -l /opt/flink/lib/ 检查作业 jar 副本：\n' "$c" | raw
+    out="$(dcx exec "$c" ls -l /opt/flink/lib/ 2>&1)"; rc=$?
+    printf '%s\n' "$out" | raw
+    if [[ $rc -ne 0 ]]; then
+      fail "$item（$c 侧 ls /opt/flink/lib 失败 rc=$rc）"
+      ok=0
+      continue
+    fi
+    if printf '%s\n' "$out" | grep -qE 'ecom.*\.jar$'; then
+      printf '    反例命中行（%s）：\n' "$c" | raw
+      printf '%s\n' "$out" | grep -E 'ecom.*\.jar$' | raw
+      fail "$item（$c 侧 /opt/flink/lib/ 里有作业 jar 副本 ⇒ 父子类加载器双份 ⇒ LinkageError）"
+      ok=0
+      continue
+    fi
+    info "$c 侧 /opt/flink/lib 无作业 jar 副本（正确）"
+  done
+
+  # 同 ①：失败已在各段内逐次计入，末尾不重复计。
+  if [[ $ok -eq 1 ]]; then pass "$item"; fi
+  return $(( 1 - ok ))
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 4d Paimon bundled connector 在 JM 与 TM 两端 /opt/flink/lib（部署面事实）
+# ══════════════════════════════════════════════════════════════════════════════
+# 原 ④ 的内容整体下移到这里，**判据语义不变**（官方逐字要求 connector 装进
+# 「每一个」Flink 进程；两容器各自 /opt/flink/lib 必须命中同一个 jar，且
+# size/sha256 与钉死值逐字节一致 —— 只认名字抓不住截断/替换/错版本）。
+# 拆出来的理由：④ 要判的「作业 jar 不得与 connector 混在同一目录」与
+# 「connector 在不在 lib」是**两件事**，混在一条判据里时 FAIL 文案指不准病因。
+check_paimon_connector_in_each_process() {
+  sec "4d Paimon bundled connector 在 JM 与 TM 两端 /opt/flink/lib 各查一次"
+  local item="4d Paimon connector 在两端 lib"
   local ok=1
   local c out rc
 
@@ -913,7 +1069,7 @@ preflight() {
 # ══════════════════════════════════════════════════════════════════════════════
 main() {
   echo "════════════════════════════════════════════════════════════════════════════"
-  echo " deploy_surface_check.sh —— impl-03a 部署面验收实证（逐条）"
+  echo " deploy_surface_check.sh —— 部署面验收实证（逐条；impl-03a 票面 + 4b/4c/4d 演进）"
   echo " 时间: $(date -u +%Y-%m-%dT%H:%M:%SZ)  (UTC)"
   echo "════════════════════════════════════════════════════════════════════════════"
   preflight
@@ -929,7 +1085,8 @@ main() {
   check_volume_same_path
   check_warehouse_writable
   check_cross_container_visibility
-  check_jar_both_containers
+  check_job_jar_usrlib
+  check_paimon_connector_in_each_process
   check_flink_patch_anchor
   check_persistence_across_down_up
   check_compose_ps_all_healthy

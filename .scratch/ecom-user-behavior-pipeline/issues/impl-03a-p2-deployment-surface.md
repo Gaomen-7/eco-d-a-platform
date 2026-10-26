@@ -184,6 +184,35 @@ compose 与 `docker/flink/` 两边都有标注词、Dockerfile 有标注、compo
 - ⑦ 的**冻结端口**半边待端口恢复后复跑（见 §C 遗留项）。
 - 未实现 `minio`/`spark` profile（spec §8.2，归 impl-05）。
 
+### §F 判据口径变更（2026-10-26，随 impl-06d 实测回填；施工票 [impl-06e](impl-06e-deploy-check-usrlib.md)）
+
+**④ 已改判据对象**：原「Paimon jar 在 JM/TM **两个容器** `/opt/flink/lib` + size/sha256」
+→ 现「**作业 jar 在 `/opt/flink/usrlib/`**（两端同一字节）+ `/opt/flink/lib` 不许有作业 jar 副本」。
+脚本内函数：`check_jar_both_containers` → `check_job_jar_usrlib`；原断言语义**未丢**，
+整体下移为 **4d**「Paimon connector 在两端 lib」（`check_paimon_connector_in_each_process`）。
+
+- **为什么改**（一手证据来自 [impl-06d](impl-06d-r7i-replay-watermark-fixes.md) §四 环境事实 ④）：
+  作业 jar 放 `lib/` 会 `LinkageError: loader constraint violation … committedOffsets`
+  —— 作业 shade jar 含 `org/apache/kafka/**`，`flink-dist-2.2.1.jar` 不含
+  ⇒ 父子类加载器各加载一份 Kafka 的 `OffsetResetStrategy`。
+- **原判据的结构盲区**：它只查 `lib/` 有没有 Paimon connector，**完全不看作业 jar 在哪个目录**
+  ⇒ 放错目录时它照样 PASS。这是「判据恒真」的第三种形态（不是恒真，是**判错了对象**）。
+- **新判据的反例证伪（2026-10-26 实机，均为一次性注入、事后已还原）**：
+
+  | 反例 | 注入 | 新 ④ 结果 | 还原后 |
+  | --- | --- | --- | --- |
+  | A：`lib/` 混入作业 jar 副本（LinkageError 形态） | JM `cp usrlib/ecom-flink.jar lib/` | **FAIL**（「…里有作业 jar 副本 ⇒ 父子类加载器双份」） | PASS |
+  | B：只给一端拷过（半部署） | TM `mv usrlib/ecom-flink.jar …jar.off` | **FAIL**（「tm 侧 /opt/flink/usrlib/ 里没有 ecom 作业 jar」） | PASS |
+  | C：usrlib 多版本共存 | JM `touch usrlib/ecom-old.jar` | **FAIL**（「有 2 个 ecom jar，期望恰 1」） | PASS |
+
+  B/C 两轮各只产生 **1 条** FAIL —— 计数重复缺陷（本票 §D #2）未回归。
+- **正路径实机读数**（同一轮）：两端 `/opt/flink/usrlib/ecom-flink.jar` 各一份，
+  `size=73693749`、`sha256=9031125a…b87324` 逐字相同；`lib/` 零 ecom 副本；
+  4d 两端 `paimon-flink-2.2-2.1.0.jar` size/sha256 仍与钉死值一致（PASS）。
+- **未复跑**：③（down/up，会重启整栈并杀掉 RUNNING 作业 `cdf679cd…`，36 tasks）与 ⑤⑥⑧
+  **本轮未跑**（⑤ 在全仓逐文件 `grep -r` 上超时；⑥⑧ 未执行）。
+  这三条**未改动一支**，口径变更不影响其语义。
+
 ### 复现命令
 
 ```bash
