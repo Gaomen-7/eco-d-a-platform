@@ -539,10 +539,14 @@ SELECT count(*) FROM ods_behavior_event → 同上
 
 ### P5 · 未完成（接手清单）
 
-- [ ] `sql/replay_20_dwd.sql`（ODS → DWD + 拒绝旁路，`reject_reason` 三值 CASE）
-- [ ] `make replay LAYER=` 截断开关 + 逐层 `layer=… rows=…` 日志行
-- [ ] DIM/DWS/ADS DDL 已落盘（✅ 见 §P3），但本票只跑到 DWD 为止
-- [ ] 验收 12 条逐条核对（目前形状类已可核对，链路面被 §P4 卡住）
+> **（2026-10-26 归正，impl-06f-2）** 以下 4 项已于 2026-10-22/23 施工全部兑现
+> （本节写于进行中快照，收口后勾选状态未再维护）。逐项兑现证据见行内标注；
+> 勾选状态以票面 Acceptance criteria（12 条全勾）与顶行 `Status:` 为准。
+
+- [x] `sql/replay_20_dwd.sql`（ODS → DWD + 拒绝旁路，`reject_reason` 三值 CASE）——兑现于 §A·1（`layer=dwd rows=1048576`、`dwd_reject rows=0`，EXIT=0）＋ §A·4（7 行注入脏批，三值分流四类各命中）＋ §P0-7（2026-10-23 复跑仍全绿）
+- [x] `make replay LAYER=` 截断开关 + 逐层 `layer=… rows=…` 日志行——兑现于 §A·1（`LAYER=dwd` 绿 / `LAYER=dws` 诚实退 2）＋ §P0-2 第 1 项（`lake_replay.sh` 强化后接进 Makefile `replay:` 目标，现行 Makefile 即 `bash scripts/lake_replay.sh`）
+- [x] DIM/DWS/ADS DDL 已落盘（✅ 见 §P3），但本票只跑到 DWD 为止——兑现于 §A·5 / §A·12（11 表 `SHOW CREATE TABLE` 0 ERROR、八张主键表 `$options` 实机读回）；后续层贯通归 [impl-03c](impl-03c-dim-dws-ads-five-layer-replay.md)（五层 exit 0、ads=90348）
+- [x] 验收 12 条逐条核对（目前形状类已可核对，链路面被 §P4 卡住）——§P4 阻塞已由 §D 裁决 A 解除；12 条核对兑现于票面 Acceptance criteria 全勾 ＋ §A·1–A·13 逐条证据 ＋ §P0-7 复跑全绿
 
 ### P6 · 部署面现状（重要，接手者须知道）
 
@@ -804,24 +808,43 @@ wsl -e bash -lc 'cd "/mnt/f/Anaconda practice project/eco-a-d-platform" && \
 
 ### E5 · 下一步（按顺序做，别跳）
 
-- [ ] **F1 跑通 `replay_20_dwd.sql`**：先只跑到 DWD，把 E3 列的四个高风险点逐个验/改。
+> **（2026-10-26 归正，impl-06f-2）** 以下 F1–F7 共 7 项已于 2026-10-22/23 施工
+> 全部兑现（收口时未回勾本清单）。逐项兑现证据见行内标注；本票勾选状态以票面
+> Acceptance criteria 与顶行 `Status:` 为准。
+
+- [x] **F1 跑通 `replay_20_dwd.sql`**：先只跑到 DWD，把 E3 列的四个高风险点逐个验/改。
       判据：`SELECT count(*) FROM dwd_behavior_event` 应 = 1,048,576（本批无脏值）。
-- [ ] **F2 造脏数据验拒绝旁路**：往 ODS 插 3 条分别触发三值（`schema_invalid` /
+      ——兑现于 §A·1（`layer=dwd rows=1048576`）＋ §A·7（四个高风险点全部实测修正：
+      payload 存整行 / `UNIX_TIMESTAMP` 无参 / 下界 MIN / `is_late` 到达序）＋ §P0-7 复跑
+- [x] **F2 造脏数据验拒绝旁路**：往 ODS 插 3 条分别触发三值（`schema_invalid` /
       `value_out_of_range` / `time_out_of_range`），确认**恰好**落进拒绝表且
       `dt` = 摄入日、`reject_reason` 取值**恰在三值内**。**这一步不做，拒绝表就是恒真判据。**
-- [ ] **F3 `make replay LAYER=` 截断开关 + `layer=… rows=…` 日志行**。
+      ——兑现于 §A·4（7 行注入脏批，四类各命中一次；`dt`=摄入日、取值域无 `duplicate` 均实测）
+- [x] **F3 `make replay LAYER=` 截断开关 + `layer=… rows=…` 日志行**。
       ⚠️ 行数必须取自 **`dml-sync` 完成之后**的查询（D5 已证 `dml-sync` 会阻塞），
       否则日志行全是 0 —— 这正是票面第 1 条验收要判的东西。
       另：`make replay` 要接进 Makefile（现在 `replay:` 目标还是三行 echo 占位）。
-- [ ] **F4 `git check-ignore` 复验** `data/threshold/raw.jsonl` 与
+      ——兑现于 §A·1 ＋ §P0-2 第 1 项（`lake_replay.sh` 诚实退出码 + 层 marker 强制
+      正向证据）；`replay:` 已接进 Makefile（`bash scripts/lake_replay.sh`）
+- [x] **F4 `git check-ignore` 复验** `data/threshold/raw.jsonl` 与
       `docker/flink/lib/paimon-hadoop-uber-2.1.0.jar`（两者**当前都已验证**被覆盖，
       但 F3 若动 `.gitignore` 要重验）。
-- [ ] **F5 补生成器单测**：`--events`/`--logical-span`/`plan_threshold_batch` 目前
+      ——兑现于 §A·6（`git check-ignore -v` 命中 `.gitignore:10`）＋ impl-03 母票验收
+      第 9 条（03f 收口复核 `.gitignore:10` 再命中）
+- [x] **F5 补生成器单测**：`--events`/`--logical-span`/`plan_threshold_batch` 目前
       **没有单测**（我只用探针脚本验过行为）。至少覆盖：恰好 N 条、dt 恰 3 个、
       三通道全非空、`3d/72h` 归一化等价、非整天输入报错。
-- [ ] **F6 改票面验收第 8 条**（见 §D4）：把「不新增 jar」改成「零业务 jar，
+      ——兑现于 §P0-4（`tests/test_threshold_batch.py`，test-author 产出，50 例全绿；
+      点名的五类用例各有对应 test 函数）。2026-10-26 复跑：**49 passed (9.54s)**，
+      文件在仓、覆盖面逐类核对一致
+- [x] **F6 改票面验收第 8 条**（见 §D4）：把「不新增 jar」改成「零业务 jar，
       环境类 jar 归部署面」，否则留下字面自相矛盾。
-- [ ] **F7 收口**：12 条验收逐条核对 → `code-review` skill → 勾票 → commit。
+      ——兑现于 §P0-2 第 3 项（已按 §D4 裁决口径改写，同步 headline 与 §A·6 标题）；
+      现行票面第 8 条即改写后文本
+- [x] **F7 收口**：12 条验收逐条核对 → `code-review` skill → 勾票 → commit。
+      ——兑现于顶行 `Status: resolved（2026-10-23，两轮 code-review 后收口…）` ＋
+      §P0-3（审查发现全部处理完）＋ §P0-6（第二轮两处 BLOCKER 修毕复验）＋
+      §P0-7（复跑全绿）＋ §P0-4（已提交 feat/ecom-pipeline-impl）
 
 ### E6 · 已改文件清单（工作区**全部未提交**）
 

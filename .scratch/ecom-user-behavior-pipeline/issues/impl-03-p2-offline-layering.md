@@ -49,7 +49,7 @@ ODS `ods_behavior_event`（append，`dt`=落地日，`payload` 原文零解析�
 
 **Blocked by:** impl-02
 
-**Status:** ready-for-agent
+**Status:** 已由 [impl-03f](impl-03f-paimon-doris-reconciliation-and-verify.md) 收口（2026-10-24 22:00，六张副票全结、10 条验收全勾）；状态陈述以文件顶行为准
 
 ## Acceptance criteria
 

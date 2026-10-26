@@ -1,7 +1,7 @@
 # impl-04: 看板交付 — 零账号四步链 · 五面板 · 三态载体
 
 Type: task
-Status: in-progress
+Status: resolved（2026-10-25 收口；8/9 验收勾选，GIF 留评审者——数据层对偶证据已取得）
 Blocked by: impl-02
 
 **What to build:** 评审者用无痕浏览器直接打开 `127.0.0.1:8088`，看到五块面板出数并按 10 s 自动刷新——全程**零账号**，不需要任何外部平台凭据。窗口从暂定跳到落定、迟到修正让 `revision` 递增时，面板上的值确实跟着变。
@@ -27,7 +27,7 @@ Blocked by: impl-02
 
 **Blocked by:** impl-02
 
-**Status:** done（2026-10-25 收口；8/9 验收勾选，GIF 留评审者——数据层对偶证据已取得）
+**Status:** 已于 2026-10-25 收口（8/9 验收勾选，GIF 留评审者——数据层对偶证据已取得）；状态陈述以文件顶行为准
 
 ## Acceptance criteria
 

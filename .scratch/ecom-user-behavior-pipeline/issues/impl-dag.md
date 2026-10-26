@@ -55,7 +55,7 @@
 
 | **impl-06f** | [impl-06f-deploy-doc-closeout.md](impl-06f-deploy-doc-closeout.md) | — | **母票（索引）**：交付面收尾四切片——README 对齐 / 票面状态归正 / GLOSSARY 三词 / 收尾门 |
 | **impl-06f-1** | [impl-06f-1-readme-reality-alignment.md](impl-06f-1-readme-reality-alignment.md) | — | README 六处现状断言与代码/脚本对齐（`make init` 四段已接线、`verify` 五真、11 条判据、usrlib 约束、spike dry-run、端口限制）｜**✅ 2026-10-26 已结案**：六处全落地＋总判据 grep 干净；漂移 6 落成机制性描述（WinNAT 排除段动态漂移＋复核命令），当晚复核八端口已全恢复 TCP 可达 |
-| **impl-06f-2** | [impl-06f-2-ticket-status-normalization.md](impl-06f-2-ticket-status-normalization.md) | — | 票面状态归正：impl-02/03 中段残留 `ready-for-agent`、impl-03b 的 7 个过期复选框 |
+| **impl-06f-2** | [impl-06f-2-ticket-status-normalization.md](impl-06f-2-ticket-status-normalization.md) | — | 票面状态归正：impl-02/03 中段残留 `ready-for-agent`、impl-03b 的 7 个过期复选框｜**✅ 2026-10-26 已结案（resolved）**：另发现并归正第 4 处镜像矛盾（impl-04 顶行过期 `in-progress`）；impl-03b 实为两段 11 框全部回勾；全仓 `## Comments` 段零存在（判据空转成立）；剩余 39 个 `- [ ]` 全为真未做、保留理由清单见票面 Answer |
 | **impl-06f-3** | [impl-06f-3-glossary-three-terms.md](impl-06f-3-glossary-three-terms.md) | — | GLOSSARY 补「脏率 / 反例夹具 / 脏率基线」三词（impl-02e code-review S4 欠账） |
 | **impl-06f-4** | [impl-06f-4-closeout-gate-deploy-proof.md](impl-06f-4-closeout-gate-deploy-proof.md) | impl-06f-1, impl-06f-2 | 收尾门：不设 override 跑 `deploy_surface_check.sh` 全 11 条 + `make init`→`verify` 一绿（端口不通则如实登记） |
 | **impl-06g** | [impl-06g-spike-live-rate-proof.md](impl-06g-spike-live-rate-proof.md) | — | `make spike` **真发** + `REQ-F-GEN-04`/`REQ-NF-PERF-03` ≥1000 events/s 一手速率证据（现只 dry-run，是唯一未验的功能条目） |

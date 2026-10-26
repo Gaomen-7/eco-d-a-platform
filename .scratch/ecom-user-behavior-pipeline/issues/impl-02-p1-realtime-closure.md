@@ -20,7 +20,7 @@ Blocked by: impl-01
 
 **Blocked by:** impl-01
 
-**Status:** ready-for-agent
+**Status:** 已由 [impl-02e](impl-02e-p1-acceptance-closeout.md) 收口（2026-10-22，票面 10 条验收全勾）；状态陈述以文件顶行为准
 
 ## Acceptance criteria
 
