@@ -31,7 +31,7 @@ DORIS_FE   := 8030
 DORIS_MYSQL:= 9030
 SUPERSET   := 8088
 
-.PHONY: help up down init replay verify spike verify-fault verify-fault-corrupt logs lint typecheck client smoke config-check build-flink-image assert replay-idempotent
+.PHONY: help up down init replay verify spike verify-fault verify-fault-corrupt logs lint typecheck client smoke config-check build-flink-image assert replay-idempotent r7i-falsify
 
 help:
 	@echo "冻结目标：up down init replay verify spike verify-fault logs"
@@ -39,6 +39,7 @@ help:
 	@echo "  build-flink-image：预取 Paimon jar 并构建本地 Flink 镜像（up 之前必须先跑一次）"
 	@echo "  assert：离线断言集（A1/A3/快照/拉链，impl-03d）—— replay 之后跑"
 	@echo "  replay-idempotent：同批重放两遍 + 指纹比对（幂等离线版，impl-03d）"
+	@echo "  r7i-falsify：R7-i 三案机读判据（live 跨度 / committed offsets / 水位不劫持，impl-06d）"
 
 # ── 编排 ────────────────────────────────────────────────────────────
 # ── 本地镜像构建（impl-03a）─────────────────────────────────────────────
@@ -130,6 +131,18 @@ replay-idempotent:
 # P1 形态：4 真 + 1 显式 SKIP（第三项「Paimon 五层有行」跳过，不计通过不计 fail）。
 verify:
 	@$(UV) run python -m ecomgen.verify_runner
+
+# ── R7-i 三案的机读判据（impl-06d）──────────────────────────────────
+# 退出码即判据：0 = 三案判据全绿，非 0 = 有反例未转绿。
+# 案 1 在 pytest（tests/test_cli.py 的两条 live 平移判据），案 2/3 在
+# flink/src/test/java/.../R7iFalsification.java（javac + java 断言程序，
+# 因为离线环境没有可跑的 JUnit，见该类注释）。
+# 反例侧：scripts/_before_r7i.sh（同一 harness 跑在旧语义 shim 上 ⇒ 必红）。
+r7i-falsify:
+	@echo "=== 案 1：live 平移跨度（pytest）==="
+	@$(UV) run pytest tests/test_cli.py -q -k "live and (shift or tolerance or semantics)" || exit $$?
+	@echo "=== 案 2/3：source 起始偏移 + 水位不被脏事件劫持（javac/java）==="
+	@bash scripts/r7i-falsify.sh
 
 # 故障注入：kill TaskManager → 从 checkpoint 恢复 → 证明重放被幂等吸收
 # 判据（spec §4.4）在 src/ecomgen/fault.py；超时 120 s / 300 s 均为**设计值**。

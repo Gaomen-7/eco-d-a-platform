@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from ecomgen.dims import build_dimension_stream, count_by_kind, write_dimension_stream
+from ecomgen.events import FUTURE_TOLERANCE_MS
 from ecomgen.jsonl import write_jsonl
 from ecomgen.producer import (
     EventBatch,
@@ -271,15 +272,50 @@ def _dump(args: argparse.Namespace) -> int:
     return 0
 
 
+def live_shift_ms(raw_min_ms: int, raw_max_ms: int, now_ms: int) -> int:
+    """live 的平移量：把批次**窗尾**对到 `now_ms`（R7-i 案 1）。
+
+    抽成纯函数是为了让「平移语义」可被判据直接断言——判据若重新算一遍
+    `now - max`，就是抄实现，实现改错了判据也跟着错（impl-02d 判据纪律）。
+    """
+    return now_ms - raw_max_ms
+
+
 def _live(args: argparse.Namespace) -> int:
     params = _params(args)
     batch = produce_batch(params)
 
-    # F7 裁决：整体平移到「本轮起点」，历史日期不进入实时流。
-    # dump 的基座是固定常量（_EPOCH_BASE_MS），live 把它换成此刻。
+    # F7 裁决：整体平移使历史日期不进入实时流；**平移基准是窗尾**（R7-i 案 1 修复）。
+    # dump 的基座是固定常量（_EPOCH_BASE_MS），live 把它换成本轮时刻。
+    #
+    # ★★ 为什么是「窗尾对齐 now」而不是「窗首对齐 now」（impl-06d，R7-i 案 1）★★
+    # 旧实现 shift = round_start_ms − raw_min_ms：批次**起点**落到现在，逻辑跨度
+    # 原样保留 ⇒ 尾部事件 et = now + span。而 span 随 --sessions 线性增长
+    # （实测 100 会话 ≈ 8 min、默认 1000 会话更甚、300 会话实测 1,270,148 ms ≈ 21 min），
+    # 质量门的未来裕度只有 5 min（events.FUTURE_TOLERANCE_MS 与
+    # EventQuality.FUTURE_TOLERANCE_MS 同源）⇒ 合规参数下的尾部必然被判
+    # time_out_of_range 进 DLQ —— 即「生成器自己产出质量门拒收的事件」。
+    # 窗尾对齐后：整批落在 [now − span, now]，尾部永不超过 now，故永不超界；
+    # span 与迟到相对形状**完全不变**（仍由 --seed 决定，可复现）。
     raw_times = [int(e.record["event_time"]) for e in batch.events]
     span_ms = max(raw_times) - min(raw_times) if raw_times else 0
     round_start_ms = int(time.time() * 1000)
+    raw_min_ms = min(raw_times) if raw_times else round_start_ms
+    raw_max_ms = max(raw_times) if raw_times else round_start_ms
+    shift_ms = live_shift_ms(raw_min_ms, raw_max_ms, round_start_ms)
+
+    # 由**平移后的时间**派生，而不是由公式断言 shift 正确（判据不能抄实现）。
+    tail_offset_ms = (raw_max_ms + shift_ms) - round_start_ms
+
+    # 硬断言：越界即拒绝发送（而不是产出一批注定被质量门拒收的事件）。
+    # 窗尾对齐下它恒成立，保留它是防止日后有人把基准改回「窗首」而不改这条。
+    if tail_offset_ms > FUTURE_TOLERANCE_MS:
+        print(
+            f"[ecomgen] ✗ live 平移后尾部超界：tail_offset_ms={tail_offset_ms} ms "
+            f"> 质量门未来裕度 {FUTURE_TOLERANCE_MS} ms（span={span_ms} ms）",
+            file=sys.stderr,
+        )
+        return 2
 
     plan = {
         "mode": "live",
@@ -293,6 +329,11 @@ def _live(args: argparse.Namespace) -> int:
         "late_correctable": batch.count_channel("late_correctable"),
         "late_expired": batch.count_channel("late_expired"),
         "dry_run": bool(args.dry_run),
+        # ★ 判据出口（impl-06d）：平移**后**尾部相对基准的偏移。
+        #   旧版 plan 只有 span_ms/round_start_ms，读者无法分辨「起点对齐」与
+        #   「窗尾对齐」——两者在旧字段上恒等。
+        "tail_offset_ms": tail_offset_ms,
+        "shift_ms": shift_ms,
     }
 
     if args.plan:
@@ -305,22 +346,20 @@ def _live(args: argparse.Namespace) -> int:
 
     if args.dry_run:
         print(
-            f"[ecomgen] live --dry-run：{len(batch.events)} 条，跨度 {span_ms} ms，"
-            f"起点平移至 {round_start_ms}，rate={params.rate_per_sec}/s"
+            f"[ecomgen] live --dry-run：{len(batch.events)} 条，原始跨度 {span_ms} ms，"
+            f"窗尾平移至 {round_start_ms}（尾部偏移 {tail_offset_ms} ms "
+            f"≤ 裕度 {FUTURE_TOLERANCE_MS} ms），rate={params.rate_per_sec}/s"
         )
         return 0
 
-    return _send_to_kafka(
-        batch, params, args, round_start_ms, min(raw_times) if raw_times else 0
-    )
+    return _send_to_kafka(batch, params, args, shift_ms)
 
 
 def _send_to_kafka(
     batch: EventBatch,
     params: ProducerParams,
     args: argparse.Namespace,
-    round_start_ms: int,
-    raw_min_ms: int,
+    shift_ms: int,
 ) -> int:
     """真发：按速率逐条投递。分区键取 `user_id` 保证每用户有序（gdd Q12）。"""
     try:
@@ -330,7 +369,7 @@ def _send_to_kafka(
         return 2
 
     producer = Producer({"bootstrap.servers": args.bootstrap, "client.id": "ecomgen"})
-    shift = round_start_ms - raw_min_ms
+    shift = shift_ms
 
     sent = 0
     interval = 1.0 / params.rate_per_sec

@@ -27,11 +27,28 @@ public final class EventQuality {
     static final long FUTURE_TOLERANCE_MS = 5 * 60_000L;
 
     /**
-     * 判定一个事件是否为真脏。
+     * 判定一个事件是否为真脏（用墙上时钟判规则①上界）。
      *
      * @return 原因码；{@code null} ⇒ 合法（可继续走去重）
      */
     public static String reason(RawEvent e) {
+        return reason(e, System.currentTimeMillis());
+    }
+
+    /**
+     * 判定一个事件是否为真脏，**显式给上界基准时钟**（R7-i 案 3 修复新增）。
+     *
+     * <p><b>为什么必须能显式传时钟</b>：source 的**时间戳分配**（水位之前）与
+     * 质量门（水位之后）判的是同一条规则；若两处各读一次 {@code currentTimeMillis}，
+     * 同一事件可能在两处得到不同结论 ⇒ 被门拒绝的事件仍然已经抬过水位
+     * （正是 R7-i 案 3 要消掉的形态，只是幅度小一点）。传同一个 instant 让
+     * 两处判定**同源**。
+     *
+     * <p>另：判据（{@code R7iFalsification}）需要可复现，不能依赖墙钟。
+     *
+     * @param nowMs 规则①上界的基准时刻（UTC epoch 毫秒）
+     */
+    public static String reason(RawEvent e, long nowMs) {
         // ── 规则④ 非空 + 必填（SRS §3.3 公共字段表）──────────────────
         if (isBlank(e.eventId)
                 || isBlank(e.userId)
@@ -71,11 +88,16 @@ public final class EventQuality {
             return JobConfig.REASON_TIME_OUT_OF_RANGE;
         }
         // 上界：不与未来对齐（生成器的 5 min 裕度与这条同源）
-        if (e.eventTime > System.currentTimeMillis() + FUTURE_TOLERANCE_MS) {
+        if (e.eventTime > nowMs + FUTURE_TOLERANCE_MS) {
             return JobConfig.REASON_TIME_OUT_OF_RANGE;
         }
 
         return null;
+    }
+
+    /** 只有「时间型脏」才可能劫持水位；结构/取值型脏与时间无关。 */
+    static boolean isTimeReason(String reason) {
+        return JobConfig.REASON_TIME_OUT_OF_RANGE.equals(reason);
     }
 
     /** 收集全部违规原因（与 Python 侧 `validate_event` 返回列表的形态一致，供日志用）。 */

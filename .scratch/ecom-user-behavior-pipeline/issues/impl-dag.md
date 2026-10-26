@@ -47,7 +47,7 @@
 | **impl-06a** | [impl-06a-hour-retention-drill.md](impl-06a-hour-retention-drill.md) | — | HOUR 分级保留演练实机（`REQ-F-OLAP-03` 行为层证据；独立表，破坏面最小） |
 | **impl-06b** | [impl-06b-drop-reclaim-measurement.md](impl-06b-drop-reclaim-measurement.md) | — | DROP 后回盘时间线实测（recycle bin + BE GC；官方未给出 ⇒ 实机取证） |
 | **impl-06c** | [impl-06c-compaction-collision.md](impl-06c-compaction-collision.md) | — | compaction ×20 GB 对撞（耗时/放大/内存形态三数；与 06b 可联动回盘） |
-| **impl-06d** | [impl-06d-r7i-replay-watermark-fixes.md](impl-06d-r7i-replay-watermark-fixes.md) | — | R7-i 三案一张票收口（live 跨度 / committedOffsets / 时间戳-质量门次序） |
+| **impl-06d** | [impl-06d-r7i-replay-watermark-fixes.md](impl-06d-r7i-replay-watermark-fixes.md) | — | R7-i 三案一张票收口（live 跨度 / committedOffsets / 时间戳-质量门次序）｜**✅ 2026-10-26 已结案**：三案全部落地 + 反例证伪先行；`make r7i-falsify` 0、`_before_r7i.sh` 必红（4 条）、`make verify` 两连绿 10/10、`verify-fault` 12/12、`verify-fault-corrupt` 按预期失败、pytest 314 passed；HLD §8-R7-i 已回填（adjudication + 两条新环境事实），`reproducibility-boundary.md` §11.4 运维口径已划除；本地提交未推送 |
 
 > 06a/06b/06c 出处＝spec §8.2（**2026-10-25 用户批准**，实施前须复述风险再触发）；06d 出处＝HLD §8-R7-i（用户裁决三案同票）。四张互不阻塞，均独立可开工。
 

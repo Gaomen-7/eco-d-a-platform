@@ -1,0 +1,15 @@
+{
+  "bootstrap": "kafka:9092",
+  "dry_run": true,
+  "late_correctable": 3,
+  "late_expired": 1,
+  "mode": "live",
+  "rate_per_sec": 200,
+  "round_start_ms": 1792988650205,
+  "seed": 42,
+  "shift_ms": 88921306205,
+  "span_ms": 245483,
+  "tail_offset_ms": 0,
+  "topic": "ecom.behavior.event.v1",
+  "total_events": 96
+}

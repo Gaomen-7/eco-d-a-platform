@@ -345,4 +345,4 @@ P1 作业 + `ecomgen live` 真实流量（topic 45,256 → 53,789 条，窗口/�
 
 - **R7-g**：声明口径 10.5→11.5 GiB（impl-03c flink-jm 2g）+ 判据①张力 ⇒ §11.1 逐字新句待签。
 - **R7-h**：裸 `docker compose down` 不停 profile 服务 ⇒ L2 动作改定（§11.2 已按新动作实测）。
-- **R7-i**：live 跨度超界（未来事件）× P1 冷启动全量重放（`OffsetsInitializer.earliest()`，TM 日志逐字）⇒ 水位被 topic 内未来事件钉死 ~2 h、探针必挂。**运维口径**：live 带载用 `--sessions ≤ 40`；作业冷启动前确认 topic 无未陈化未来事件。修复候选三条记档待独立票。
+- **R7-i**：live 跨度超界（未来事件）× P1 冷启动全量重放（`OffsetsInitializer.earliest()`，TM 日志逐字）⇒ 水位被 topic 内未来事件钉死 ~2 h、探针必挂。~~**运维口径**：live 带载用 `--sessions ≤ 40`；作业冷启动前确认 topic 无未陈化未来事件。~~ ⇒ **该运维口径已随 impl-06d 修复失效**（2026-10-26）：live 平移改「窗尾对齐 now」+ 硬断言，source 起始偏移改 `committedOffsets(EARLIEST)`，水位生成器先过质量门（被拒事件不抬水位）。机读判据 `make r7i-falsify` 退出码 0；`make verify` 两连绿 10/10、`recon-offline-mirror-doris` 逐值全等。详文见 HLD §8-R7-i（含修复期新登记的两条环境事实：jar 须在 `usrlib/`、质量门时钟不得冻结在提交时刻）。

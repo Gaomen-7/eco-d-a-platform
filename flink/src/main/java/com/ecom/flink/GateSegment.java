@@ -16,7 +16,6 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
 
-import java.time.Duration;
 
 /**
  * 入口段：解析 → 质量分流（DLQ）→ 去重（重复不计脏）。
@@ -221,7 +220,27 @@ public final class GateSegment {
         }
     }
 
-    /** Kafka source 构造（主 topic）：水印策略与允许延迟一致。 */
+    /**
+     * Kafka source 构造（主 topic）：起始偏移与水位策略都由 {@link SourceTimePolicy} 定。
+     *
+     * <h2>★ R7-i 两案在此收口（impl-06d）</h2>
+     * <ol>
+     *   <li><b>起始偏移</b>：旧实现 {@code OffsetsInitializer.earliest()} ⇒ 无视
+     *       committed offsets、每次提交全量重放。改为
+     *       {@link SourceTimePolicy#startingOffsets()}（committed 优先、无则 earliest）。
+     *   <li><b>时间戳分配先于质量门</b>：旧实现用
+     *       {@code forBoundedOutOfOrderness(...).withTimestampAssigner((s, ts) -> parseEventTime(s))}
+     *       ⇒ 未来脏事件在**被判脏之前**就把水位抬到未来。改为
+     *       {@link SourceTimePolicy#watermarkGenerator()}（先过质量门再抬水位）。
+     * </ol>
+     *
+     * <p>⚠️ 这里**不再显式设时间戳分配器**：水位生成器自己读 {@code event_time}
+     * 判合法性并推进 max，{@code withTimestampAssigner} 的返回值只用于下游算窗口
+     * 归属（脏事件到不了下游）。两者必须读**同一个** et 口径，故时间戳仍由
+     * {@link RawEvent#parseEventTime(String)} 给——见下。
+     *
+     * <p><b>判据</b>：{@code scripts/r7i-falsify.sh}（退出码即判据）。
+     */
     public static DataStream<String> mainSource(
             StreamExecutionEnvironment env, String groupSuffix) {
         KafkaSource<String> source =
@@ -229,13 +248,20 @@ public final class GateSegment {
                         .setBootstrapServers(JobConfig.KAFKA_BOOTSTRAP)
                         .setTopics(JobConfig.TOPIC_MAIN)
                         .setGroupId(JobConfig.CONSUMER_GROUP + groupSuffix)
-                        .setStartingOffsets(OffsetsInitializer.earliest())
+                        .setStartingOffsets(SourceTimePolicy.startingOffsets())
                         .setValueOnlyDeserializer(new SimpleStringSchema())
                         .build();
         return env.fromSource(
                 source,
-                WatermarkStrategy.<String>forBoundedOutOfOrderness(
-                                Duration.ofMillis(JobConfig.ALLOWED_LATENESS_MS))
+                // ★ 生成器**不冻结时钟**：质量门必须用每条事件到达时的墙钟判
+                //   「不晚于 now + 裕度」。首版在提交时取一次 nowMs，作业 RUNNING
+                //   超过 5 min 后一切真实事件都被判 time_out_of_range（实测：
+                //   04:02 提交的作业在 04:29/04:35 两轮探针批全部进 DLQ，Doris 只剩
+                //   provisional_emitted 行 —— 与 R7-i 的静默误丢同形）。
+                WatermarkStrategy.<String>forGenerator(
+                                ignored -> SourceTimePolicy.watermarkGenerator())
+                        // 时间戳仍由同一份 et 口径给：下游窗口归属用它。
+                        // 脏事件的 et 不参与水位，故这里给它什么都不会劫持链路。
                         .withTimestampAssigner((s, ts) -> RawEvent.parseEventTime(s)),
                 "gate-source" + groupSuffix);
     }

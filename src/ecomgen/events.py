@@ -44,7 +44,13 @@ _REQUIRED_BY_TYPE: Final[dict[str, tuple[str, ...]]] = {
 }
 
 # 规则①上界：不晚于「当前 + 5 分钟」（设计裕度，非官方保证）
-_FUTURE_TOLERANCE_MS: Final[int] = 5 * 60_000
+#
+# ★ 公开名（impl-06d）：live 的平移语义要按**同一个**裕度判「尾部是否超界」，
+#   否则两侧各写一个 5 min，改一侧另一侧就成了假判据。
+#   Flink 侧对偶是 EventQuality.FUTURE_TOLERANCE_MS（两处同源、改则同步）。
+FUTURE_TOLERANCE_MS: Final[int] = 5 * 60_000
+# 兼容旧私有名（同源，勿另赋值）
+_FUTURE_TOLERANCE_MS: Final[int] = FUTURE_TOLERANCE_MS
 
 # 规则①下界的允许乱序幅度 = 实时侧允许延迟，默认 2 分钟
 DEFAULT_ALLOWED_LATENESS_MS: Final[int] = 120_000
