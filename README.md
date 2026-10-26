@@ -34,6 +34,10 @@
   2026-10-26 收尾盘点时八个冻结端口中仅 `8081` 可达；同日晚复核时排除段已漂走、
   八个端口全部恢复 TCP 可达。⇒ 「端口连不上」先查排除段再下结论——这是宿主环境
   事实，不是仓库缺陷。
+- **`make spike` 从宿主真发走 HOST listener `127.0.0.1:29092`**（impl-06g）：
+  compose 的 `9092` 口 advertised 成 `kafka:9092`（容器名），宿主解析不了
+  （P0 实测 FAIL）；`29092` 才是 advertised 成宿主可达地址的那个 listener。
+  这解释了旧 `spike:` 目标「真发需 compose 网内可达 kafka:9092」注释的误导面。
 - **2026-10-26 收尾门实证（[impl-06f-4](.scratch/ecom-user-behavior-pipeline/issues/impl-06f-4-closeout-gate-deploy-proof.md)）**：
   不设 `COMPOSE_EXTRA_FILES` 跑全判据 + `make init`→`verify` 一绿的同一窗口内，八个
   冻结端口实测：HTTP 面 `8030/8040/8081/8088` 全 200、协议面 `9010/9030/9060/9092` 全
@@ -56,7 +60,7 @@
 | `init` | 一条命令：四段初始化（见上） |
 | `replay` | 五层离线分层 ODS→DWD→DIM→DWS→ADS（P2 实现） |
 | `verify` | 链路运行时五项烟测＋附加断言（P2 起五项**全真断言**，退出码判成败；第三项「Paimon 五层有行」查不到即 **FAIL**，不是 SKIP）。复核：`src/ecomgen/verify_runner.py` 第三项 docstring；`make verify` 实测 10 PASS / 退出码 0（报告落 `artifacts/verify/`） |
-| `spike` | 尖峰模式：短时 ≥1000 events/s（**尚未真发**——当前仅 `--dry-run`，速率判据的一手证据归 [impl-06g](.scratch/ecom-user-behavior-pipeline/issues/impl-06g-spike-live-rate-proof.md)） |
+| `spike` | 尖峰模式：短时 ≥1000 events/s。**已实测 1011.8 events/s**（2026-10-26，11134 条 / 11004 ms 含 flush，一手口径：分子=实际 produce 条数、分母=首条 produce 至 flush 完成的墙钟；报告 `artifacts/spike/`）。判据机读化：`make spike` 真发并判四项（速率/期间存活/lag 回落/DLQ 归因），`make spike DRY_RUN=1` 退回预演。链路面证据：尖峰期间 Flink 采样全 RUNNING、异常零新增、lag 44 s 回落、DLQ 增量 0（[impl-06g](.scratch/ecom-user-behavior-pipeline/issues/impl-06g-spike-live-rate-proof.md)） |
 | `verify-fault` | kill TaskManager → 从 checkpoint 恢复 → 校验条数一致 |
 | `logs` | `docker compose ps` + 最近 120 行日志 |
 

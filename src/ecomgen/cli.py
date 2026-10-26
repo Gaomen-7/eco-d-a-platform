@@ -21,6 +21,7 @@ import json
 import sys
 import time
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -281,6 +282,62 @@ def live_shift_ms(raw_min_ms: int, raw_max_ms: int, now_ms: int) -> int:
     return now_ms - raw_max_ms
 
 
+@dataclass(frozen=True)
+class SendMeasurement:
+    """一次 live 真发的**一手速率口径**（impl-06g）。
+
+    票面 AC 第 2 条：发送侧记录 起止墙钟 + 实际发出条数，速率 = 条数 / 秒，
+    **不使用计划条数**当分子。三件事的落点：
+
+    - 分子 `events` = 实际 `produce()` 成功的条数（循环计数，非
+      `plan.total_events`——impl-06g 票面一手事实：请求条数 ≠ 实际产出条数，
+      `n_sessions=10000` 实产 22,289 条）；
+    - 墙钟 = **首条 produce 之前**到 **flush 返回之后**的单调时钟差
+      （`time.monotonic`，不受系统改时间影响；含 flush——未确认的投递
+      不算「发出」的一手保守口径）；
+    - 起点的绝对时刻 = `plan.round_start_ms`（已有字段，不重复存）。
+    """
+
+    events: int
+    wall_ms: int
+
+    def __post_init__(self) -> None:
+        if self.events < 0:
+            raise ValueError(f"events 不能为负，实得 {self.events}")
+        if self.wall_ms < 0:
+            raise ValueError(f"wall_ms 不能为负，实得 {self.wall_ms}")
+
+    @property
+    def rate_per_sec(self) -> float | None:
+        """实测速率。`wall_ms == 0`（空批次）⇒ None：无定义，不可当 0。"""
+        if self.wall_ms == 0:
+            return None
+        return self.events / (self.wall_ms / 1000)
+
+    def to_plan_block(self) -> dict[str, Any]:
+        """写进 live plan JSON 的 `measured_send` 块（机读判据入口）。"""
+        rate = self.rate_per_sec
+        return {
+            "events": self.events,
+            "wall_ms": self.wall_ms,
+            "rate_per_sec": None if rate is None else round(rate, 3),
+            # 口径声明进机读面：读报告的人不用翻票面就知道分子分母是什么
+            "basis": "实际 produce 条数 / 首条produce至flush完成的单调时钟（含 flush）",
+        }
+
+    @classmethod
+    def from_plan_block(cls, block: dict[str, Any]) -> SendMeasurement | None:
+        """从 plan JSON 的 `measured_send` 块读回（判据侧用）。缺字段 ⇒ None。"""
+        events = block.get("events")
+        wall_ms = block.get("wall_ms")
+        if not isinstance(events, int) or not isinstance(wall_ms, int):
+            return None
+        try:
+            return cls(events=events, wall_ms=wall_ms)
+        except ValueError:
+            return None
+
+
 def _live(args: argparse.Namespace) -> int:
     params = _params(args)
     batch = produce_batch(params)
@@ -352,7 +409,20 @@ def _live(args: argparse.Namespace) -> int:
         )
         return 0
 
-    return _send_to_kafka(batch, params, args, shift_ms)
+    code, measured = _send_to_kafka(batch, params, args, shift_ms)
+    if measured is not None and args.plan:
+        # ★ 实测块合并回 plan（impl-06g）：判据侧（ecomgen.spike）读同一份
+        #   JSON 拿一手口径，不再 stdout 抓取——打印面会漂，机读面不会。
+        plan["measured_send"] = measured.to_plan_block()
+        try:
+            merge_path = Path(args.plan)
+            merge_path.write_text(
+                json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            print(f"[ecomgen] ⚠️ 实测块写回 plan 失败：{exc}", file=sys.stderr)
+    return code
 
 
 def _send_to_kafka(
@@ -360,21 +430,41 @@ def _send_to_kafka(
     params: ProducerParams,
     args: argparse.Namespace,
     shift_ms: int,
-) -> int:
-    """真发：按速率逐条投递。分区键取 `user_id` 保证每用户有序（gdd Q12）。"""
+) -> tuple[int, SendMeasurement | None]:
+    """真发：按速率逐条投递，并带回**一手测量**（impl-06g 票面 AC 第 2 条）。
+
+    分子 = 循环里实际 `produce()` 成功的条数（`sent`），不是
+    `plan.total_events`——「请求条数 ≠ 实际产出条数」是票面一手事实。
+    墙钟 = 首条 produce 之前到 `flush()` 返回之后的 `time.monotonic` 差
+    （含 flush：未送达 broker 的投递不算「发出」的保守口径）。
+    """
     try:
         from confluent_kafka import Producer
     except ImportError:
         print("[ecomgen] ✗ 缺少 confluent-kafka", file=sys.stderr)
-        return 2
+        return 2, None
 
     producer = Producer({"bootstrap.servers": args.bootstrap, "client.id": "ecomgen"})
     shift = shift_ms
 
     sent = 0
-    interval = 1.0 / params.rate_per_sec
-    next_at = time.monotonic()
+    # ── 分窗信贷节流（impl-06g，2026-10-26 实测定案）────────────────────
+    # 逐条 pacing（按 i/rate 的目标时间线逐条 sleep）被实机证伪：实测 969.2
+    # events/s @ target 1000（11 134 条 / 11 488 ms）——每条 ~32 µs 的
+    # sleep 超时 × 11 134 条 = 354 ms 纯损耗，且该损耗**结构性无法追回**
+    # （sleep 超时只增不减，逐条时间线永远落后于理想线）⇒ 实测速率永远
+    # 低于 --rate，REQ-F-GEN-04 的 ≥1000/s 按该调度**原理性不可达**。
+    # 修法＝负载发生器标准语义：--rate 是「每 1 s 窗口的持续目标速率」，
+    # 窗口初把份额一次性可用化（front-load），发满即睡到下一窗边界。
+    # 实测口径不变（首条 produce → flush 完成），完成的批次总在
+    # ceil(N/rate) 个窗口内 ⇒ 实测 ≥ rate（1 s 窗的天然裕度）。
+    # ⚠️ 只改节奏、不改内容（F3 裁决：内容与 seed 绑定；节流仍由墙钟控制）。
+    window_s = 1.0
+    pacing_start = time.monotonic()
+    first_produce_ms: float | None = None
     for event in batch.events:
+        if first_produce_ms is None:
+            first_produce_ms = time.monotonic()
         record = dict(event.record)
         record["event_time"] = int(record["event_time"]) + shift
         payload = json.dumps(
@@ -386,19 +476,45 @@ def _send_to_kafka(
             value=payload.encode("utf-8"),
         )
         sent += 1
+        producer.poll(0)
 
-        # 按速率节流：**只控制节奏，不改内容**（F3 裁决）
-        next_at += interval
-        sleep_for = next_at - time.monotonic()
-        if sleep_for > 0:
-            time.sleep(sleep_for)
-        else:
-            next_at = time.monotonic()
-            producer.poll(0)
+        # 发满本窗份额 ⇒ 睡到下一窗边界（信贷随墙钟恢复）
+        if _window_quota_exhausted(
+            sent, time.monotonic() - pacing_start, params.rate_per_sec
+        ):
+            sleep_until = (
+                int((time.monotonic() - pacing_start) / window_s) + 1
+            ) * window_s + pacing_start
+            while True:
+                delay = sleep_until - time.monotonic()
+                if delay <= 0:
+                    break
+                time.sleep(min(delay, 0.05))
 
     producer.flush(30)
-    print(f"[ecomgen] live 完成：已投递 {sent} 条 → {args.bootstrap}/{args.topic}")
-    return 0
+    end_ms = time.monotonic()
+    wall_ms = 0 if first_produce_ms is None else int((end_ms - first_produce_ms) * 1000)
+    measurement = SendMeasurement(events=sent, wall_ms=wall_ms)
+    rate = measurement.rate_per_sec
+    rate_text = "无定义（空批次）" if rate is None else f"{rate:.1f} events/s"
+    print(
+        f"[ecomgen] live 完成：已投递 {sent} 条 → {args.bootstrap}/{args.topic}；"
+        f"实测 {rate_text}（目标 {params.rate_per_sec}/s 分窗节流；含 flush，一手口径）"
+    )
+    return 0, measurement
+
+
+def _window_quota_exhausted(
+    sent: int, elapsed_s: float, rate_per_sec: int, window_s: float = 1.0
+) -> bool:
+    """分窗信贷判据（纯函数，可单测）：本窗口的份额是否已发满。
+
+    份额 = `rate_per_sec × 已进入的窗口序号`（窗口序号从 1 起）。
+    front-load：窗口内份额一次性可用，发满才等边界——这是「--rate 是
+    持续目标速率而非逐条时间线」的机读形态。
+    """
+    window_index = int(elapsed_s / window_s) + 1
+    return sent >= rate_per_sec * window_index
 
 
 def main(argv: Sequence[str] | None = None) -> int:

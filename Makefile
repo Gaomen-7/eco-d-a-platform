@@ -40,6 +40,7 @@ help:
 	@echo "  assert：离线断言集（A1/A3/快照/拉链，impl-03d）—— replay 之后跑"
 	@echo "  replay-idempotent：同批重放两遍 + 指纹比对（幂等离线版，impl-03d）"
 	@echo "  r7i-falsify：R7-i 三案机读判据（live 跨度 / committed offsets / 水位不劫持，impl-06d）"
+	@echo "  spike：尖峰真发判据（impl-06g）；DRY_RUN=1 退回预演"
 
 # ── 编排 ────────────────────────────────────────────────────────────
 # ── 本地镜像构建（impl-03a）─────────────────────────────────────────────
@@ -163,13 +164,22 @@ verify-fault-corrupt:
 	  exit 0
 
 # ── 尖峰 ────────────────────────────────────────────────────────────
-# ★ 现状：只跑 --dry-run，速率判据（≥1000 events/s）从未真发——一手证据归
-#   impl-06g（.scratch/ecom-user-behavior-pipeline/issues/impl-06g-spike-live-rate-proof.md）。
+# impl-06g 起默认**真发**：判据 ≥1000 events/s（SRS REQ-F-GEN-04 / REQ-NF-PERF-03）
+# 由 src/ecomgen/spike.py 执行并机读判定（速率/期间存活/lag 回落/DLQ 归因），
+# 报告落 artifacts/spike/。实测记录见 impl-06g 票面与 README「八个冻结目标」表。
+# 无栈环境预演：make spike DRY_RUN=1（退回 --dry-run，只打印发送计划）。
+# ★ bootstrap 默认 127.0.0.1:29092：compose 的 HOST listener（advertised 就是
+#   宿主可达的 127.0.0.1:29092）。**不是** 9092——那个口 advertised 成
+#   kafka:9092，宿主解析不了（P0 实测 FAIL，见 docker-compose.yml kafka 注释）。
 spike:
-	@echo "[spike] 尖峰模式：短时 ≥1000 events/s"
-	@$(UV) run ecomgen live --seed 1 --sessions 5000 --rate 1000 \
-	  --bootstrap $${KAFKA_BOOTSTRAP:-kafka:9092} --dry-run
-	@echo "  ⚠️ 真发需 compose 网内可达 kafka:9092（宿主跑要改用 127.0.0.1:9092）"
+	@if [ "$(DRY_RUN)" = "1" ]; then \
+	  echo "[spike] 预演（DRY_RUN=1）：打印发送计划，不连 Kafka"; \
+	  $(UV) run ecomgen live --seed 1 --sessions 5000 --rate 1000 \
+	    --bootstrap $${KAFKA_BOOTSTRAP:-127.0.0.1:29092} --dry-run; \
+	else \
+	  echo "[spike] 尖峰模式真发：判据 ≥1000 events/s（SRS REQ-NF-PERF-03）"; \
+	  $(UV) run python -m ecomgen.spike; \
+	fi
 
 # ── 日志 ────────────────────────────────────────────────────────────
 logs:
