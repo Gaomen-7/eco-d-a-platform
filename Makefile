@@ -163,6 +163,8 @@ verify-fault-corrupt:
 	  exit 0
 
 # ── 尖峰 ────────────────────────────────────────────────────────────
+# ★ 现状：只跑 --dry-run，速率判据（≥1000 events/s）从未真发——一手证据归
+#   impl-06g（.scratch/ecom-user-behavior-pipeline/issues/impl-06g-spike-live-rate-proof.md）。
 spike:
 	@echo "[spike] 尖峰模式：短时 ≥1000 events/s"
 	@$(UV) run ecomgen live --seed 1 --sessions 5000 --rate 1000 \
