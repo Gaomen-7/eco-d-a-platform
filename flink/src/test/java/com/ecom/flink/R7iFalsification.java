@@ -24,8 +24,8 @@ import java.util.Map;
  *   <li><b>案 2</b>：把生产代码的起始偏移决策器（{@link SourceTimePolicy#startingOffsets()}）
  *       放到**桩 retriever** 上求值 —— 有 committed 时起始必须 == committed。
  *       旧实现 {@code OffsetsInitializer.earliest()} 在此必然返回 beginning ⇒ 红。
- *   <li><b>案 3</b>：把生产代码的水位生成器（{@link SourceTimePolicy#watermarkGenerator(long)}）
- *       喂「一条合法事件 + 一条未来 2 h 的脏事件」—— 水位必须不被脏事件抬起。
+ *   <li><b>案 3</b>：把生产代码的水印生成器（{@link SourceTimePolicy#watermarkGenerator(long)}）
+ *       喂「一条合法事件 + 一条未来 2 h 的脏事件」—— 水印必须不被脏事件抬起。
  *       旧实现（{@code BoundedOutOfOrdernessWatermarks} 裸用、时间戳在 parse 之前赋值）
  *       会抬到脏事件 et − 允许延迟 ⇒ 红。
  * </ul>
@@ -172,11 +172,11 @@ public final class R7iFalsification {
         }
     }
 
-    // ── 案 3：被质量门拒绝的事件不得抬水位 ─────────────────────────────
+    // ── 案 3：被质量门拒绝的事件不得抬水印 ─────────────────────────────
 
     /**
      * 喂「合法事件 et=now−1s」并周期发射，再喂「未来 2 h 的脏事件」并周期发射：
-     * 水位必须停留在 ≈ now−1s−允许延迟，**不得**跳到脏事件附近。
+     * 水印必须停留在 ≈ now−1s−允许延迟，**不得**跳到脏事件附近。
      *
      * <p>实测劫持幅度：gen-a 的尾部未来事件 et ≈ +2.1 h（impl-05 §4）。
      */
@@ -204,18 +204,18 @@ public final class R7iFalsification {
         long afterDirty = sink.last;
 
         if (afterDirty > afterClean) {
-            fail("案3 A：被拒的未来事件把水位抬了（before=" + afterClean
+            fail("案3 A：被拒的未来事件把水印抬了（before=" + afterClean
                     + " after=" + afterDirty + "，脏事件 et=" + dirtyEt
                     + "，劫持幅度 " + (afterDirty - afterClean) + " ms）");
         } else if (afterDirty < cleanEt - JobConfig.ALLOWED_LATENESS_MS - 1) {
-            fail("案3 A：合法事件的水位反而不对（" + afterDirty
+            fail("案3 A：合法事件的水印反而不对（" + afterDirty
                     + "，期望 ≈ " + (cleanEt - JobConfig.ALLOWED_LATENESS_MS) + "）");
         } else {
-            System.out.println("[案3 A] 未来脏事件不抬水位（水位=" + afterDirty + "）：PASS");
+            System.out.println("[案3 A] 未来脏事件不抬水印（水印=" + afterDirty + "）：PASS");
         }
     }
 
-    /** 非时间型脏事件（缺必填字段）带未来 et，同样不得抬水位。 */
+    /** 非时间型脏事件（缺必填字段）带未来 et，同样不得抬水印。 */
     static void checkDirtyNonTimeReasonDoesNotAdvanceWatermark() {
         WatermarkGenerator<String> gen = SourceTimePolicy.watermarkGenerator(NOW_MS);
         Sink sink = new Sink();
@@ -238,18 +238,18 @@ public final class R7iFalsification {
         gen.onEvent(bad, dirtyEt, sink);
         gen.onPeriodicEmit(sink);
         if (sink.last > before) {
-            fail("案3 B：schema_invalid 的未来事件抬了水位（before=" + before
+            fail("案3 B：schema_invalid 的未来事件抬了水印（before=" + before
                     + " after=" + sink.last + "）");
         } else {
-            System.out.println("[案3 B] 非时间型脏事件不抬水位：PASS");
+            System.out.println("[案3 B] 非时间型脏事件不抬水印：PASS");
         }
     }
 
     /**
-     * 未见任何事件时，水位必须是 {@code Long.MIN_VALUE}（与内置实现逐字相同）。
+     * 未见任何事件时，水印必须是 {@code Long.MIN_VALUE}（与内置实现逐字相同）。
      *
      * <p>这条是**本轮实测补上的**：首版把初值写成 {@code Long.MIN_VALUE + 1}，
-     * 减掉 outOfOrderness 后**下溢**成极大的正数 ⇒ 作业冷启第一步水位就跳到未来，
+     * 减掉 outOfOrderness 后**下溢**成极大的正数 ⇒ 作业冷启第一步水印就跳到未来，
      * 恰好复现 R7-i 的「静默误丢」形态（只是诱因从脏事件换成了初值）。
      * 本条把那次回归钉死在判据里。
      */
@@ -258,10 +258,10 @@ public final class R7iFalsification {
         Sink sink = new Sink();
         gen.onPeriodicEmit(sink);
         if (sink.last != Long.MIN_VALUE) {
-            fail("案3 初值：未见事件时水位应为 Long.MIN_VALUE，实得 " + sink.last
+            fail("案3 初值：未见事件时水印应为 Long.MIN_VALUE，实得 " + sink.last
                     + "（= 下溢到未来 ⇒ 冷启首条真实事件会被误判超期）");
         } else {
-            System.out.println("[案3 初值] 未见事件时水位 = Long.MIN_VALUE：PASS");
+            System.out.println("[案3 初值] 未见事件时水印 = Long.MIN_VALUE：PASS");
         }
     }
 
@@ -304,7 +304,7 @@ public final class R7iFalsification {
                 + "\"schema_version\":\"1.0\",\"payload\":\"{}\"}";
     }
 
-    /** 只记最后一次水位。 */
+    /** 只记最后一次水印。 */
     static final class Sink implements WatermarkOutput {
         long last = Long.MIN_VALUE;
 

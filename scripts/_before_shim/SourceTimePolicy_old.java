@@ -18,6 +18,9 @@ import java.time.Duration;
  *       （原 {@code GateSegment.java:236-240} 的 {@code withTimestampAssigner}）
  * </ul>
  * 本文件**只**用于证明「旧语义在 R7iFalsification 下必然红」；不参与生产构建。
+ * ⚠️ 它是**重写件**而非 git 历史的逐字旧码：旧语义行为（earliest / 裸
+ * forBoundedOutOfOrderness / 冻结时钟）逐字保真，但为让新判据可在其上求值，
+ * 补了与生产侧同签名的判据出口。反例证明力以此件为载体（impl-06d code-review 登记）。
  */
 public final class SourceTimePolicy {
 

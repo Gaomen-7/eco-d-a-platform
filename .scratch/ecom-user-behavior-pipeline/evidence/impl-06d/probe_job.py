@@ -101,10 +101,10 @@ def summary() -> dict:
 
 
 def watermarks() -> dict:
-    """读 source 算子的**当前水位**（Flink REST /vertices/{vid}/watermarks），
+    """读 source 算子的**当前水印**（Flink REST /vertices/{vid}/watermarks），
     并给出「相对墙钟的未来偏移」——案 3 的机读终判面。
 
-    判据：被拒的 future 事件**不得**把水位抬到墙钟之后超过裕度（5 min）。
+    判据：被拒的 future 事件**不得**把水印抬到墙钟之后超过裕度（5 min）。
     旧实现下该值 ≈ +2 h（impl-05 §4 实测），修复后应 ≈ −outOfOrderness。
     """
     import time as _time
@@ -122,7 +122,7 @@ def watermarks() -> dict:
         if "gate-source" not in name:
             continue
         # ★ /vertices/{id}/watermarks 在 2.2.1 实测返回 []（空数组），
-        #   能取到的水位在 **subtask 的 metric**：{op}.currentOutputWatermark。
+        #   能取到的水印在 **subtask 的 metric**：{op}.currentOutputWatermark。
         #   名字随算子链路而定（此处实测 parse-event.currentOutputWatermark），
         #   故按候选名逐个试，取第一个非空。
         values: list[int] = []

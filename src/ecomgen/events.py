@@ -49,7 +49,8 @@ _REQUIRED_BY_TYPE: Final[dict[str, tuple[str, ...]]] = {
 #   否则两侧各写一个 5 min，改一侧另一侧就成了假判据。
 #   Flink 侧对偶是 EventQuality.FUTURE_TOLERANCE_MS（两处同源、改则同步）。
 FUTURE_TOLERANCE_MS: Final[int] = 5 * 60_000
-# 兼容旧私有名（同源，勿另赋值）
+# 兼容旧私有名（同源，勿另赋值）。新代码一律用公开名；存量 test_replay_sql.py
+# 仍 import 私名，待该测试面下次改动时一并收敛。
 _FUTURE_TOLERANCE_MS: Final[int] = FUTURE_TOLERANCE_MS
 
 # 规则①下界的允许乱序幅度 = 实时侧允许延迟，默认 2 分钟

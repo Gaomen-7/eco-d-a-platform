@@ -221,7 +221,7 @@ public final class GateSegment {
     }
 
     /**
-     * Kafka source 构造（主 topic）：起始偏移与水位策略都由 {@link SourceTimePolicy} 定。
+     * Kafka source 构造（主 topic）：起始偏移与水印策略都由 {@link SourceTimePolicy} 定。
      *
      * <h2>★ R7-i 两案在此收口（impl-06d）</h2>
      * <ol>
@@ -230,11 +230,11 @@ public final class GateSegment {
      *       {@link SourceTimePolicy#startingOffsets()}（committed 优先、无则 earliest）。
      *   <li><b>时间戳分配先于质量门</b>：旧实现用
      *       {@code forBoundedOutOfOrderness(...).withTimestampAssigner((s, ts) -> parseEventTime(s))}
-     *       ⇒ 未来脏事件在**被判脏之前**就把水位抬到未来。改为
-     *       {@link SourceTimePolicy#watermarkGenerator()}（先过质量门再抬水位）。
+     *       ⇒ 未来脏事件在**被判脏之前**就把水印抬到未来。改为
+     *       {@link SourceTimePolicy#watermarkGenerator()}（先过质量门再抬水印）。
      * </ol>
      *
-     * <p>⚠️ 这里**不再显式设时间戳分配器**：水位生成器自己读 {@code event_time}
+     * <p>⚠️ 这里**不再显式设时间戳分配器**：水印生成器自己读 {@code event_time}
      * 判合法性并推进 max，{@code withTimestampAssigner} 的返回值只用于下游算窗口
      * 归属（脏事件到不了下游）。两者必须读**同一个** et 口径，故时间戳仍由
      * {@link RawEvent#parseEventTime(String)} 给——见下。
@@ -261,7 +261,7 @@ public final class GateSegment {
                 WatermarkStrategy.<String>forGenerator(
                                 ignored -> SourceTimePolicy.watermarkGenerator())
                         // 时间戳仍由同一份 et 口径给：下游窗口归属用它。
-                        // 脏事件的 et 不参与水位，故这里给它什么都不会劫持链路。
+                        // 脏事件的 et 不参与水印，故这里给它什么都不会劫持链路。
                         .withTimestampAssigner((s, ts) -> RawEvent.parseEventTime(s)),
                 "gate-source" + groupSuffix);
     }

@@ -1,7 +1,7 @@
 # impl-06d: R7-i 三案修复——live 跨度 · 冷启重放 · 水位劫持
 
 Type: task
-Status: done
+Status: resolved
 Blocked by: —（impl-05 已结清；实施会触碰 impl-02 已验收的 P1 链路，判据纪律见 Notes）
 
 > ✅ **2026-10-25 用户批准开票**（裁决：R7-i 三条修复候选**一张票收口**——三案同源：重放与水位，一起验收）。
@@ -15,17 +15,18 @@ Blocked by: —（impl-05 已结清；实施会触碰 impl-02 已验收的 P1 �
 
 **验收标准**
 
-- [ ] 三案各自的**反例证伪**先行（沿 impl-02d 判据纪律）：未修复行为可机读复现，修复后反例转绿
-- [ ] 作业重提：committed offsets 之后的增量消费（topic 既有数据**不再**全量重放，numRecordsOut 与增量相符）
-- [ ] 人工注入一条未来事件后重提作业：水位不被钉在未来（探针/真实事件照常落 Doris）
-- [ ] `ecomgen live` 默认与合规参数下，DLQ 不再出现 `time_out_of_range` 增量（保留 chaos 注入的设计脏）
-- [ ] 回归面全绿：`make verify` 两连绿 + `verify-fault` 反例按预期失败 + 全量 pytest
-- [ ] HLD §8-R7-i 标已结案（处置列回填修法与实证），运维口径段随修复失效部分划除
-- [ ] 全部本地提交，未推送
+- [x] 三案各自的**反例证伪**先行（沿 impl-02d 判据纪律）：未修复行为可机读复现，修复后反例转绿（`scripts/_before_r7i.sh` 在旧语义 shim 上 4 条红：案2 B / 案3 A 劫持 7,201,000 ms / 案3 B / 案3 时钟；`make r7i-falsify` 退出码 0）
+- [x] 作业重提：committed offsets 之后的增量消费（topic 既有数据**不再**全量重放，numRecordsOut 与增量相符）（投入 96 条 ⇒ 源算子 read-records = 96，非 topic 全量 54,066）
+- [x] 人工注入一条未来事件后重提作业：水印不被钉在未来（探针/真实事件照常落 Doris）（注入 et=now+2h 后 ahead_of_now ≈ −243 s；DLQ 只 +1 条；`recon-offline-mirror-doris` 逐值全等）
+- [x] `ecomgen live` 默认与合规参数下，DLQ 不再出现 `time_out_of_range` 增量（保留 chaos 注入的设计脏）（窗尾对齐后尾部偏移恒 0 ≤ 裕度 300,000 ms 设计值）
+- [x] 回归面全绿：`make verify` 两连绿 + `verify-fault` 反例按预期失败 + 全量 pytest（verify 两轮 10/10；`verify-fault` 12/12 PASS；`verify-fault-corrupt` 12 PASS/2 FAIL 退出码 1 = 按预期失败；pytest 314 passed）
+- [x] HLD §8-R7-i 标已结案（处置列回填修法与实证），运维口径段随修复失效部分划除（HLD 处置列 + boundary §11.4 划除线）
+- [x] 全部本地提交，未推送（`40e4227` 及本轮 review 修订，均未推送）
 
 ## Notes
 
 - **改的是 impl-02/02b 已验收面**：`GateSegment.java` source 初始化与时间戳分配属 P1 判据覆盖的链路——每案独立小步提交，先证伪后修复，不许顺手重构。
+  - **执行口径（2026-10-26 code-review 后登记）**：三案代码以**单个 commit** 收口（`40e4227`），与「每案独立小步提交」字面不符——用户批准开票时的裁决即「三案同源、一张票收口」，且本仓 impl-05/06 系列一贯按「一票一 commit」落地；「先证伪后修复」已逐案满足（反例侧脚本与判据先红、修复后转绿）。此条作为纪律例外记档，不改历史。
 - 修复后**首次重提仍会全量重放一次**（旧 committed offsets 语义切换前的最后一批）——该次重放按 R7-i 运维口径执行（确认 topic 无未陈化未来事件），不算回归失败。
 - 三案若实证后出现耦合冲突（如 committedOffsets 与幂等 checkpoint 语义冲突），允许拆副票，但须先在票面登记拆分理由。
 
@@ -111,8 +112,8 @@ Blocked by: —（impl-05 已结清；实施会触碰 impl-02 已验收的 P1 �
 | `make r7i-falsify` | 退出码 0（案 1 3 条 pytest + 案 2 三层 + 案 3 四条 javac/java 断言） |
 | `scripts/_before_r7i.sh`（反例侧） | 按预期红（案2 B / 案3 A 劫持 7,201,000 ms / 案3 B / 案3 时钟，共 4 条） |
 | `make verify` 两连绿 | **10/10 PASS，退出码 0**（两轮均绿） |
-| `make verify-fault` | 见 §三注 |
-| `make verify-fault-corrupt` | 见 §三注 |
+| `make verify-fault` | **12/12 PASS，退出码 0**（首跑因 `eco-client` 残留容器环境坑恒挂，重建 client 后过——见 §三注） |
+| `make verify-fault-corrupt` | **按预期失败**（12 PASS / 2 FAIL，退出码 1——判据确实在断言） |
 | 全量 `pytest` | **314 passed** |
 | `make lint`（ruff check + format --check） | 全过 |
 | `make typecheck`（basedpyright） | errors=0 warnings=6 files=14 ⇒ PASS |
@@ -130,7 +131,7 @@ Blocked by: —（impl-05 已结清；实施会触碰 impl-02 已验收的 P1 �
 ### 五、运行态与提交
 
 - 分支 `feat/ecom-pipeline-impl`，**全部本地提交，未推送**。
-- 最终 jar：`flink/target/ecom-flink-0.1.0-SNAPSHOT.jar`（sha256 `0fee2170…`），
+- 最终 jar：`flink/target/ecom-flink-0.1.0-SNAPSHOT.jar`（sha256 `9031125a…`（code-review 修订后终版）），
   JM/TM 两端 `/opt/flink/usrlib/ecom-flink.jar` sha256 与之一致。
 - 运行态：作业 `104c837b…` RUNNING；消费组 `ecom-p1-consumer` 六分区 lag=0。
 - 取证脚本：`scripts/r7i-falsify.sh`、`scripts/_before_r7i.sh`、

@@ -6,6 +6,9 @@
 #   startingOffsets()  = OffsetsInitializer.earliest()         ← 旧 GateSegment.java:232
 #   watermarkGenerator = forBoundedOutOfOrderness(...) 裸用   ← 旧 withTimestampAssigner
 # 故 harness 一字不改地跑在旧语义上 ⇒ 红，跑在新语义上 ⇒ 绿。
+# ⚠️ 工具链硬编码：JDK/Maven 走 P0 解包的固定用户路径（Makefile 同源，见
+#   Makefile 头注「工具链自举」），与「运行宿主只有一台、路径钉死」的 P0 前提一致；
+#   换宿主时随 ~/.p0-toolchain-env.mk 一起改。
 set -uo pipefail
 REPO="/mnt/f/Anaconda practice project/eco-a-d-platform"
 cd "$REPO" || exit 1

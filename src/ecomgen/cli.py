@@ -292,7 +292,7 @@ def _live(args: argparse.Namespace) -> int:
     # 旧实现 shift = round_start_ms − raw_min_ms：批次**起点**落到现在，逻辑跨度
     # 原样保留 ⇒ 尾部事件 et = now + span。而 span 随 --sessions 线性增长
     # （实测 100 会话 ≈ 8 min、默认 1000 会话更甚、300 会话实测 1,270,148 ms ≈ 21 min），
-    # 质量门的未来裕度只有 5 min（events.FUTURE_TOLERANCE_MS 与
+    # 质量门的未来裕度只有 5 min（设计值，events.FUTURE_TOLERANCE_MS 与
     # EventQuality.FUTURE_TOLERANCE_MS 同源）⇒ 合规参数下的尾部必然被判
     # time_out_of_range 进 DLQ —— 即「生成器自己产出质量门拒收的事件」。
     # 窗尾对齐后：整批落在 [now − span, now]，尾部永不超过 now，故永不超界；
@@ -312,7 +312,7 @@ def _live(args: argparse.Namespace) -> int:
     if tail_offset_ms > FUTURE_TOLERANCE_MS:
         print(
             f"[ecomgen] ✗ live 平移后尾部超界：tail_offset_ms={tail_offset_ms} ms "
-            f"> 质量门未来裕度 {FUTURE_TOLERANCE_MS} ms（span={span_ms} ms）",
+            f"> 质量门未来裕度 {FUTURE_TOLERANCE_MS} ms（设计值；span={span_ms} ms）",
             file=sys.stderr,
         )
         return 2
@@ -348,7 +348,7 @@ def _live(args: argparse.Namespace) -> int:
         print(
             f"[ecomgen] live --dry-run：{len(batch.events)} 条，原始跨度 {span_ms} ms，"
             f"窗尾平移至 {round_start_ms}（尾部偏移 {tail_offset_ms} ms "
-            f"≤ 裕度 {FUTURE_TOLERANCE_MS} ms），rate={params.rate_per_sec}/s"
+            f"≤ 裕度 {FUTURE_TOLERANCE_MS} ms，设计值），rate={params.rate_per_sec}/s"
         )
         return 0
 

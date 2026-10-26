@@ -23,7 +23,14 @@ public final class EventQuality {
     static final List<String> EVENT_TYPES =
             List.of("page_view", "view_item", "add_to_cart", "begin_checkout", "purchase");
 
-    /** 规则①上界裕度：不晚于「基准 + 5 分钟」（设计值，非官方保证）。 */
+    /**
+     * 规则①上界裕度：不晚于「基准 + 5 分钟」（设计值，非官方保证）。
+     *
+     * <p>对偶名：Python 侧 {@code events.FUTURE_TOLERANCE_MS}（impl-06d 公开化）。
+     * 两处各写一份 5×60_000 字面量，靠本注释互相指认——改任一侧必须同步另一侧
+     * （tests/test_replay_sql.py 已把 Python↔SQL 两侧的一致性判据机器化，Java↔Python
+     * 侧由 {@code R7iFalsification} 的「未来 2 h 必判脏」前置间接钉住）。
+     */
     static final long FUTURE_TOLERANCE_MS = 5 * 60_000L;
 
     /**
@@ -38,13 +45,14 @@ public final class EventQuality {
     /**
      * 判定一个事件是否为真脏，**显式给上界基准时钟**（R7-i 案 3 修复新增）。
      *
-     * <p><b>为什么必须能显式传时钟</b>：source 的**时间戳分配**（水位之前）与
-     * 质量门（水位之后）判的是同一条规则；若两处各读一次 {@code currentTimeMillis}，
-     * 同一事件可能在两处得到不同结论 ⇒ 被门拒绝的事件仍然已经抬过水位
-     * （正是 R7-i 案 3 要消掉的形态，只是幅度小一点）。传同一个 instant 让
-     * 两处判定**同源**。
+     * <p><b>为什么必须能显式传时钟</b>：判据（{@code R7iFalsification}）需要
+     * 可复现，不能依赖墙钟——固定时钟让「未来 2 h 事件必被判脏」这条前置在
+     * 任何时刻跑判据都成立。
      *
-     * <p>另：判据（{@code R7iFalsification}）需要可复现，不能依赖墙钟。
+     * <p>⚠️ 与下游 {@code ValidateAndDedup} 的关系：两处各读一次墙钟，**不是**
+     * 同一个 instant（读数必有毫秒级差）。这条差异可接受：上界裕度 5 min 远大于
+     * 毫秒级差，同一事件不可能在两处得到相反结论；两处判定分工不同——水印
+     * 生成器处判「准不准水印」，下游判「进主流还是 DLQ」。
      *
      * @param nowMs 规则①上界的基准时刻（UTC epoch 毫秒）
      */
@@ -93,11 +101,6 @@ public final class EventQuality {
         }
 
         return null;
-    }
-
-    /** 只有「时间型脏」才可能劫持水位；结构/取值型脏与时间无关。 */
-    static boolean isTimeReason(String reason) {
-        return JobConfig.REASON_TIME_OUT_OF_RANGE.equals(reason);
     }
 
     /** 收集全部违规原因（与 Python 侧 `validate_event` 返回列表的形态一致，供日志用）。 */

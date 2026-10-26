@@ -51,9 +51,9 @@
   各读一次墙钟得出不同结论。
 - **反例证伪**：`R7iFalsification#checkRejectedEventDoesNotAdvanceWatermark` 在旧语义
   shim 上测出**劫持幅度 7,201,000 ms ≈ 2.0 h**（与 impl-05 §4 实测 +2.1 h 同量级），
-  修复后水位纹丝不动。
+  修复后水印纹丝不动。
 - **本轮自查发现并修掉的一处真缺陷**：首版初值写成 `Long.MIN_VALUE + 1`，减
-  outOfOrderness 后**下溢成极大的正数** ⇒ 作业冷启第一步水位就跳到未来，
+  outOfOrderness 后**下溢成极大的正数** ⇒ 作业冷启第一步水印就跳到未来，
   **恰好复现 R7-i 的「静默误丢」形态**。已按内置实现（javap 实证）改为
   `Long.MIN_VALUE + outOfOrderness + 1`，并加判据 `checkInitialWatermarkStaysAtLowerBound`
   把这次回归钉死。
@@ -61,11 +61,11 @@
 ## 二、结案轮（2026-10-26）补齐的四项
 
 1. **案 3 真机终判 —— 到手**。重启 JM/TM 使新 jar 生效、重提作业（`104c837b…`）→
-   注入 et = now + 2 h 的 `r7i-future-*` → 源算子水位 `ahead_of_now_ms = −242,724`
+   注入 et = now + 2 h 的 `r7i-future-*` → 源算子水印 `ahead_of_now_ms = −242,724`
    （**仍在墙钟后侧**）、DLQ 只 +1 条（`time_out_of_range`）→ `make verify` 两连绿，
    `recon-offline-mirror-doris` **逐值全等 PASS**。
 2. **未来脏事件的口径**：本轮**保留**在 topic 里做冒烟（正是它证明案 3 生效）；
-   陈化后无害这条由「水位不越过墙钟 + 质量门按到达时刻判」两条保证，不再需要单独口径。
+   陈化后无害这条由「水印不越过墙钟 + 质量门按到达时刻判」两条保证，不再需要单独口径。
 3. **回归面全绿 —— 已跑**：`make r7i-falsify` 0；`_before_r7i.sh` 必红（4 条）；
    `make verify` 两连绿 10/10；全量 pytest 314 passed；lint/typecheck 全过。
 4. **HLD / 运维口径 —— 已回填**（§8-R7-i 处置列 + `reproducibility-boundary.md` §11.4 划除）。

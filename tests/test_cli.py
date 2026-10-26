@@ -147,7 +147,7 @@ def test_live_dry_run_shifts_event_time_to_round_start(tmp_path: Path) -> None:
 # 批次逻辑跨度原样保留 ⇒ 尾部事件 event_time = now + span，而 span 随
 # --sessions 线性增长（默认 1000 会话 ⇒ span ≈ 80 min，实测 100 会话 ≈ 8 min）。
 # Flink 侧质量门的未来裕度只有 5 min（EventQuality.FUTURE_TOLERANCE_MS，
-# 与 Python 侧 events._FUTURE_TOLERANCE_MS 同源）⇒ 超界尾部被正确判
+# 与 Python 侧 events.FUTURE_TOLERANCE_MS 同源）⇒ 超界尾部被正确判
 # time_out_of_range 进 DLQ。
 #
 # 下面这条判据是**机读的**，不依赖墙钟之外的手工观测：把「平移后的最晚事件时间」
@@ -197,7 +197,7 @@ def test_live_shift_keeps_tail_within_future_tolerance() -> None:
     ⚠️ 判据用 plan 的**可解析字段**而不是重新算一遍 shift —— 后者会把实现
     再抄一份，实现改了判据也跟着改，等于没判。
     """
-    from ecomgen.events import _FUTURE_TOLERANCE_MS
+    from ecomgen.events import FUTURE_TOLERANCE_MS
 
     plan_path = Path(__file__).parent / "_live_plan_r7i.json"
     try:
@@ -221,14 +221,14 @@ def test_live_shift_keeps_tail_within_future_tolerance() -> None:
         plan_path.unlink(missing_ok=True)
 
     # 300 会话的原始跨度 ≈ 4×100 会话的 8 min ⇒ 必然 > 5 min 裕度（旧实现必然红）
-    assert data["span_ms"] > _FUTURE_TOLERANCE_MS, (
+    assert data["span_ms"] > FUTURE_TOLERANCE_MS, (
         f"前置条件不成立：300 会话的原始跨度 {data['span_ms']} ms 未超过裕度 "
-        f"{_FUTURE_TOLERANCE_MS} ms，这条反例对旧实现不构成挑战"
+        f"{FUTURE_TOLERANCE_MS} ms，这条反例对旧实现不构成挑战"
     )
     tail_after_shift = data["round_start_ms"] + data["tail_offset_ms"]
-    assert tail_after_shift <= data["round_start_ms"] + _FUTURE_TOLERANCE_MS, (
+    assert tail_after_shift <= data["round_start_ms"] + FUTURE_TOLERANCE_MS, (
         "平移后尾部事件落在质量门未来裕度之外："
-        f"尾部偏移 {data['tail_offset_ms']} ms > 裕度 {_FUTURE_TOLERANCE_MS} ms "
+        f"尾部偏移 {data['tail_offset_ms']} ms > 裕度 {FUTURE_TOLERANCE_MS} ms "
         f"（原始跨度 {data['span_ms']} ms）"
     )
 
