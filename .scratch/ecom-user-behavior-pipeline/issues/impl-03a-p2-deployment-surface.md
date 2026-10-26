@@ -147,7 +147,7 @@ compose 与 `docker/flink/` 两边都有标注词、Dockerfile 有标注、compo
 
 ⇒ **「挂对了卷」不等于「能写」**，故新增 ④b 独立判据。
 
-### §C 环境阻塞（如实登记，仍未销项）
+### §C 环境阻塞（如实登记；遗留项已于 2026-10-26 销项，见下方销项行）
 
 **本机 WinNAT 排除 TCP 8024–8123**，覆盖冻结端口 8030/8040/8081/8088；非管理员无法释放，本会话禁止提权。
 
@@ -156,6 +156,7 @@ compose 与 `docker/flink/` 两边都有标注词、Dockerfile 有标注、compo
 **处置**：功能性实证经 `COMPOSE_EXTRA_FILES` 叠加**只改宿主侧发布端口**的 override 完成（容器内端口/卷/内存/healthcheck/镜像名一律不动），该 override 落 `.scratch/tmp/`（被 `.gitignore:80` 覆盖）。
 
 > ⚠️ **遗留项（明确不勾销）**：⑦「冻结端口」这半边**尚未**在真实端口上验证过。端口恢复后须**不设** `COMPOSE_EXTRA_FILES` 重跑一次。这是宿主环境问题，不改变本票功能面结论，但必须在 impl-05 终验前补跑。
+> ✅ **销项（2026-10-26，[impl-06f-4](impl-06f-4-closeout-gate-deploy-proof.md) 收尾门实跑）**：不设 `COMPOSE_EXTRA_FILES` 复跑 `deploy_surface_check.sh`（10 PASS / 1 FAIL，唯一 FAIL 是判据 ⑤ 的排除集不完备，已归因为判据自身缺陷并立 [impl-06i](impl-06i-deploy-check-5-exclusion-defect.md)），判据 ⑦ PASS；八个冻结端口 HTTP 面 4×200 + 协议面 4×TCP OPEN，`docker port` 映射逐个核对一致。「冻结端口」半边自此有**不设 override 的一手实证**。
 
 ### §D code-review 修正清单（两轴审查后）
 

@@ -1,0 +1,52 @@
+== 0. 时间与 COMPOSE_EXTRA_FILES ==
+NOW_UTC=2026-10-26T13:06:37Z
+COMPOSE_EXTRA_FILES=[]（票面要求：本票全程不设）
+
+== 1. compose ps（--profile doris，含一次性服务）==
+NAME             IMAGE                                        COMMAND                  SERVICE      CREATED        STATUS                     PORTS
+eco-client       docker.m.daocloud.io/mysql:8.0               "/bin/bash -c 'exec …"   client       8 hours ago    Exited (255) 2 hours ago   3306/tcp, 33060/tcp
+eco-doris-be     eco/doris:4.1.5                              "/usr/local/bin/dori…"   doris-be     28 hours ago   Up 2 hours (healthy)       127.0.0.1:8040->8040/tcp, 127.0.0.1:9060->9060/tcp
+eco-doris-fe     eco/doris:4.1.5                              "/usr/local/bin/dori…"   doris-fe     28 hours ago   Up 2 hours (healthy)       127.0.0.1:8030->8030/tcp, 127.0.0.1:9010->9010/tcp, 127.0.0.1:9030->9030/tcp
+eco-flink-jm     eco/flink:2.2-paimon                         "/docker-entrypoint.…"   flink-jm     28 hours ago   Up 2 hours (healthy)       127.0.0.1:8081->8081/tcp
+eco-flink-tm     eco/flink:2.2-paimon                         "/docker-entrypoint.…"   flink-tm     28 hours ago   Up 2 hours (healthy)       6123/tcp, 8081/tcp
+eco-kafka        docker.m.daocloud.io/apache/kafka:4.3.1      "/__cacert_entrypoin…"   kafka        28 hours ago   Up 2 hours (healthy)       127.0.0.1:9092->9092/tcp, 127.0.0.1:29092->29092/tcp
+eco-kafka-init   docker.m.daocloud.io/apache/kafka:4.3.1      "/bin/bash /scripts/…"   kafka-init   28 hours ago   Exited (0) 28 hours ago    
+eco-superset     docker.m.daocloud.io/apache/superset:6.1.0   "/app/docker/docker-…"   superset     28 hours ago   Up 2 hours (healthy)       127.0.0.1:8088->8088/tcp
+
+== 2. Flink 作业状态（跑前记录；check ③ 重启会杀 RUNNING 作业）==
+-- /jobs/overview --
+{"jobs":[]}
+
+== 3. 作业 jar 在 usrlib（两端）==
+-- eco-flink-jm --
+total 71972
+-rwxrwxrwx 1 ubuntu ubuntu 73693749 Oct 26 06:22 ecom-flink.jar
+-- eco-flink-tm --
+total 71968
+-rwxrwxrwx 1 ubuntu ubuntu 73693749 Oct 26 06:22 ecom-flink.jar
+
+== 4. host 侧构建产物（重提作业用）==
+-rwxrwxrwx 1 gyx gyx 73693749 Oct 26 14:22 flink/target/ecom-flink-0.1.0-SNAPSHOT.jar
+
+== 5. topic 端点 offset + 最晚 event_time（impl-05 §9.1 时钟约束）==
+INPUT_TOTAL_OFFSET=54828
+DLQ_TOTAL_OFFSET=14911
+MAX_EVENT_TIME=1792996133569
+MAX_ET_UTC=2026-10-26T06:28:53Z
+WALLCLOCK_MINUS_MAX_ET_SECONDS=23909（须 > 120s 才可安全重提作业）
+
+== 6. 脏率基线（verify 将与之比较）==
+{
+  "dlq_offset": 14911,
+  "input_events": 54792
+}
+
+== 7. 冻结端口连通性预探（TCP 层；对照 README 已知环境限制）==
+port 8030: TCP 可达
+port 8040: TCP 可达
+port 8081: TCP 可达
+port 8088: TCP 可达
+port 9010: TCP 可达
+port 9030: TCP 可达
+port 9060: TCP 可达
+port 9092: TCP 可达

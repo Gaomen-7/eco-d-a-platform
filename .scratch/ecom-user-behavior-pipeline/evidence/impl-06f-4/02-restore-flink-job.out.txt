@@ -1,0 +1,27 @@
+START_UTC=2026-10-26T13:21:23Z
+
+== 1. ③ 重启后的 usrlib 现状（预期：空——可写层不随 down 保留）==
+-- eco-flink-jm --
+ls: cannot access '/opt/flink/usrlib/': No such file or directory
+-- eco-flink-tm --
+ls: cannot access '/opt/flink/usrlib/': No such file or directory
+
+== 2. 重拷作业 jar 到两端 usrlib ==
+-- eco-flink-jm --
+-rwxrwxrwx 1 ubuntu ubuntu 73693749 Oct 26 06:22 /opt/flink/usrlib/ecom-flink.jar
+-- eco-flink-tm --
+-rwxrwxrwx 1 ubuntu ubuntu 73693749 Oct 26 06:22 /opt/flink/usrlib/ecom-flink.jar
+
+== 3. 提交作业（flink run -d，主类 P1RealtimeJob）==
+Job has been submitted with JobID 16ddd10b2504a5dc5087dce24cdc7afb
+
+== 4. 等作业 RUNNING（最多 200s）==
+RUNNING after 5s: {"jobs":[{"jid":"16ddd10b2504a5dc5087dce24cdc7afb","name":"insert-into_default_catalog.default_database.sink_window_metric,default_catalog.default_database.sink_funnel_step,default_catalog.default_database.sink_late_expired,default_catalog.default_database.sink_dlq","start-time":1793020918338,"end-time":-1,"duration":3482,"state":"RUNNING","last-modification":1793020921818,"tasks":{"running":0,"canceling":0,"canceled":0,"total":36,"created":0,"scheduled":0,"deploying":36,"reconciling":0,"finished":0,"initializing":0,"failed":0},"pending-operators":0}]}
+
+== 5. 等消费组追平（六分区 lag=0，最多 300s；06d 案 2：续读 committed offsets）==
+[5s] lag_total=0
+LAG=0 已追平
+
+== 6. 源算子水位（R7-i：不得被钉在未来）==
+{"jobs":[{"jid":"16ddd10b2504a5dc5087dce24cdc7afb","name":"insert-into_default_catalog.default_database.sink_window_metric,default_catalog.default_database.sink_funnel_step,default_catalog.default_database.sink_late_expired,default_catalog.default_database.sink_dlq","start-time":1793020918338,"end-t
+END_UTC=2026-10-26T13:22:19Z

@@ -1,0 +1,36 @@
+PROBE_UTC=2026-10-26T13:32:49Z
+（COMPOSE_EXTRA_FILES=[]，全程未设）
+
+== 1. HTTP 面逐端口 curl（-m 5，记 http_code 与错误）==
+port 8030  HTTP     curl=200                    body=[{"msg":"success","code":0,"data":{"online_backend_num":1,"to]
+port 8040  HTTP     curl=200                    body=[# TYPE doris_be_runtime_filter_consumer_wait_ready_ms counte]
+port 8081  HTTP     curl=200                    body=[{"taskmanagers":1,"slots-total":8,"slots-available":4,"jobs-]
+port 8088  HTTP     curl=200                    body=[OK]
+
+== 2. 协议面 TCP 握手（bash /dev/tcp；9010 edit_log / 9030 MySQL / 9060 brpc / 9092 Kafka）==
+port 9010  TCP      可达（OPEN）
+port 9030  TCP      可达（OPEN）
+port 9060  TCP      可达（OPEN）
+port 9092  TCP      可达（OPEN）
+
+== 3. 容器侧发布面核对（docker port —— 端口映射面事实）==
+-- eco-doris-fe --
+8030/tcp -> 127.0.0.1:8030
+9010/tcp -> 127.0.0.1:9010
+9030/tcp -> 127.0.0.1:9030
+-- eco-doris-be --
+8040/tcp -> 127.0.0.1:8040
+9060/tcp -> 127.0.0.1:9060
+-- eco-flink-jm --
+8081/tcp -> 127.0.0.1:8081
+-- eco-superset --
+8088/tcp -> 127.0.0.1:8088
+-- eco-kafka --
+9092/tcp -> 127.0.0.1:9092
+29092/tcp -> 127.0.0.1:29092
+
+== 4. （对照组）协议面端口也各跑一次 curl，印证「协议层失败 ≠ TCP 不通」==
+port 9010  curl-http=curl_rc=1（预期非 200：协议不是 HTTP；TCP 层可达见上表）
+port 9030  curl-http=curl_rc=1（预期非 200：协议不是 HTTP；TCP 层可达见上表）
+port 9060  curl-http=curl_rc=52（预期非 200：协议不是 HTTP；TCP 层可达见上表）
+port 9092  curl-http=curl_rc=52（预期非 200：协议不是 HTTP；TCP 层可达见上表）

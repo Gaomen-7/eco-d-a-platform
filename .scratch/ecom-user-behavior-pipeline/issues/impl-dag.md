@@ -53,15 +53,16 @@
 
 | **impl-06e** | [impl-06e-deploy-check-usrlib.md](impl-06e-deploy-check-usrlib.md) | impl-03a, impl-06d | 部署面判据 ④ 改口径：作业 jar 验在 `/opt/flink/usrlib/`（两端同一字节）+ `lib/` 不得有副本；原 Paimon connector 断言下移 4d｜**✅ 2026-10-26 已结案（反例 A/B/C 全被抓、还原后 PASS）** |
 
-| **impl-06f** | [impl-06f-deploy-doc-closeout.md](impl-06f-deploy-doc-closeout.md) | — | **母票（索引）**：交付面收尾四切片——README 对齐 / 票面状态归正 / GLOSSARY 三词 / 收尾门 |
+| **impl-06f** | [impl-06f-deploy-doc-closeout.md](impl-06f-deploy-doc-closeout.md) | — | **母票（索引）**：交付面收尾四切片——README 对齐 / 票面状态归正 / GLOSSARY 三词 / 收尾门｜**✅ 2026-10-26 已结案（resolved）**：四切片 1/2/3/4 全部收口，验收 5 条逐条有凭证；收尾门带出新票 impl-06i |
 | **impl-06f-1** | [impl-06f-1-readme-reality-alignment.md](impl-06f-1-readme-reality-alignment.md) | — | README 六处现状断言与代码/脚本对齐（`make init` 四段已接线、`verify` 五真、11 条判据、usrlib 约束、spike dry-run、端口限制）｜**✅ 2026-10-26 已结案**：六处全落地＋总判据 grep 干净；漂移 6 落成机制性描述（WinNAT 排除段动态漂移＋复核命令），当晚复核八端口已全恢复 TCP 可达 |
 | **impl-06f-2** | [impl-06f-2-ticket-status-normalization.md](impl-06f-2-ticket-status-normalization.md) | — | 票面状态归正：impl-02/03 中段残留 `ready-for-agent`、impl-03b 的 7 个过期复选框｜**✅ 2026-10-26 已结案（resolved）**：另发现并归正第 4 处镜像矛盾（impl-04 顶行过期 `in-progress`）；impl-03b 实为两段 11 框全部回勾；全仓 `## Comments` 段零存在（判据空转成立）；剩余 39 个 `- [ ]` 全为真未做、保留理由清单见票面 Answer |
 | **impl-06f-3** | [impl-06f-3-glossary-three-terms.md](impl-06f-3-glossary-three-terms.md) | — | GLOSSARY 补「脏率 / 反例夹具 / 脏率基线」三词（impl-02e code-review S4 欠账）｜**✅ 2026-10-26 已结案（resolved）**：三词条按代码口径落地（脏率→§事件处置、反例夹具+脏率基线→§读者与验证；diff 23+/1−，唯一删除行是 EOF 换行伪影）；守卫测试 43 passed、lint/typecheck PASS；施工中发现面板侧基线「来源/写者」文档-实现偏差（普通 verify-fault 从不写基线）→ 登记新票 [impl-06h](impl-06h-dirty-rate-baseline-doc-divergence.md) |
-| **impl-06f-4** | [impl-06f-4-closeout-gate-deploy-proof.md](impl-06f-4-closeout-gate-deploy-proof.md) | impl-06f-1, impl-06f-2 | 收尾门：不设 override 跑 `deploy_surface_check.sh` 全 11 条 + `make init`→`verify` 一绿（端口不通则如实登记） |
+| **impl-06f-4** | [impl-06f-4-closeout-gate-deploy-proof.md](impl-06f-4-closeout-gate-deploy-proof.md) | impl-06f-1, impl-06f-2 | 收尾门：不设 override 跑 `deploy_surface_check.sh` 全 11 条 + `make init`→`verify` 一绿（端口不通则如实登记）｜**✅ 2026-10-26 已结案（resolved）**：判据 10 PASS / 1 FAIL（唯一 FAIL＝判据 ⑤ 排除集不完备，归因为判据自身缺陷，立 [impl-06i](impl-06i-deploy-check-5-exclusion-defect.md)）；`make init` 127 s 退 0 + `make verify` 404 s **10P0S0F 退 0**；八冻结端口全可达（HTTP 4×200 + TCP 4×OPEN），**impl-03a §C 冻结端口遗留项销项**；作业恢复 RUNNING（lag=0）；lint/typecheck/pytest 314 全过 |
 | **impl-06g** | [impl-06g-spike-live-rate-proof.md](impl-06g-spike-live-rate-proof.md) | — | `make spike` **真发** + `REQ-F-GEN-04`/`REQ-NF-PERF-03` ≥1000 events/s 一手速率证据（现只 dry-run，是唯一未验的功能条目） |
 | **impl-06h** | [impl-06h-dirty-rate-baseline-doc-divergence.md](impl-06h-dirty-rate-baseline-doc-divergence.md) | — | 脏率基线「来源/写者」文档-实现偏差收口（06f-3 施工发现；`ready-for-human`，核心是 A/B 裁决）｜**2026-10-26 开票（开票不实施）** |
+| **impl-06i** | [impl-06i-deploy-check-5-exclusion-defect.md](impl-06i-deploy-check-5-exclusion-defect.md) | — | 部署面判据 ⑤ 排除集不完备：`.mimosa/`（harness 状态目录，判据写就时不存在）+ 测试 docstring + README 判据名列举共 32 行非 SQL 命中把「零 ADD JAR」打成恒假（06f-4 收尾门实测发现；`ready-for-human`，修法方向 A/B/C 需裁决 + 反例凭证要求）｜**2026-10-26 开票（开票不实施）** |
 
-> 06a/06b/06c 出处＝spec §8.2（**2026-10-25 用户批准**，实施前须复述风险再触发）；06d 出处＝HLD §8-R7-i（用户裁决三案同票）；06e/06f 出处＝2026-10-26 收尾盘点；06g 出处＝SRS `REQ-F-GEN-04`（尖峰 ≥1000/s 从未实测）；06h 出处＝impl-06f-3 施工中按「以代码为准」复核面板口径时发现（该票 Notes 预设登记情形）。除 06f-4 外均互不阻塞。
+> 06a/06b/06c 出处＝spec §8.2（**2026-10-25 用户批准**，实施前须复述风险再触发）；06d 出处＝HLD §8-R7-i（用户裁决三案同票）；06e/06f 出处＝2026-10-26 收尾盘点；06g 出处＝SRS `REQ-F-GEN-04`（尖峰 ≥1000/s 从未实测）；06h 出处＝impl-06f-3 施工中按「以代码为准」复核面板口径时发现（该票 Notes 预设登记情形）；06i 出处＝impl-06f-4 收尾门实跑（判据 ⑤ 恒假，32 行命中全为非 SQL 噪音）。除 06f-4 外均互不阻塞。
 
 ## 依赖图
 
@@ -107,7 +108,8 @@
   形态 PASS）；dlq-rate 增量归因为 fixture 段重放（环境冲击）后基线重立。
 - ✅ **impl-06e 已结清**（2026-10-26）：部署面判据 ④ 从「Paimon jar 在两容器 lib + sha256」改为「作业 jar 在 `/opt/flink/usrlib/`（两端同一字节）+ `lib/` 零副本」，原断言语义下移为 4d。反例 A（lib 混入副本）/ B（半部署）/ C（usrlib 多版本）**各自 FAIL、还原后 PASS**，每轮各 1 条 FAIL（无重复计数）。⚠️ ③⑤⑥⑧ 本轮未复跑。
 - **impl-02 已结清**（P1 实时闭环，含五张副票全部完成）；spec §4.3 的 P1 闸门**已开**
-- **当前前沿（2026-10-26 收尾盘点后）**：功能票全结，剩余 **9 张新票**——交付面收尾 [impl-06f](impl-06f-deploy-doc-closeout.md) 四切片（1/2/3 已结、4 卡在 1+2 之后）＋ 尖峰实证 [impl-06g](impl-06g-spike-live-rate-proof.md)（`REQ-F-GEN-04` 从未实测）＋ 脏率基线口径裁决 [impl-06h](impl-06h-dirty-rate-baseline-doc-divergence.md)（06f-3 施工发现，`ready-for-human`）＋ impl-03 签字链 [impl-03g](impl-03g-falsification-signoff.md) → [impl-03h](impl-03h-mother-ticket-final-reconcile.md)。唯一外部卡点：**本机 WinNAT 下冻结端口仅 8081 通**（impl-03a §C 遗留项，需管理员释放 8024–8123；⚠️ 2026-10-26 晚 impl-06f-1 复核：排除段已漂走、八端口恢复 TCP 可达——[impl-06f-1 Answer](impl-06f-1-readme-reality-alignment.md) ，该口径随排除段动态漂移，收尾门前须再实测）。
+- **当前前沿（2026-10-26 收尾门跑完后）**：功能票全结，[impl-06f](impl-06f-deploy-doc-closeout.md) 四切片**全部收口**（1/2/3/4 均已结案）。剩余 **5 张待办**——尖峰实证 [impl-06g](impl-06g-spike-live-rate-proof.md)（`REQ-F-GEN-04` 从未实测）＋ 脏率基线口径裁决 [impl-06h](impl-06h-dirty-rate-baseline-doc-divergence.md)（`ready-for-human`）＋ 判据 ⑤ 排除集裁决 [impl-06i](impl-06i-deploy-check-5-exclusion-defect.md)（06f-4 实测发现，`ready-for-human`）＋ impl-03 签字链 [impl-03g](impl-03g-falsification-signoff.md) → [impl-03h](impl-03h-mother-ticket-final-reconcile.md)。**收尾门结论（2026-10-26）**：不设 override 全判据 10/11 PASS（唯一 FAIL 归因为判据 ⑤ 自身缺陷并立 06i）；`make init`→`make verify` 一绿（127 s + 404 s，10P0S0F 退 0）；**impl-03a §C 冻结端口遗留项已销项**（八端口 HTTP 4×200 + TCP 4×OPEN，排除段已漂走）——原「本机 WinNAT 下冻结端口仅 8081 通」的外部卡点随排除段漂移解除，README「已知环境限制」已补当日实证记录。
+- ✅ **impl-06f-4 已结清**（2026-10-26）：收尾门实跑全记录见[票面 Answer](impl-06f-4-closeout-gate-deploy-proof.md)；附带收获——③ down/up 后 usrlib 目录整体消失（作业 jar 走 docker cp 路线的固有运维事实）、作业重提后消费组 5 s 追平 lag=0（06d 案 2 续读位点生效，DLQ 不翻倍）、脏率 0.271960 ≤ 基线 0.272138。静态面 lint/typecheck/pytest 314 全过。
 
 ### impl-03 内部的 Frontier（2026-10-24 22:00 收口）
 

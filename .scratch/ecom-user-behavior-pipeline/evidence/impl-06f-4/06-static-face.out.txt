@@ -1,0 +1,13 @@
+=== ruff check（lint）===
+/home/gyx/.local/bin/uv run ruff check . || exit $?
+All checks passed!
+=== ruff format --check ===
+/home/gyx/.local/bin/uv run ruff format --check . || exit $?
+126 files already formatted
+lint: PASS
+=== basedpyright（只解析 JSON；--outputjson 与 verbose/stats 互斥）===
+  errors=0 warnings=6 files=14
+  typecheck: PASS
+........................................................................ [ 91%]
+..........................                                               [100%]
+314 passed in 75.52s (0:01:15)

@@ -1,0 +1,44 @@
+FINAL_UTC=2026-10-26T13:33:59Z
+
+== 1. Flink 作业终态（票面：不留半死状态）==
+jid=1e8b782a3a5ac05e79dc2670d9166aae state=FINISHED tasks={'running': 0, 'canceling': 0, 'canceled': 0, 'total': 2, 'created': 0, 'scheduled': 0, 'deploying': 0, 'reconciling': 0, 'finished': 2, 'initializing': 0, 'failed': 0}
+jid=0979c6e7c5a19d2d9388feed1e9acc3f state=FINISHED tasks={'running': 0, 'canceling': 0, 'canceled': 0, 'total': 2, 'created': 0, 'scheduled': 0, 'deploying': 0, 'reconciling': 0, 'finished': 2, 'initializing': 0, 'failed': 0}
+jid=2e0296864478ec44b60ab27f64d1bfd8 state=FINISHED tasks={'running': 0, 'canceling': 0, 'canceled': 0, 'total': 12, 'created': 0, 'scheduled': 0, 'deploying': 0, 'reconciling': 0, 'finished': 12, 'initializing': 0, 'failed': 0}
+jid=f3e847a7ce81f9e01deecad18a7e695a state=FINISHED tasks={'running': 0, 'canceling': 0, 'canceled': 0, 'total': 2, 'created': 0, 'scheduled': 0, 'deploying': 0, 'reconciling': 0, 'finished': 2, 'initializing': 0, 'failed': 0}
+jid=8eefb3adf9b31700d2e017da0d4720e0 state=FINISHED tasks={'running': 0, 'canceling': 0, 'canceled': 0, 'total': 2, 'created': 0, 'scheduled': 0, 'deploying': 0, 'reconciling': 0, 'finished': 2, 'initializing': 0, 'failed': 0}
+jid=16ddd10b2504a5dc5087dce24cdc7afb state=RUNNING tasks={'running': 36, 'canceling': 0, 'canceled': 0, 'total': 36, 'created': 0, 'scheduled': 0, 'deploying': 0, 'reconciling': 0, 'finished': 0, 'initializing': 0, 'failed': 0}
+
+== 2. 消费组 lag 终态 ==
+
+Consumer group 'ecom-p1-consumer' has no active members.
+
+GROUP            TOPIC                  PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG             CONSUMER-ID     HOST            CLIENT-ID
+ecom-p1-consumer ecom.behavior.event.v1 0          9992            9992            0               -               -               -
+ecom-p1-consumer ecom.behavior.event.v1 1          9566            9566            0               -               -               -
+ecom-p1-consumer ecom.behavior.event.v1 2          9773            9773            0               -               -               -
+ecom-p1-consumer ecom.behavior.event.v1 3          8733            8733            0               -               -               -
+ecom-p1-consumer ecom.behavior.event.v1 4          7700            7700            0               -               -               -
+ecom-p1-consumer ecom.behavior.event.v1 5          9100            9100            0               -               -               -
+
+== 3. 全栈健康 ==
+NAME           IMAGE                                                                     COMMAND                  SERVICE    CREATED          STATUS                    PORTS
+eco-doris-be   eco/doris:4.1.5                                                           "/usr/local/bin/dori…"   doris-be   19 minutes ago   Up 19 minutes (healthy)   127.0.0.1:8040->8040/tcp, 127.0.0.1:9060->9060/tcp
+eco-doris-fe   eco/doris:4.1.5                                                           "/usr/local/bin/dori…"   doris-fe   19 minutes ago   Up 19 minutes (healthy)   127.0.0.1:8030->8030/tcp, 127.0.0.1:9010->9010/tcp, 127.0.0.1:9030->9030/tcp
+eco-flink-jm   sha256:721711ee60e266625804d45e8af17e2d0aad2b673520363ab1cb01d79285c20e   "/docker-entrypoint.…"   flink-jm   19 minutes ago   Up 19 minutes (healthy)   127.0.0.1:8081->8081/tcp
+eco-flink-tm   sha256:721711ee60e266625804d45e8af17e2d0aad2b673520363ab1cb01d79285c20e   "/docker-entrypoint.…"   flink-tm   19 minutes ago   Up 19 minutes (healthy)   6123/tcp, 8081/tcp
+eco-kafka      docker.m.daocloud.io/apache/kafka:4.3.1                                   "/__cacert_entrypoin…"   kafka      19 minutes ago   Up 19 minutes (healthy)   127.0.0.1:9092->9092/tcp, 127.0.0.1:29092->29092/tcp
+eco-superset   docker.m.daocloud.io/apache/superset:6.1.0                                "/app/docker/docker-…"   superset   19 minutes ago   Up 19 minutes (healthy)   127.0.0.1:8088->8088/tcp
+
+== 4. usrlib 终态（判据 ④ 口径的延续面）==
+-- eco-flink-jm --
+total 71972
+-rwxrwxrwx 1 ubuntu ubuntu 73693749 Oct 26 06:22 ecom-flink.jar
+-- eco-flink-tm --
+total 71972
+-rwxrwxrwx 1 ubuntu ubuntu 73693749 Oct 26 06:22 ecom-flink.jar
+
+== 5. 判据 ③ 的探针持久性复核（down/up 后卷内探针仍在）==
+total 4
+drwxr-xr-x 2 gyx  gyx   60 Oct 26 21:13 .
+drwxrwxrwt 8 root root 180 Oct 26 21:23 ..
+-rw-r--r-- 1 gyx  gyx   68 Oct 26 21:13 .probe-20261026T130812Z-173919143.bak

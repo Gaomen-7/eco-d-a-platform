@@ -34,6 +34,11 @@
   2026-10-26 收尾盘点时八个冻结端口中仅 `8081` 可达；同日晚复核时排除段已漂走、
   八个端口全部恢复 TCP 可达。⇒ 「端口连不上」先查排除段再下结论——这是宿主环境
   事实，不是仓库缺陷。
+- **2026-10-26 收尾门实证（[impl-06f-4](.scratch/ecom-user-behavior-pipeline/issues/impl-06f-4-closeout-gate-deploy-proof.md)）**：
+  不设 `COMPOSE_EXTRA_FILES` 跑全判据 + `make init`→`verify` 一绿的同一窗口内，八个
+  冻结端口实测：HTTP 面 `8030/8040/8081/8088` 全 200、协议面 `9010/9030/9060/9092` 全
+  TCP OPEN、`docker port` 映射逐个与 compose 声明一致——impl-03a §C「冻结端口」遗留项
+  即以此销项。该实证只代表**当时**排除段状态，再次漂移时仍以上一条的复核命令为准。
 - 复核：`netsh interface ipv4 show excludedportrange protocol=tcp`（Windows 宿主）＋
   逐端口 TCP 探测。⚠️ `curl http://127.0.0.1:<port>` 对 `9010/9030/9060/9092`
   （MySQL / brpc / Kafka 协议）会报「连不上」但 TCP 层可达——**协议层失败 ≠ 端口
