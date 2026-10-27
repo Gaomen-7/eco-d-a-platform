@@ -55,8 +55,12 @@
 #     Paimon connector 在两端 lib/ 的断言保留为 4d（部署面事实，语义不变）。
 #
 #  ⑤ 无 ADD JAR 指向宿主路径 —— 恒真风险：路径写错就扫不到
-#     对策：全仓 grep（排除 .git/.scratch/artifacts），零命中才 PASS；
-#     并额外扫 SQL/配置文件里对宿主路径 jar 的引用。
+#     对策（2026-10-27 impl-06i 改口径，用户裁决方向 C）：**可执行面白名单**
+#     grep（*.sql/*.sh/*.java/Makefile/Dockerfile/*.yml/*.yaml），零命中才 PASS；
+#     并额外扫白名单内对宿主路径 jar 的引用。
+#     旧「全仓 grep」口径被 32 行非 SQL 噪音打成恒假（impl-06f-4 实测）：
+#     .mimosa/ 会话基线副本 27 行 + 守卫测试自身 docstring 4 行 + README 判据名
+#     1 行 —— 判据对象是「可能出现 ADD JAR 语句的文件」，不是「工作树里的一切文件」。
 #
 #  ⑥ data/ 被 .gitignore 覆盖（C5）—— 门槛批 raw 数据落 data/，必须不入库
 #     对策：git check-ignore -v 对 data/ 与 data/x **都要**命中
@@ -756,15 +760,43 @@ check_no_add_jar_host_path() {
 
   # ★ 官方路径不可行：ADD JAR 指向宿主路径在**分布式集群**下不可行（文件只在
   #   client 的机器上），必须**构建期 COPY** 进 /opt/flink/lib。
-  #   排除目录：.git（版本库元数据）、.scratch（本仓设计链/票面，非运行面）、
-  #   artifacts（构建产物）。
-  info "grep 范围：全仓，排除 .git / .scratch / artifacts"
+  #
+  # ★★ 扫描面 = 可执行面白名单（2026-10-27 impl-06i，用户裁决方向 C）★★
+  #   判据对象是「仓库源码里**可能出现 ADD JAR 语句**的文件」，不是「工作树里的
+  #   一切文件」。旧口径「全仓 grep -r」在 2026-10-26 收尾门（impl-06f-4）被
+  #   32 行非 SQL 噪音打成恒假：
+  #     · .mimosa/hook-state/**/*.source 27 行 —— DSH harness 会话基线副本
+  #       （含本脚本自身快照），判据写就（2026-10-22）时该目录不存在；
+  #     · tests/test_replay_sql.py 4 行 —— 守卫测试自身的 docstring/断言消息；
+  #     · README.md 1 行 —— 判据名列举（叙述面）。
+  #   白名单 = 能把 SQL 文本送进执行的面：
+  #     *.sql（sql-client -f 入口）、*.sh（docker exec sql-client 编排面）、
+  #     *.java（Table API 内嵌 SQL）、Makefile / Dockerfile / *.yml / *.yaml
+  #     （compose command 等内嵌调用面）。
+  #   叙述面（*.md / *.py / *.json / *.source …）不在扫描面内 ⇒ README 与守卫
+  #   测试的叙述行**结构性免疫**；对未来出现的未跟踪垃圾目录（工具缓存 / IDE
+  #   状态 / 新的 harness 目录）同样免疫——白名单之外的扩展名永远进不来。
+  #   ⚠️ 代价（票面 Notes 已记）：新增可执行源码类型时须把扩展名加进白名单，
+  #      否则该类型脱管（判不到）。
+  #   排除目录仍保留：.git（版本库元数据）、.scratch（设计链/票面/证据）、
+  #   artifacts（构建产物）、依赖与构建树（.venv/venv/node_modules/.uv-cache/
+  #   target/build/lib —— 这些树里也有 *.sh，但不是本仓源码）。
+  local -a SCAN_INCLUDE SCAN_EXCLUDE
+  SCAN_INCLUDE=(--include='*.sql' --include='*.sh' --include='*.java'
+                --include='Makefile' --include='Dockerfile'
+                --include='*.yml' --include='*.yaml')
+  SCAN_EXCLUDE=(--exclude-dir=.git --exclude-dir=.scratch --exclude-dir=artifacts
+                --exclude-dir=.venv --exclude-dir=venv --exclude-dir=node_modules
+                --exclude-dir=.uv-cache --exclude-dir=target --exclude-dir=build
+                --exclude-dir=lib)
+  info "grep 范围：可执行面白名单（sql/sh/java/Makefile/Dockerfile/yml/yaml），排除 .git / .scratch / artifacts / 依赖与构建树"
   # 必须排除**注释行**与本**检测脚本自身**（2026-10-22 实机踩到）：
   #   直接 grep 'ADD JAR' 会把自己这个判据的说明文字、以及 Dockerfile/compose 里
   #   「为什么不用 ADD JAR」的解释性注释全部算成命中 => 15 行「命中」，判据恒假。
   #   真正的判据是「有没有一条**可执行语句**在用 ADD JAR」，注释不是语句。
-  hits="$(grep -rniI --exclude-dir=.git --exclude-dir=.scratch --exclude-dir=artifacts -e 'ADD JAR' . 2>/dev/null \
-          | grep -v -E '^[^:]+:[0-9]+:[[:space:]]*#' \
+  #   注释形态随白名单扩展（impl-06i）：#（sh/yaml/Make）、--（sql）、//（java）。
+  hits="$(grep -rniI "${SCAN_EXCLUDE[@]}" "${SCAN_INCLUDE[@]}" -e 'ADD JAR' . 2>/dev/null \
+          | grep -v -E '^[^:]+:[0-9]+:[[:space:]]*(--|#|//)' \
           | grep -v -F 'scripts/deploy_surface_check.sh')"
   if [[ -n "$hits" ]]; then
     printf '%s\n' "$hits" | raw
@@ -774,9 +806,12 @@ check_no_add_jar_host_path() {
   fi
   info "ADD JAR 零命中"
 
-  # 额外一层：任何文件里引用宿主路径的 jar（形如 F:\\... 或 /mnt/f/... 或 C:/...）
+  # 额外一层：白名单内引用宿主路径 jar 的行（形如 F:\\... 或 /mnt/f/... 或 C:/...）
   # 恒真风险：只 grep 'ADD JAR' 会漏掉别的引用形式。
-  info "附加扫描：本仓源码/配置里引用宿主路径 jar 的行（排除第三方依赖树）"
+  # 2026-10-27 impl-06i：本段与 seg1 **同一份白名单**（用户裁决方向 C）——旧全仓
+  #   口径下本段同样被 .mimosa/ 基线副本打成恒假（18 行 docker cp 宿主路径 jar
+  #   引用），只是 seg1 先 FAIL 提前 return，把本段的恒假挡住了。
+  info "附加扫描：白名单内引用宿主路径 jar 的行（排除第三方依赖树）"
   local host_hits
   # ★ 排除第三方依赖树（2026-10-22 实机踩到，判据恒假）：
   #   .venv / node_modules 下有数万个文件（stubs 的 METADATA.toml、npm 的 LICENSE、
@@ -785,13 +820,10 @@ check_no_add_jar_host_path() {
   #   本判据要判的是「**本仓源码/配置**有没有引用宿主路径的 jar」，第三方依赖不在其列。
   #   另排除 https?:// 行：那是**下载 URL**（Maven 坐标），不是宿主文件路径。
   host_hits="$(grep -rniI \
-    --exclude-dir=.git --exclude-dir=.scratch --exclude-dir=artifacts \
-    --exclude-dir=.venv --exclude-dir=venv --exclude-dir=node_modules \
-    --exclude-dir=.uv-cache --exclude-dir=target --exclude-dir=build \
-    --exclude-dir=lib \
+    "${SCAN_EXCLUDE[@]}" "${SCAN_INCLUDE[@]}" \
     -E '(/mnt/[a-z]/|[A-Za-z]:[\\\\/])' . 2>/dev/null \
     | grep -i 'jar' \
-    | grep -v -E '^[^:]+:[0-9]+:[[:space:]]*#' \
+    | grep -v -E '^[^:]+:[0-9]+:[[:space:]]*(--|#|//)' \
     | grep -v -F 'scripts/deploy_surface_check.sh' \
     | grep -v -E 'https?://' )"
   if [[ -n "$host_hits" ]]; then

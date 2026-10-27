@@ -1,0 +1,16 @@
+START_UTC=2026-10-27T07:05:58Z
+
+== 1. 重拷作业 jar 到两端 usrlib ==
+-rwxrwxrwx 1 ubuntu ubuntu 73693749 Oct 26 06:22 /opt/flink/usrlib/ecom-flink.jar
+-rwxrwxrwx 1 ubuntu ubuntu 73693749 Oct 26 06:22 /opt/flink/usrlib/ecom-flink.jar
+
+== 2. 提交作业（flink run -d，主类 P1RealtimeJob）==
+Job has been submitted with JobID 920de7b7a314408d6d9e8ead6e1f1fbc
+
+== 3. 等作业 RUNNING（最多 200s）==
+RUNNING after 5s
+
+== 4. 等消费组追平（六分区 lag=0，最多 300s）==
+[5s] lag_total=0
+LAG=0 已追平
+END_UTC=2026-10-27T07:06:45Z

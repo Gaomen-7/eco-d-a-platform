@@ -1,0 +1,49 @@
+抽取行数: 89
+语法自检：bash -n 全脚本与抽取片段均通过
+
+=== T0 干净树（期望 PASS，rc=0）===
+────────────────────────────────────────────────────────────────
+▶ ⑤ 全仓无 ADD JAR 指向宿主路径
+────────────────────────────────────────────────────────────────
+  · grep 范围：可执行面白名单（sql/sh/java/Makefile/Dockerfile/yml/yaml），排除 .git / .scratch / artifacts / 依赖与构建树
+  · ADD JAR 零命中
+  · 附加扫描：白名单内引用宿主路径 jar 的行（排除第三方依赖树）
+  · 宿主路径 jar 引用零命中
+[PASS] ⑤ 无 ADD JAR 指向宿主路径
+T0 rc=0 PASS=1 FAIL=0
+
+=== T1 注入 sql/zz_impl06i_smoke.sql：真 ADD JAR 宿主路径（期望 FAIL，rc=1）===
+────────────────────────────────────────────────────────────────
+▶ ⑤ 全仓无 ADD JAR 指向宿主路径
+────────────────────────────────────────────────────────────────
+  · grep 范围：可执行面白名单（sql/sh/java/Makefile/Dockerfile/yml/yaml），排除 .git / .scratch / artifacts / 依赖与构建树
+    │ ./sql/zz_impl06i_smoke.sql:1:ADD JAR '/mnt/f/zz/fake.jar';
+[FAIL] ⑤ 无 ADD JAR 指向宿主路径（命中 1 行 ADD JAR）
+T1 rc=1 PASS=0 FAIL=1
+
+=== T2 注入 scripts/zz_impl06i_smoke.sh：宿主路径 jar 引用、无 ADD JAR（期望 FAIL，rc=1，走 seg2 腿）===
+────────────────────────────────────────────────────────────────
+▶ ⑤ 全仓无 ADD JAR 指向宿主路径
+────────────────────────────────────────────────────────────────
+  · grep 范围：可执行面白名单（sql/sh/java/Makefile/Dockerfile/yml/yaml），排除 .git / .scratch / artifacts / 依赖与构建树
+  · ADD JAR 零命中
+  · 附加扫描：白名单内引用宿主路径 jar 的行（排除第三方依赖树）
+    │ ./scripts/zz_impl06i_smoke.sh:1:HOST_JAR=/mnt/f/zz/fake.jar
+[FAIL] ⑤ 无 ADD JAR 指向宿主路径（有文件引用宿主路径的 jar，见上）
+T2 rc=1 PASS=0 FAIL=1
+
+=== T3 还原后干净树（期望 PASS，rc=0）===
+────────────────────────────────────────────────────────────────
+▶ ⑤ 全仓无 ADD JAR 指向宿主路径
+────────────────────────────────────────────────────────────────
+  · grep 范围：可执行面白名单（sql/sh/java/Makefile/Dockerfile/yml/yaml），排除 .git / .scratch / artifacts / 依赖与构建树
+  · ADD JAR 零命中
+  · 附加扫描：白名单内引用宿主路径 jar 的行（排除第三方依赖树）
+  · 宿主路径 jar 引用零命中
+[PASS] ⑤ 无 ADD JAR 指向宿主路径
+T3 rc=0 PASS=1 FAIL=0
+
+=== T4 探针残留核查（期望全部不存在）===
+ls: cannot access 'sql/zz_impl06i_smoke.sql': No such file or directory
+ls: cannot access 'scripts/zz_impl06i_smoke.sh': No such file or directory
+SMOKE_ALL_PASS

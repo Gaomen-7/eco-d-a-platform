@@ -1,0 +1,355 @@
+COMPOSE_EXTRA_FILES=[]（期望为空：不设 override）
+START_UTC=2026-10-27T07:02:57Z
+
+== 0. 预置 usrlib 作业 jar（上一轮 ③ 的 down/up 重建容器会清掉可写层；④ 需要它）==
+total 71968
+-rwxrwxrwx 1 ubuntu ubuntu 73693749 Oct 26 06:22 ecom-flink.jar
+total 71968
+-rwxrwxrwx 1 ubuntu ubuntu 73693749 Oct 26 06:22 ecom-flink.jar
+
+== 1. 全门实跑（期望：11/11 PASS，退出码 0）==
+════════════════════════════════════════════════════════════════════════════
+ deploy_surface_check.sh —— 部署面验收实证（逐条；impl-03a 票面 + 4b/4c/4d 演进）
+ 时间: 2026-10-27T07:03:00Z  (UTC)
+════════════════════════════════════════════════════════════════════════════
+────────────────────────────────────────────────────────────────
+▶ 前置检查：docker CLI / compose 可用性
+────────────────────────────────────────────────────────────────
+    │ 29.8.0
+    │ Docker Compose version v5.5.1
+  仓库根 = /mnt/f/Anaconda practice project/eco-a-d-platform
+  本轮 stamp=20261027T070300Z nonce=2261230262
+  · 被测栈已在运行（6 个服务），跳过 up
+────────────────────────────────────────────────────────────────
+▶ ⑤ 全仓无 ADD JAR 指向宿主路径
+────────────────────────────────────────────────────────────────
+  · grep 范围：可执行面白名单（sql/sh/java/Makefile/Dockerfile/yml/yaml），排除 .git / .scratch / artifacts / 依赖与构建树
+  · ADD JAR 零命中
+  · 附加扫描：白名单内引用宿主路径 jar 的行（排除第三方依赖树）
+  · 宿主路径 jar 引用零命中
+[PASS] ⑤ 无 ADD JAR 指向宿主路径
+────────────────────────────────────────────────────────────────
+▶ ⑥ data/ 被 .gitignore 覆盖（门槛批 raw 数据不入库，C5）
+────────────────────────────────────────────────────────────────
+    │     git check-ignore -v data/ （rc=0）：
+    │ .gitignore:10:**/data/	data/
+    │     git check-ignore -v data/x （rc=0）：
+    │ .gitignore:10:**/data/	data/x
+  · .gitignore 中相关规则：
+    │ 10:**/data/
+[PASS] ⑥ data/ 被 .gitignore 覆盖
+────────────────────────────────────────────────────────────────
+▶ ⑧ 数字标注审查：compose / Dockerfile 里的时间·容量数字须逐处标注
+────────────────────────────────────────────────────────────────
+    │     标注词出现次数：compose=5  docker/flink/=9
+    │     Dockerfile：带标注 9 行
+    │     compose flink 段：带标注 2 行
+[PASS] ⑧ 数字标注审查（compose 与 docker/flink/ 均有标注、新增面无遗漏；全文已打印供人工复核）
+────────────────────────────────────────────────────────────────
+▶ ① 具名卷同路径挂载 JM/TM（compose 断言 + 实机 inspect 比对卷名）
+────────────────────────────────────────────────────────────────
+  · compose config --format json 的 flink-jm / flink-tm volumes：
+    │ flink-jm: 卷条目 4 个, 匹配 source=paimon-warehouse&target=/warehouse 的 1 个
+    │    - source=/mnt/f/Anaconda practice project/eco-a-d-platform/docker/flink/conf/config.yaml target=/opt/flink/conf/config.yaml type=bind read_only=True
+    │    - source=paimon-warehouse target=/warehouse type=volume read_only=None
+    │    - source=/mnt/f/Anaconda practice project/eco-a-d-platform/data target=/data type=bind read_only=True
+    │    - source=/mnt/f/Anaconda practice project/eco-a-d-platform/sql target=/sql type=bind read_only=True
+    │ flink-tm: 卷条目 4 个, 匹配 source=paimon-warehouse&target=/warehouse 的 1 个
+    │    - source=/mnt/f/Anaconda practice project/eco-a-d-platform/docker/flink/conf/config.yaml target=/opt/flink/conf/config.yaml type=bind read_only=True
+    │    - source=paimon-warehouse target=/warehouse type=volume read_only=None
+    │    - source=/mnt/f/Anaconda practice project/eco-a-d-platform/data target=/data type=bind read_only=True
+    │    - source=/mnt/f/Anaconda practice project/eco-a-d-platform/sql target=/sql type=bind read_only=True
+  · compose config 层：PASS
+  · docker inspect 各取 Mounts 中 Type=volume && Destination=/warehouse 的那条：
+    │     eco-flink-jm Mounts -> Name=[eco-a-d-platform_paimon-warehouse] Destination=[/warehouse] (rc=0)
+    │     eco-flink-tm Mounts -> Name=[eco-a-d-platform_paimon-warehouse] Destination=[/warehouse] (rc=0)
+    │     bind  -> /data
+    │ bind  -> /sql
+    │ volume eco-a-d-platform_paimon-warehouse -> /warehouse
+    │ bind  -> /opt/flink/conf/config.yaml
+    │ 
+    │     bind  -> /data
+    │ bind  -> /sql
+    │ volume eco-a-d-platform_paimon-warehouse -> /warehouse
+    │ bind  -> /opt/flink/conf/config.yaml
+    │ 
+  · 实机层：两侧 Name 逐字相等（eco-a-d-platform_paimon-warehouse），Destination 逐字相等（/warehouse）
+[PASS] ① 具名卷同路径挂 JM/TM
+────────────────────────────────────────────────────────────────
+▶ 4b /warehouse 对 flink 用户可写（挂对了卷 != 能写；Paimon 写 bucket 的前提）
+────────────────────────────────────────────────────────────────
+    │     [eco-flink-jm] id / ls -ldn /warehouse 原始输出：
+    │ uid=9999(flink) gid=9999(flink) groups=9999(flink)
+    │ drwxr-xr-x 7 9999 9999 4096 Oct 27 07:00 /warehouse
+    │     eco-flink-jm: 运行 uid=9999, /warehouse 属主 uid=9999
+    │     [eco-flink-jm] 实写探针 /warehouse/.rwcheck-20261027T070304Z-6084-eco-flink-jm 内容 [rw-eco-flink-jm-1793084584-15098] 并读回：
+    │ rw-eco-flink-jm-1793084584-15098
+  · eco-flink-jm 侧可写（uid 一致 + 写入读回逐字相同）
+    │     [eco-flink-tm] id / ls -ldn /warehouse 原始输出：
+    │ uid=9999(flink) gid=9999(flink) groups=9999(flink)
+    │ drwxr-xr-x 7 9999 9999 4096 Oct 27 07:03 /warehouse
+    │     eco-flink-tm: 运行 uid=9999, /warehouse 属主 uid=9999
+    │     [eco-flink-tm] 实写探针 /warehouse/.rwcheck-20261027T070305Z-6084-eco-flink-tm 内容 [rw-eco-flink-tm-1793084585-1276] 并读回：
+    │ rw-eco-flink-tm-1793084585-1276
+  · eco-flink-tm 侧可写（uid 一致 + 写入读回逐字相同）
+[PASS] 4b /warehouse 对 flink 用户可写
+────────────────────────────────────────────────────────────────
+▶ ② 跨容器互见：JM 写探针 -> TM 读回同一路径逐字比对
+────────────────────────────────────────────────────────────────
+  · 探针路径：/warehouse/.probe-20261027T070300Z-2261230262
+  · 探针内容（JM 侧生成，含 stamp+nonce+JM 主机名）：
+    │     JM 侧命令: docker exec eco-flink-jm sh -c [printf ... > /warehouse/.probe-20261027T070300Z-2261230262 && cat /warehouse/.probe-20261027T070300Z-2261230262]
+    │     JM 侧 stdout/rc=0:
+    │ WROTE
+    │ impl-03a-probe stamp=20261027T070300Z nonce=2261230262 host=flink-jm
+    │     TM 侧命令: docker exec eco-flink-tm sh -c [cat /warehouse/.probe-20261027T070300Z-2261230262]
+    │     TM 侧 stdout/rc=0:
+    │ impl-03a-probe stamp=20261027T070300Z nonce=2261230262 host=flink-jm
+    │     逐字比对：
+    │       JM 行 = [impl-03a-probe stamp=20261027T070300Z nonce=2261230262 host=flink-jm]
+    │       TM 行 = [impl-03a-probe stamp=20261027T070300Z nonce=2261230262 host=flink-jm]
+[PASS] ② 跨容器互见（JM 写 / TM 读）
+────────────────────────────────────────────────────────────────
+▶ ④ 作业 jar 在 /opt/flink/usrlib/（两端同一字节；lib/ 不许有副本）
+────────────────────────────────────────────────────────────────
+    │     docker exec eco-flink-jm ls -l /opt/flink/usrlib/ 原始输出：
+    │ total 71968
+    │ -rwxrwxrwx 1 ubuntu ubuntu 73693749 Oct 26 06:22 ecom-flink.jar
+    │     命中行（eco-flink-jm）：
+    │ -rwxrwxrwx 1 ubuntu ubuntu 73693749 Oct 26 06:22 ecom-flink.jar
+    │     eco-flink-jm: ecom jar 条目数=1，校验对象=ecom-flink.jar
+    │     eco-flink-jm: size=73693749 sha256=9031125acacdfe0f76c9fd53d00c6ecfcbe91169b92fe899f8831ebbf2b87324
+  · eco-flink-jm 侧 usrlib 命中作业 jar（ecom-flink.jar, size=73693749）
+    │     docker exec eco-flink-tm ls -l /opt/flink/usrlib/ 原始输出：
+    │ total 71968
+    │ -rwxrwxrwx 1 ubuntu ubuntu 73693749 Oct 26 06:22 ecom-flink.jar
+    │     命中行（eco-flink-tm）：
+    │ -rwxrwxrwx 1 ubuntu ubuntu 73693749 Oct 26 06:22 ecom-flink.jar
+    │     eco-flink-tm: ecom jar 条目数=1，校验对象=ecom-flink.jar
+    │     eco-flink-tm: size=73693749 sha256=9031125acacdfe0f76c9fd53d00c6ecfcbe91169b92fe899f8831ebbf2b87324
+  · eco-flink-tm 侧 usrlib 命中作业 jar（ecom-flink.jar, size=73693749）
+    │     两端读数比对（size:sha256）：
+    │       73693749:9031125acacdfe0f76c9fd53d00c6ecfcbe91169b92fe899f8831ebbf2b87324
+    │       73693749:9031125acacdfe0f76c9fd53d00c6ecfcbe91169b92fe899f8831ebbf2b87324
+  · 两端 usrlib 作业 jar 逐字节相同（73693749:9031125acacdfe0f76c9fd53d00c6ecfcbe91169b92fe899f8831ebbf2b87324）
+    │     docker exec eco-flink-jm ls -l /opt/flink/lib/ 检查作业 jar 副本：
+    │ total 378708
+    │ -rw-r--r-- 1 flink flink    168462 May  3 09:27 flink-cep-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink    554203 May  3 09:28 flink-connector-files-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink     85360 May  3 09:30 flink-csv-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink 192934786 May  3 09:37 flink-dist-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink    181257 May  3 09:30 flink-json-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink  20603407 May  3 09:35 flink-scala_2.12-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink  15948471 May  3 09:36 flink-table-api-java-uber-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink  42042090 May  3 09:35 flink-table-planner-loader-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink   4024479 May  3 09:27 flink-table-runtime-2.2.1.jar
+    │ -rw-rw-r-- 1 flink flink    356379 May 18  2025 log4j-1.2-api-2.24.3.jar
+    │ -rw-rw-r-- 1 flink flink    348513 May 18  2025 log4j-api-2.24.3.jar
+    │ -rw-rw-r-- 1 flink flink   1914666 May 18  2025 log4j-core-2.24.3.jar
+    │ -rw-rw-r-- 1 flink flink    236114 May 18  2025 log4j-layout-template-json-2.24.3.jar
+    │ -rw-rw-r-- 1 flink flink     25319 May 18  2025 log4j-slf4j-impl-2.24.3.jar
+    │ -rwxrwxrwx 1 root  root   57697871 Oct 22 10:00 paimon-flink-2.2-2.1.0.jar
+    │ -rwxrwxrwx 1 root  root   50615937 Oct 22 13:41 paimon-hadoop-uber-2.1.0.jar
+  · eco-flink-jm 侧 /opt/flink/lib 无作业 jar 副本（正确）
+    │     docker exec eco-flink-tm ls -l /opt/flink/lib/ 检查作业 jar 副本：
+    │ total 378708
+    │ -rw-r--r-- 1 flink flink    168462 May  3 09:27 flink-cep-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink    554203 May  3 09:28 flink-connector-files-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink     85360 May  3 09:30 flink-csv-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink 192934786 May  3 09:37 flink-dist-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink    181257 May  3 09:30 flink-json-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink  20603407 May  3 09:35 flink-scala_2.12-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink  15948471 May  3 09:36 flink-table-api-java-uber-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink  42042090 May  3 09:35 flink-table-planner-loader-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink   4024479 May  3 09:27 flink-table-runtime-2.2.1.jar
+    │ -rw-rw-r-- 1 flink flink    356379 May 18  2025 log4j-1.2-api-2.24.3.jar
+    │ -rw-rw-r-- 1 flink flink    348513 May 18  2025 log4j-api-2.24.3.jar
+    │ -rw-rw-r-- 1 flink flink   1914666 May 18  2025 log4j-core-2.24.3.jar
+    │ -rw-rw-r-- 1 flink flink    236114 May 18  2025 log4j-layout-template-json-2.24.3.jar
+    │ -rw-rw-r-- 1 flink flink     25319 May 18  2025 log4j-slf4j-impl-2.24.3.jar
+    │ -rwxrwxrwx 1 root  root   57697871 Oct 22 10:00 paimon-flink-2.2-2.1.0.jar
+    │ -rwxrwxrwx 1 root  root   50615937 Oct 22 13:41 paimon-hadoop-uber-2.1.0.jar
+  · eco-flink-tm 侧 /opt/flink/lib 无作业 jar 副本（正确）
+[PASS] ④ 作业 jar 在 usrlib 且 lib 无副本
+────────────────────────────────────────────────────────────────
+▶ 4d Paimon bundled connector 在 JM 与 TM 两端 /opt/flink/lib 各查一次
+────────────────────────────────────────────────────────────────
+    │     docker exec eco-flink-jm ls -l /opt/flink/lib/ 原始输出：
+    │ total 378708
+    │ -rw-r--r-- 1 flink flink    168462 May  3 09:27 flink-cep-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink    554203 May  3 09:28 flink-connector-files-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink     85360 May  3 09:30 flink-csv-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink 192934786 May  3 09:37 flink-dist-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink    181257 May  3 09:30 flink-json-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink  20603407 May  3 09:35 flink-scala_2.12-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink  15948471 May  3 09:36 flink-table-api-java-uber-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink  42042090 May  3 09:35 flink-table-planner-loader-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink   4024479 May  3 09:27 flink-table-runtime-2.2.1.jar
+    │ -rw-rw-r-- 1 flink flink    356379 May 18  2025 log4j-1.2-api-2.24.3.jar
+    │ -rw-rw-r-- 1 flink flink    348513 May 18  2025 log4j-api-2.24.3.jar
+    │ -rw-rw-r-- 1 flink flink   1914666 May 18  2025 log4j-core-2.24.3.jar
+    │ -rw-rw-r-- 1 flink flink    236114 May 18  2025 log4j-layout-template-json-2.24.3.jar
+    │ -rw-rw-r-- 1 flink flink     25319 May 18  2025 log4j-slf4j-impl-2.24.3.jar
+    │ -rwxrwxrwx 1 root  root   57697871 Oct 22 10:00 paimon-flink-2.2-2.1.0.jar
+    │ -rwxrwxrwx 1 root  root   50615937 Oct 22 13:41 paimon-hadoop-uber-2.1.0.jar
+    │     命中行（eco-flink-jm）：
+    │ -rwxrwxrwx 1 root  root   57697871 Oct 22 10:00 paimon-flink-2.2-2.1.0.jar
+  · eco-flink-jm 侧命中 paimon-flink-2.2-2.1.0.jar
+    │     eco-flink-jm: size=57697871 sha256=43a6416a241ab736fb6ed2b6061a37fc5cca5ba8737d77eac1b977f859107dd1
+  · eco-flink-jm 侧 jar 字节级校验通过（size + sha256 均与钉死值一致）
+    │     docker exec eco-flink-tm ls -l /opt/flink/lib/ 原始输出：
+    │ total 378708
+    │ -rw-r--r-- 1 flink flink    168462 May  3 09:27 flink-cep-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink    554203 May  3 09:28 flink-connector-files-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink     85360 May  3 09:30 flink-csv-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink 192934786 May  3 09:37 flink-dist-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink    181257 May  3 09:30 flink-json-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink  20603407 May  3 09:35 flink-scala_2.12-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink  15948471 May  3 09:36 flink-table-api-java-uber-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink  42042090 May  3 09:35 flink-table-planner-loader-2.2.1.jar
+    │ -rw-r--r-- 1 flink flink   4024479 May  3 09:27 flink-table-runtime-2.2.1.jar
+    │ -rw-rw-r-- 1 flink flink    356379 May 18  2025 log4j-1.2-api-2.24.3.jar
+    │ -rw-rw-r-- 1 flink flink    348513 May 18  2025 log4j-api-2.24.3.jar
+    │ -rw-rw-r-- 1 flink flink   1914666 May 18  2025 log4j-core-2.24.3.jar
+    │ -rw-rw-r-- 1 flink flink    236114 May 18  2025 log4j-layout-template-json-2.24.3.jar
+    │ -rw-rw-r-- 1 flink flink     25319 May 18  2025 log4j-slf4j-impl-2.24.3.jar
+    │ -rwxrwxrwx 1 root  root   57697871 Oct 22 10:00 paimon-flink-2.2-2.1.0.jar
+    │ -rwxrwxrwx 1 root  root   50615937 Oct 22 13:41 paimon-hadoop-uber-2.1.0.jar
+    │     命中行（eco-flink-tm）：
+    │ -rwxrwxrwx 1 root  root   57697871 Oct 22 10:00 paimon-flink-2.2-2.1.0.jar
+  · eco-flink-tm 侧命中 paimon-flink-2.2-2.1.0.jar
+    │     eco-flink-tm: size=57697871 sha256=43a6416a241ab736fb6ed2b6061a37fc5cca5ba8737d77eac1b977f859107dd1
+  · eco-flink-tm 侧 jar 字节级校验通过（size + sha256 均与钉死值一致）
+[PASS] 4d Paimon connector 在两端 lib
+────────────────────────────────────────────────────────────────
+▶ 4c ADR-0002 补丁锚点：两端 flink --version 须为 2.2.1
+────────────────────────────────────────────────────────────────
+    │     [eco-flink-jm] flink --version (rc=0)：
+    │ Version: 2.2.1, Commit ID: 450c63e
+  · eco-flink-jm 侧补丁 = 2.2.1（与 ADR-0002 一致）
+    │     [eco-flink-tm] flink --version (rc=0)：
+    │ Version: 2.2.1, Commit ID: 450c63e
+  · eco-flink-tm 侧补丁 = 2.2.1（与 ADR-0002 一致）
+[PASS] 4c ADR-0002 补丁锚点 = 2.2.1
+────────────────────────────────────────────────────────────────
+▶ ③ docker compose down（不带 -v）-> up -d -> 探针内容仍在且逐字相同
+────────────────────────────────────────────────────────────────
+    │     down 前：从 TM 读探针（rc=0）：
+    │ impl-03a-probe stamp=20261027T070300Z nonce=2261230262 host=flink-jm
+  · 已备份到宿主：/tmp/eco-deploy-surface-check/.probe-20261027T070300Z-2261230262.bak（内容 68 字节）
+    │     down 原始输出：
+    │     │     > 执行: docker compose down（参数: []，已通过 -v 自检）
+    │  Container eco-superset Stopping 
+    │  Container eco-kafka-init Stopping 
+    │  Container eco-doris-be Stopping 
+    │  Container eco-flink-tm Stopping 
+    │  Container eco-kafka-init Stopped 
+    │  Container eco-kafka-init Removing 
+    │  Container eco-kafka-init Removed 
+    │  Container eco-kafka Stopping 
+    │  Container eco-flink-tm Stopped 
+    │  Container eco-flink-tm Removing 
+    │  Container eco-flink-tm Removed 
+    │  Container eco-flink-jm Stopping 
+    │  Container eco-flink-jm Stopped 
+    │  Container eco-flink-jm Removing 
+    │  Container eco-superset Stopped 
+    │  Container eco-superset Removing 
+    │  Container eco-flink-jm Removed 
+    │  Container eco-doris-be Stopped 
+    │  Container eco-doris-be Removing 
+    │  Container eco-superset Removed 
+    │  Container eco-kafka Stopped 
+    │  Container eco-kafka Removing 
+    │  Container eco-doris-be Removed 
+    │  Container eco-doris-fe Stopping 
+    │  Container eco-kafka Removed 
+    │  Container eco-doris-fe Stopped 
+    │  Container eco-doris-fe Removing 
+    │  Container eco-doris-fe Removed 
+    │  Network eco-a-d-platform_default Removing 
+    │  Network eco-a-d-platform_default Removed 
+    │     down 后 docker volume ls -q -f name=paimon-warehouse -> [eco-a-d-platform_paimon-warehouse]
+    │     up -d 原始输出：
+    │  Network eco-a-d-platform_default Creating 
+    │  Network eco-a-d-platform_default Creating 
+    │  Network eco-a-d-platform_default Created 
+    │  Network eco-a-d-platform_default Created 
+    │  Container eco-superset Creating 
+    │  Container eco-kafka Creating 
+    │  Container eco-doris-fe Creating 
+    │  Container eco-flink-jm Creating 
+    │  Container eco-doris-fe Created 
+    │  Container eco-doris-be Creating 
+    │  Container eco-flink-jm Created 
+    │  Container eco-flink-tm Creating 
+    │  Container eco-kafka Created 
+    │  Container eco-kafka-init Creating 
+    │  Container eco-superset Created 
+    │  Container eco-doris-be Created 
+    │  Container eco-flink-tm Created 
+    │  Container eco-kafka-init Created 
+    │  Container eco-doris-fe Starting 
+    │  Container eco-kafka Starting 
+    │  Container eco-flink-jm Starting 
+    │  Container eco-superset Starting 
+    │  Container eco-doris-fe Started 
+    │  Container eco-doris-fe Waiting 
+    │  Container eco-kafka Started 
+    │  Container eco-kafka Waiting 
+    │  Container eco-flink-jm Started 
+    │  Container eco-flink-jm Waiting 
+    │  Container eco-superset Started 
+    │  Container eco-flink-jm Healthy 
+    │  Container eco-flink-tm Starting 
+    │  Container eco-flink-tm Started 
+    │  Container eco-doris-fe Healthy 
+    │  Container eco-doris-be Starting 
+    │  Container eco-kafka Healthy 
+    │  Container eco-kafka-init Starting 
+    │  Container eco-doris-be Started 
+    │  Container eco-kafka-init Started 
+    │     up 后：从 TM 读同一路径（rc=0）：
+    │ impl-03a-probe stamp=20261027T070300Z nonce=2261230262 host=flink-jm
+    │     down 前备份内容：
+    │ impl-03a-probe stamp=20261027T070300Z nonce=2261230262 host=flink-jm
+  · 逐字比对通过（down 前后同一路径、同一内容）
+[PASS] ③ down/up 后数据仍在
+────────────────────────────────────────────────────────────────
+▶ ⑦ docker compose ps 七服务（常驻须 healthy / kafka-init 须已成功退出 Exit 0）
+────────────────────────────────────────────────────────────────
+    │     docker compose ps 原始输出（含 --profile doris）：
+    │ NAME           IMAGE                                        COMMAND                  SERVICE    CREATED          STATUS                    PORTS
+    │ eco-doris-be   eco/doris:4.1.5                              "/usr/local/bin/dori…"   doris-be   41 seconds ago   Up 20 seconds (healthy)   127.0.0.1:8040->8040/tcp, 127.0.0.1:9060->9060/tcp
+    │ eco-doris-fe   eco/doris:4.1.5                              "/usr/local/bin/dori…"   doris-fe   44 seconds ago   Up 37 seconds (healthy)   127.0.0.1:8030->8030/tcp, 127.0.0.1:9010->9010/tcp, 127.0.0.1:9030->9030/tcp
+    │ eco-flink-jm   eco/flink:2.2-paimon                         "/docker-entrypoint.…"   flink-jm   44 seconds ago   Up 34 seconds (healthy)   127.0.0.1:8081->8081/tcp
+    │ eco-flink-tm   eco/flink:2.2-paimon                         "/docker-entrypoint.…"   flink-tm   41 seconds ago   Up 22 seconds (healthy)   6123/tcp, 8081/tcp
+    │ eco-kafka      docker.m.daocloud.io/apache/kafka:4.3.1      "/__cacert_entrypoin…"   kafka      44 seconds ago   Up 36 seconds (healthy)   127.0.0.1:9092->9092/tcp, 127.0.0.1:29092->29092/tcp
+    │ eco-superset   docker.m.daocloud.io/apache/superset:6.1.0   "/app/docker/docker-…"   superset   44 seconds ago   Up 33 seconds (healthy)   127.0.0.1:8088->8088/tcp
+  · ps -a --format json 关键字段（供复核判据来源）：
+    │     Service=client     State=exited   Health=<no value> ExitCode=255
+    │     Service=doris-be   State=running  Health=healthy    ExitCode=0
+    │     Service=doris-fe   State=running  Health=healthy    ExitCode=0
+    │     Service=flink-jm   State=running  Health=healthy    ExitCode=0
+    │     Service=flink-tm   State=running  Health=healthy    ExitCode=0
+    │     Service=kafka      State=running  Health=healthy    ExitCode=0
+    │     Service=kafka-init State=exited   Health=<no value> ExitCode=0
+    │     Service=superset   State=running  Health=healthy    ExitCode=0
+    │     kafka      State=running    Health=healthy
+    │     flink-jm   State=running    Health=healthy
+    │     flink-tm   State=running    Health=healthy
+    │     superset   State=running    Health=healthy
+    │     doris-fe   State=running    Health=healthy
+    │     doris-be   State=running    Health=healthy
+    │     kafka-init State=exited ExitCode=0 Health=<no value>（一次性服务：判「已成功退出」而非「healthy」）
+  · kafka-init：已成功退出（Exit 0）—— 判据成立
+    │     服务条目数（含 --profile doris，排除 client）= 7（票面判据：5 + 2 = 7）
+[PASS] ⑦ 七服务全 healthy
+────────────────────────────────────────────────────────────────
+汇总：11 PASS / 0 FAIL
+────────────────────────────────────────────────────────────────
+探针备份留存于：/tmp/eco-deploy-surface-check
+
+EXIT_CODE=0
+ELAPSED_SECONDS=76
+END_UTC=2026-10-27T07:04:13Z

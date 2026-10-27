@@ -214,6 +214,30 @@ compose 与 `docker/flink/` 两边都有标注词、Dockerfile 有标注、compo
   **本轮未跑**（⑤ 在全仓逐文件 `grep -r` 上超时；⑥⑧ 未执行）。
   这三条**未改动一支**，口径变更不影响其语义。
 
+### §G 判据口径变更（2026-10-27，用户裁决方向 C；施工票 [impl-06i](impl-06i-deploy-check-5-exclusion-defect.md)）
+
+**⑤ 的扫描面已改判据对象**：旧「全仓 `grep -r`（仅排除 .git/.scratch/artifacts）」
+→ 现「**可执行面白名单**」（`*.sql` / `*.sh` / `*.java` / `Makefile` / `Dockerfile` /
+`*.yml` / `*.yaml`，两段共用同一组 `SCAN_INCLUDE`/`SCAN_EXCLUDE`）。
+
+- **为什么改**（一手证据来自 [impl-06f-4](impl-06f-4-closeout-gate-deploy-proof.md)
+  收尾门实跑）：旧口径被 32 行非 SQL 噪音打成恒假——`.mimosa/hook-state/**` 会话
+  基线 27 行（判据写就时该目录不存在）+ 守卫测试 docstring 4 行 + README 判据名
+  1 行。判据对象是「**可能出现 ADD JAR 语句的文件**」，不是「工作树里的一切文件」。
+- **票面未记的新发现**（06i 复盘实测）：⑤ 的附加扫描段（宿主路径 jar 引用）同样被
+  `.mimosa` 18 行基线副本打成恒假，只是 seg1 先 FAIL 提前 return 挡住了它。
+  故两段同改，且 seg2 也出了反例凭证。
+- **反例证伪（2026-10-27 实机，均为一次性注入、事后已还原）**：
+  | 反例 | 注入 | 新 ⑤ 结果 | 还原后 |
+  | --- | --- | --- | --- |
+  | A：sql/ 真 ADD JAR 宿主路径语句 | `sql/zz_impl06i_red.sql` 一行 | **FAIL**（命中注入行，其余 10 条照绿） | PASS |
+  | B：.sh 宿主路径 jar 引用（无 ADD JAR 字样，seg2 腿） | `scripts/zz_impl06i_red.sh` 一行 | **FAIL**（seg1 零命中、seg2 抓到，其余 10 条照绿） | PASS |
+- **正路径**：不设 override 全门复跑 **11/11 PASS 退 0**（凭证 `evidence/impl-06i/04-clean-full-gate.out.txt`）。
+- **附带裁决**：`.mimosa/` 入 `.gitignore` §7（与 `.dsh/`、`.agents/` 同族，
+  harness 会话状态不入库）。
+- **维护点**：新增可执行源码类型时须把扩展名加进 `SCAN_INCLUDE`，否则该类型脱管
+  （已写进脚本 ⑤ 段头注）。注释行过滤同步扩到 `#` / `--` / `//` 三种形态。
+
 ### 复现命令
 
 ```bash
