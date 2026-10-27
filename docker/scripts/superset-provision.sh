@@ -101,7 +101,8 @@ if ! docker compose cp "$EXPORT_ZIP" superset:/tmp/ecom-live-reimport.zip \
 fi
 echo "[superset-provision] ✓ zip 导入回读成功"
 
-# ── ⑤ 脏率基线同步（票面 ⑤：面板的基线行从 verify-fault 快照来）──────
+# ── ⑤ 脏率基线同步（面板的基线行从 dirty-rate-baseline.json 来——make verify
+#    维护的棘轮上界；原「verify-fault 快照」口径经 impl-06h 裁决 A 按实现改写）──
 # 脚本幂等；基线文件缺席（从未跑过 verify-fault）则跳过并提示，不算失败。
 DIRTY_SYNC="${SUPERSET_DIRTY_SYNC:-docker/scripts/superset-dirty-rate-sync.sh}"
 step "脏率基线同步（${DIRTY_SYNC}）"
@@ -111,7 +112,7 @@ if [ -f "artifacts/verify/dirty-rate-baseline.json" ]; then
   fi
   echo "[superset-provision] ✓ 脏率基线已同步"
 else
-  echo "[superset-provision]   （artifacts/verify/dirty-rate-baseline.json 不存在——先跑 make verify-fault 立基线；面板脏率行暂缺，不阻塞置备）"
+  echo "[superset-provision]   （artifacts/verify/dirty-rate-baseline.json 不存在——先跑 make verify 立基线（首跑判据 SKIP 时落盘）；面板脏率行暂缺，不阻塞置备）"
 fi
 
 step "完成"

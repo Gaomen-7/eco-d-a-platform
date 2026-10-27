@@ -72,6 +72,9 @@ MainPreset.ts 6.1.0 逐字注册（源码级）：
 
 - **分子只含真脏**：SQL 层定义 `dirty_rate = dlq_count_delta / total_events`，重复不进分子（gdd D2 冻结；重复走幂等吸收计数通道，[03] Q6/Q7）。
 - **基线从哪来**：`verify-fault` 的输入冻结快照（kill 前 DLQ 计数，[03] Q7 已定）——面板层只显示「当前值 vs 基线 Δ」，**「故障演练期间不得飙升」的判据是 `verify-fault` 的退出码断言（DLQ 增量 == 0），不是面板目测**（HLD §0.4：「UI 里能看到」不是判据）。
+
+  > ★ 2026-10-27 备注（[impl-06h](impl-06h-dirty-rate-baseline-doc-divergence.md) 用户裁决 A）：上条「基线从哪来」的「`verify-fault` 输入冻结快照」属口径嫁接——[03] Q7 的 kill 前 DLQ 快照是 verify-fault 流程内的负断言基线且明写「无需历史基线文件」；面板读的 `dirty-rate-baseline.json` 实由 `make verify` 棘轮维护（首跑判据 SKIP 落盘、PASS 前推、`--corrupt` 收尾吸收，普通 `verify-fault` 不写基线）。本条其余判据（退出码断言非面板目测）不受影响；原文保留作历史取证。
+
 - 原型演示：点「故障重放（重复涌灌）」脏率不动；点「注入真脏」才动。
 - 基线脏率数值本身是**设计值**（`--chaos-ratio` 决定，官方未给出）。
 

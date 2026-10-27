@@ -371,7 +371,7 @@ SELECT '<断言名>' AS assertion, COUNT(*)>0 AS ok FROM …
 ### 6.4 脏率面板（`REQ-F-BI-04`，SHOULD）
 
 - **分子只含真脏**：`dirty_rate = dlq_count_delta / total_events`，**重复不进分子**（重复走幂等吸收计数通道）。
-- **基线＝`verify-fault` 输入冻结快照**（kill 前 DLQ 计数）；面板只显示「当前值 vs 基线 Δ」。
+- **基线＝`make verify` 维护的棘轮上界**（`artifacts/verify/dirty-rate-baseline.json`：首跑判据 SKIP 时落盘、PASS 时前推、`--corrupt` 收尾吸收；普通 `verify-fault` 不写基线）；面板只显示「当前值 vs 基线 Δ」。（原「verify-fault 输入冻结快照」口径经 [impl-06h](issues/impl-06h-dirty-rate-baseline-doc-divergence.md) 用户裁决 A 按实现改写，2026-10-27）
 - ⚠️ **「故障演练期间不得飙升」的判据是 `verify-fault` 的退出码断言（DLQ 增量==0），不是面板目测**（「UI 里能看到」不是判据）。
 - 基线脏率数值本身是**设计值**（`--chaos-ratio` 决定，`官方未给出`）。
 

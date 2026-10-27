@@ -5,7 +5,8 @@
 # 这个 metric 没有任何 Flink 作业写它（数据面词表里不存在）——它是
 # **面板专用的镜像行**，由本脚本从两个来源同步：
 #   分子基线 = artifacts/verify/dirty-rate-baseline.json 的 dlq_offset
-#              （= verify-fault 输入冻结时的 DLQ 快照，票面 ⑤ 逐字）；
+#              （make verify 维护的棘轮上界：首跑判据 SKIP 落盘、PASS 前推、
+#              verify-fault --corrupt 收尾吸收；impl-06h 裁决 A 按实现改写）；
 #   分子当前 = Kafka DLQ topic 总 offset（kafka-get-offsets.sh 第三列之和，
 #              与 verify_runner._topic_total_offset 同一口径）；
 #   分母     = 输入 topic 总 offset（同口径）。
@@ -13,7 +14,8 @@
 # 分子只含真脏；重复不进分子——重复走幂等吸收，不产生 DLQ 行）。
 #
 # 写入形态：单行 upsert 到 ads_window_metric（UNIQUE KEY 覆盖写，幂等）。
-# 不动 verify_runner / fault —— 基线文件的写者只有 verify-fault（票面 ⑤）。
+# 不动 verify_runner / fault —— 基线文件的写者是 make verify 判据（首跑 SKIP 写、
+# PASS 前推）与 --corrupt 收尾的吸收函数；普通 verify-fault 不写基线（impl-06h A）。
 set -uo pipefail
 
 export MSYS_NO_PATHCONV=1  # 同 superset-provision.sh：防 Git-Bash 路径改写
@@ -30,7 +32,7 @@ fail() { echo "[dirty-rate-sync] ✗ $*" >&2; exit 1; }
 #   旧写法 `python` command not found 时 stderr 被 2>/dev/null 吞掉 ⇒ 误报
 #   「基线文件不可解析（缺 dlq_offset 字段？）」——文件其实完好，是解释器缺席。
 step "读基线 ${BASELINE_FILE}"
-[ -f "$BASELINE_FILE" ] || fail "基线文件不存在——先跑 make verify-fault（首跑落盘基线）"
+[ -f "$BASELINE_FILE" ] || fail "基线文件不存在——先跑 make verify（首跑判据 SKIP 时落盘基线）"
 baseline_dlq="$("${PYTHON:-python3}" -c "import json,sys;print(json.load(open(sys.argv[1]))['dlq_offset'])" "$BASELINE_FILE" 2>/dev/null)" \
   || fail "基线文件不可解析（缺 dlq_offset 字段？）"
 baseline_input="$("${PYTHON:-python3}" -c "import json,sys;print(json.load(open(sys.argv[1]))['input_events'])" "$BASELINE_FILE" 2>/dev/null)" \
@@ -55,7 +57,7 @@ echo "[dirty-rate-sync] 当前：dlq=${cur_dlq} input=${cur_input}"
 
 # ── ③ Δ 与保护 ────────────────────────────────────────────────────────
 delta=$(( cur_dlq - baseline_dlq ))
-[ "$delta" -lt 0 ] && fail "Δ 为负（dlq=${cur_dlq} < 基线 ${baseline_dlq}）——topic 被重建过，基线失效，重跑 make verify-fault 立新基线"
+[ "$delta" -lt 0 ] && fail "Δ 为负（dlq=${cur_dlq} < 基线 ${baseline_dlq}）——topic 被重建过，基线失效；删基线文件后重跑 make verify 立新基线（首跑 SKIP 重立）"
 [ "$cur_input" -eq 0 ] && fail "输入事件数为 0，脏率无定义"
 
 # ── ④ 单行 upsert（UNIQUE KEY 覆盖写，幂等）────────────────────────────

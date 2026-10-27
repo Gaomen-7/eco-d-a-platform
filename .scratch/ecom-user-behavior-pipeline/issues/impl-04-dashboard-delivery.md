@@ -23,6 +23,8 @@ Blocked by: impl-02
 
 **⑤ 脏率面板** — 分子只含真脏（`dlq_count_delta / total_events`，**重复不进分子**）。基线 = `verify-fault` 输入冻结时的 DLQ 快照，面板只显示「当前值 vs 基线 Δ」。⚠️ 「故障演练期间脏率不得飙升」的判据是 **`verify-fault` 的退出码断言（DLQ 增量==0），不是面板目测**。
 
+> ★ 2026-10-27 备注（[impl-06h](impl-06h-dirty-rate-baseline-doc-divergence.md) 用户裁决 A）：上段「基线 = `verify-fault` 输入冻结时的 DLQ 快照」为口径偏差，已按实现为准改写——基线实为 `artifacts/verify/dirty-rate-baseline.json`（`make verify` 棘轮维护：首跑判据 SKIP 落盘、PASS 前推、`--corrupt` 收尾吸收，普通 `verify-fault` 不写基线）。本段其余判据（分子只含真脏、退出码断言非面板目测）不受影响；原文保留作历史取证，状态陈述以文件顶行为准。
+
 **⑥ 交付形态：zip 保留为 `make init` 的复现手段**（`import-dashboards -p <zip>`，经 `importexport.py` docstring 源码级确认），但**判据归 SRS**：浏览器能看能刷。⚠️ **新硬约束（源码级）**：dashboard importer 逐字 `config["database_id"] = database_ids[config["database_uuid"]]` ⇒ dataset 经 `database_uuid` 匹配目标实例的 database ⇒ `make init` 建 `ecom_ads` 连接时**必须固定/回填该 UUID**，否则导入后全部图表断链。
 
 **Blocked by:** impl-02
