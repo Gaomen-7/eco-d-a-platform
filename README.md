@@ -7,6 +7,8 @@
 
 > 新手请从 [§1 这是什么](#1-这是什么) 读起；想直接跑起来跳到 [§3 五分钟跑起来](#3-五分钟跑起来)。
 > 只想看结论的跳到 [§6 已验证到什么程度](#6-已验证到什么程度)。
+> **要把本项目搬到另一台电脑，请看 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)**——
+> 它覆盖了换机时的三个隐形缺口（本地镜像构建、作业 jar 提交、`.env` 生成）。
 
 ---
 
@@ -146,9 +148,12 @@ python3 --version        # 应为 3.12.x
 
 ```bash
 make build-flink-image
+make build-doris-image
 ```
 
-这一步做两件事：下载 Paimon connector jar、构建带 Paimon 的 Flink 镜像。
+这一步做两件事：下载 Paimon connector jar、构建带 Paimon 的 Flink 镜像；
+再构建 Doris 镜像（官方**没有**可直接拉取的 4.1.5 版本化镜像，必须本地构建，≈35 min）。
+
 **跳过它会导致 `docker compose up` 报 `image not found`**——这是新手最常踩的坑。
 
 ### 第 2 步：一条命令拉起全链路
@@ -167,6 +172,17 @@ make init
 | ④ | Superset 初始化 + 看板置备 | `db upgrade` → `create-admin` → `init` → 建 dataset/图表 |
 
 首次执行约 **2.5–3 分钟**（实测 L0 档 157 秒）。完成后应看到 `✓ 完成`。
+
+### 第 2.5 步：提交 Flink 作业
+
+```bash
+make deploy-job
+```
+
+`make init` **不**提交 Flink 作业（它只管容器与看板）。这一步编译作业 jar 并
+`flink run` 提交，等作业 `RUNNING`。**漏掉它 ⇒ `make verify` 第 2 项必 FAIL。**
+
+> 换机部署的完整流程见 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)。
 
 ### 第 3 步：验证它真的活了
 
