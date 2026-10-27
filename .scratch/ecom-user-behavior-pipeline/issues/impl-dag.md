@@ -64,6 +64,27 @@
 
 > 06a/06b/06c 出处＝spec §8.2（**2026-10-25 用户批准**，实施前须复述风险再触发）；06d 出处＝HLD §8-R7-i（用户裁决三案同票）；06e/06f 出处＝2026-10-26 收尾盘点；06g 出处＝SRS `REQ-F-GEN-04`（尖峰 ≥1000/s 从未实测）；06h 出处＝impl-06f-3 施工中按「以代码为准」复核面板口径时发现（该票 Notes 预设登记情形）；06i 出处＝impl-06f-4 收尾门实跑（判据 ⑤ 恒假，32 行命中全为非 SQL 噪音）。除 06f-4 外均互不阻塞。
 
+### impl-07 系列（2026-10-27 开票；impl-05 §5 登记却从未开票的三项 code-review 残留）
+
+| 票 | 文件 | Blocked by | 交付 |
+| --- | --- | --- | --- |
+| **impl-07** | [impl-07-panel-baseline-parse-and-interpreter.md](impl-07-panel-baseline-parse-and-interpreter.md) | impl-07a, impl-07b, impl-07c | **母票（索引 + 收口门）**：脏率基线链失败时报**真因**（解释器缺席/空壳/JSON 损坏/字段缺失）而非一律「基线文件不可解析」｜四类故障注入收口门 + 正常路径逐字零变化 + ③ 的不施工留档 |
+| **impl-07a** | [impl-07a-dirty-rate-baseline-parse-true-cause.md](impl-07a-dirty-rate-baseline-parse-true-cause.md) | — | 脏率基线同步脚本：解释器**可执行性**自检（⚠️ 非存在性探测）＋ 四类真因分流 ＋ 基线只解析一次 ＋ 多余的「只打印不参与判断」读取处置 |
+| **impl-07b** | [impl-07b-provision-dataset-id-true-cause.md](impl-07b-provision-dataset-id-true-cause.md) | — | 看板置备脚本：「没解析出来」与「确实没有」分两类报，不再一律「找不到 dataset id」；与 07a **刻意不合流**（输入源不同：stdin vs 文件） |
+| **impl-07c** | [impl-07c-dirty-rate-baseline-atomic-write.md](impl-07c-dirty-rate-baseline-atomic-write.md) | — | 脏率基线落盘改**原子替换**（先写临时文件再替换）⇒ 读者永不看到半截 JSON；只改落盘方式，不改基线格式与棘轮语义 |
+
+> 07 系列出处＝impl-05 §5「code-review 登记的残留项（本票不改，留独立票）」——**三项从未开票**，
+> 2026-10-27 复核后开票。★ **与 impl-05 原文的三处出入**（照原文做会做错，详见母票）：
+> ①原文建议「先 `command -v` 探测」**已被实测证伪**——空壳解释器存在性探测会放行
+> （本机实测：`python3` 指向应用商店安装器跳转程序，存在性通过但执行静默退 49 且无 stderr），
+> 修法必须是**执行一次最小语句**做自检；②原文把两处内联 `python -c` 当作同一件事可收敛，
+> 实则**输入源与语义都不同**（文件 vs stdin），故拆 07a/07b；③原文未记「第二次解析取的那个
+> 输入事件数键**只被打印、从不参与判断或写入**」——多一个失败点零收益，07a 一并处置。
+> ★ 残留③（取证辅助脚本 `JID` 硬编码）**判定不施工**：全仓零引用（取证存档件），
+> 且 Flink 每次提交生成新 JobID ⇒ 硬编码本是一次性快照的固有属性，改为「运行时查最新作业」
+> 等于给没人调用的取证件加功能——留档在母票，不开票。
+> 07a/07b/07c 三票**互不阻塞**（各改各的面），母票 07 是它们的收口门。
+
 ## 依赖图
 
 ```
@@ -110,6 +131,16 @@
 - **impl-02 已结清**（P1 实时闭环，含五张副票全部完成）；spec §4.3 的 P1 闸门**已开**
 - **当前前沿（2026-10-27 impl-06i 收口后）**：判据 ⑤ 排除集裁决 [impl-06i](impl-06i-deploy-check-5-exclusion-defect.md) **已结案**（用户裁决 C 白名单 + `.mimosa/` 入 gitignore；反例两腿必红、不设 override 全门 **11/11 PASS 退 0**）——部署面 11 条判据首次全绿。同日早前 [impl-06g](impl-06g-spike-live-rate-proof.md) 已结案（实测 1011.8 events/s，尖峰判据首次有一手证据，**功能面条目全部结清**）、[impl-06h](impl-06h-dirty-rate-baseline-doc-divergence.md) 已结案（用户裁决 A 实现为准改文档）。impl-03 签字链 [impl-03g](impl-03g-falsification-signoff.md) → [impl-03h](impl-03h-mother-ticket-final-reconcile.md) **全部结案**（2026-10-27：03e 经人工复核签字收 `resolved`；03h 终核 10 条验收逐条对账今日仍成立——`make verify` 10P0S0F 退 0、`lake_assert.sh --compare` 指纹逐字回基线、`git check-ignore` 复跑命中——DAG 措辞归正含「总账 12 行 → 实 13 行」口径差）；**impl-03 系列无剩余待办**。**收尾门结论（2026-10-26）**：不设 override 全判据 10/11 PASS（唯一 FAIL 归因为判据 ⑤ 自身缺陷并立 06i，已修）；`make init`→`make verify` 一绿（127 s + 404 s，10P0S0F 退 0）；**impl-03a §C 冻结端口遗留项已销项**（八端口 HTTP 4×200 + TCP 4×OPEN，排除段已漂走）——原「本机 WinNAT 下冻结端口仅 8081 通」的外部卡点随排除段漂移解除，README「已知环境限制」已补当日实证记录。
 - ✅ **impl-06f-4 已结清**（2026-10-26）：收尾门实跑全记录见[票面 Answer](impl-06f-4-closeout-gate-deploy-proof.md)；附带收获——③ down/up 后 usrlib 目录整体消失（作业 jar 走 docker cp 路线的固有运维事实）、作业重提后消费组 5 s 追平 lag=0（06d 案 2 续读位点生效，DLQ 不翻倍）、脏率 0.271960 ≤ 基线 0.272138。静态面 lint/typecheck/pytest 314 全过。
+- **当前前沿（2026-10-27 开 impl-07 系列）**：[impl-07](impl-07-panel-baseline-parse-and-interpreter.md) 母票 + 三张副票
+  [impl-07a](impl-07a-dirty-rate-baseline-parse-true-cause.md)（脏率基线同步脚本解析失败报真因 ＋
+  解释器**可执行性**自检 ＋ 只解析一次 ＋ 多余读取处置）/
+  [impl-07b](impl-07b-provision-dataset-id-true-cause.md)（置备脚本「没解析出来」与「确实没有」分两类报）/
+  [impl-07c](impl-07c-dirty-rate-baseline-atomic-write.md)（基线落盘改原子替换 ⇒ 读者永不看到半截 JSON）。
+  三票**互不阻塞**，可并行开工；母票 07 为收口门（四类故障注入 ＋ 正常路径逐字零变化）。
+  出处＝impl-05 §5 登记却**从未开票**的三项 code-review 残留；★ 复核时发现 impl-05 原文的
+  「先 `command -v` 探测」建议**已被实测证伪**（空壳解释器存在性探测会放行），修法必须是
+  **执行一次最小语句**做自检——详见母票「三处出入」。残留③（取证辅助脚本 `JID` 硬编码）
+  **判定不施工**（全仓零引用，存档件固有属性），留档在母票。
 
 ### impl-03 内部的 Frontier（2026-10-24 22:00 收口）
 
@@ -179,4 +210,6 @@
 - 施工票 `impl-01`–`impl-05`：**另起前缀**，避免与决策票号混淆
 - impl-02 副票 `impl-02a`–`impl-02e`：**同前缀第三段**，与 impl-02 母票并存
 - impl-03 副票 `impl-03a`–`impl-03f`：**同前缀第三段**（2026-10-22 拆），与 impl-03 母票并存；母票正文保留为决策档案，验收勾选收口在 03f
+- impl-06 副票 `impl-06a`–`impl-06i` 与切片 `impl-06f-1`–`impl-06f-4`：**同前缀第三段**（2026-10-25/26 开），母票 `impl-06f` 为索引票
+- impl-07 母票 + 副票 `impl-07a`–`impl-07c`：**同前缀第三段**（2026-10-27 开）；母票 07 为**索引 + 收口门**（副票全结才收）
 - `Status:` 取值遵循 `docs/agents/triage-labels.md`（`ready-for-agent` 等五角色）
