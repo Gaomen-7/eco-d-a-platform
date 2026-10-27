@@ -1,0 +1,56 @@
+### impl-07 收口门 A：脏率基线链四类故障注入（2026-10-27T14:09:03Z）
+### 工作目录：/mnt/f/Anaconda practice project/eco-a-d-platform
+### 被测脚本：docker/scripts/superset-dirty-rate-sync.sh
+### 判据：每一类报自己的真因 + 不冒充其他三类 + 带下一步 + 退非 0；任一不过即退 1
+
+### 基线样本（真实基线副本）：{  "dlq_offset": 14911,  "input_events": 77700}
+
+── [1] 正常路径（基线完好）—— 门必须先证明自己能绿
+   ✓ 退出码 0
+   ✓ 走完 Δ 与面板写入
+   ✓ 正常路径 stderr 0 字节
+
+── [2] 故障① 解释器缺席（PYTHON 指向不存在路径）
+   ✓ 退出码非 0（1）
+   ✓ 报出了真因：解释器缺席
+   ✓ 未冒充其他类
+   ✓ 带可操作下一步
+   stderr：[dirty-rate-sync] ✗ 解释器缺席：'/tmp/tmp.HgPWMktM1v/no-such-python3' 不在 PATH 上（bash rc=127）——**这不是基线文件的问题**。下一步：装一个 python3（apt-get install -y python3），或用 export PYTHON=/path/to/python3 指定绝对路径后重跑。
+
+── [3] 故障② 解释器在 PATH 上但不可用（空壳：退 49、零输出、零 stderr）
+   ✓ 退出码非 0（1）
+   ✓ 报出了真因：解释器不可用
+   ✓ 未冒充其他类
+   ✓ 带可操作下一步
+   stderr：[dirty-rate-sync] ✗ 解释器不可用：'/tmp/tmp.HgPWMktM1v/python3-shell-stub' 存在但执行最小语句失败（rc=49；stderr：<空>）——**这不是基线文件的问题**，换一个能真正执行的解释器（例如 export PYTHON=/usr/bin/python3）后重跑；先跑 '/tmp/tmp.HgPWMktM1v/python3-shell-stub' -c 'print(1)' 即可复现。
+
+── [2b] ★ 留档反证：impl-05 §5 建议的「先 command -v 探测」为何被证伪
+   ✓ 存在性探测：**通过**（放行了一个不可用的解释器 —— 所以它不能当判据）
+   ✓ 真跑一次：rc=49、stdout=0 字节、stderr=0 字节（静默失败 ⇒ 只有真的执行才分辨得出）
+
+── [4] 故障③ 基线文件是坏 JSON
+   ✓ 退出码非 0（1）
+   ✓ 报出了真因：不是合法 JSON
+   ✓ 未冒充其他类
+   ✓ 带可操作下一步
+   stderr：[dirty-rate-sync] ✗ 基线文件不是合法 JSON（Expecting property name enclosed in double quotes: line 1 column 22 (char 21)）——文件损坏或没写完。下一步：删掉 /tmp/tmp.HgPWMktM1v/broken.json，重跑 make verify 立新基线（首跑判据 SKIP 时落盘）；若刚有人在跑 make verify-fault，等它结束再重试。
+
+── [5] 故障④ 基线文件缺必需字段（dlq_offset）
+   ✓ 退出码非 0（1）
+   ✓ 报出了真因：缺必需字段：dlq_offset
+   ✓ 未冒充其他类
+   ✓ 带可操作下一步
+   stderr：[dirty-rate-sync] ✗ 基线文件缺必需字段：dlq_offset——文件不完整（多半是写入被打断；impl-07c 的原子替换就为除这条面）。**这不是解释器的问题**。下一步：删掉 /tmp/tmp.HgPWMktM1v/missing.json，重跑 make verify 立新基线（首跑判据 SKIP 时落盘）。
+
+── [6] 四类真因矩阵自检（每一类只能命中自己）
+   ✓ ①解释器缺席：只命中自己（矩阵对角）
+   ✓ ②解释器不可用：只命中自己（矩阵对角）
+   ✓ ③坏JSON：只命中自己（矩阵对角）
+   ✓ ④缺字段：只命中自己（矩阵对角）
+
+── [7] 静态形态守卫（回退即红）
+   ✓ 全脚本零 2>/dev/null
+   ✓ 无 command -v 判据
+   ✓ bash -n SYNTAX OK
+
+══ 收口门 A 结果：PASS=28 FAIL=0 ══

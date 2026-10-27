@@ -53,6 +53,10 @@ _ROOT = Path(__file__).resolve().parent.parent
 _SCRIPT = _ROOT / "docker" / "scripts" / "superset-provision.sh"
 _BASH = shutil.which("bash")
 
+# 施工前的锚（impl-07b 施工前的形态 = impl-07 开票提交）。**不要**改回 "HEAD"：
+# 施工提交入库后 HEAD 就是新脚本，对照会退化成「新脚本 vs 新脚本」（见用到它的那条测试）。
+_PRE_CHANGE_COMMIT = "fc1445f"
+
 # 假 docker：脚本里所有 docker 调用（pymysql 检查 / 置备 / zip 往返）都直接成功。
 _DOCKER_STUB = "#!/bin/sh\nexit 0\n"
 
@@ -205,20 +209,32 @@ def test_normal_path_reports_the_real_dataset_id(tmp_path: Path) -> None:
 def test_normal_path_matches_pre_change_script(tmp_path: Path) -> None:
     """★ 票面 AC：正常路径的输出与施工前**逐字一致**。
 
-    把 git HEAD 上的旧脚本取到临时文件，与新脚本在**同一套桩、同一份响应**下各跑
-    一遍：stdout 逐字、stderr 逐字、退出码一致。旧脚本的管道形态在同一个 curl 桩上能
+    把施工前的旧脚本取到临时文件，与新脚本在**同一套桩、同一份响应**下各跑一遍：
+    stdout 逐字、stderr 逐字、退出码一致。旧脚本的管道形态在同一个 curl 桩上能
     正常工作（桩把响应体打到 stdout），所以这是真对照，不是自证。
+
+    ★ 对照的锚是**固定提交 `_PRE_CHANGE_COMMIT`**，不是 `HEAD`：本票的施工提交一旦入库，
+    `HEAD` 就变成了新脚本，拿 `HEAD:` 对照会退化成「新脚本 vs 新脚本」——永远 PASS 且
+    毫无信息量（用实现证明实现的另一种形态）。故这里还断言**锚与工作树脚本确实不同**：
+    锚写错（或有人把锚往前挪）时本条**必红**，而不是安静地自证。
     """
     show = subprocess.run(
-        ["git", "show", "HEAD:docker/scripts/superset-provision.sh"],
+        ["git", "show", f"{_PRE_CHANGE_COMMIT}:docker/scripts/superset-provision.sh"],
         cwd=_ROOT,
         capture_output=True,
         text=True,
         encoding="utf-8",
         check=True,
     )
-    old = tmp_path / "superset-provision.head.sh"
+    old = tmp_path / "superset-provision.pre-change.sh"
     old.write_text(show.stdout, encoding="utf-8")
+
+    # 先钉锚的有效性：锚上的脚本必须与工作树脚本不同，否则下面的对照是自证。
+    assert old.read_text(encoding="utf-8") != _script_text(), (
+        f"对照锚 {_PRE_CHANGE_COMMIT} 上的脚本与工作树**逐字相同** ⇒ 本条对照会自证"
+        "（永远 PASS 且无信息量）。请把 _PRE_CHANGE_COMMIT 改成真正的施工前提交，"
+        "或删掉本条（不要留一个装成对照的自证）"
+    )
 
     # 两遍用**同一个** tmp_path：脚本会打印 zip 与脏率脚本的路径，路径不同会伪造出
     # 「输出不一致」的假红。

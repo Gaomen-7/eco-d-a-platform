@@ -1,0 +1,74 @@
+### impl-07 收口门 B：正常路径与施工前逐字零变化（2026-10-27T14:07:33Z）
+### 工作目录：/mnt/f/Anaconda practice project/eco-a-d-platform
+### 被测脚本：docker/scripts/superset-dirty-rate-sync.sh
+### 对照锚：fc1445f（impl-07 开票提交，施工前形态）
+
+── [0] 对照锚有效性（防「新脚本 vs 新脚本」的自证）
+   ✓ 锚 fc1445f 在仓库里
+   ✓ 取到锚上的旧脚本
+   ✓ 锚上脚本与工作树**确实不同**（对照有意义）：129 行差异
+
+   ✓ 取到真实基线文件（同一份给两边）
+   基线内容：{  "dlq_offset": 14911,  "input_events": 77700}
+
+── [1] 施工前（fc1445f）stdout
+[dirty-rate-sync] ▶ 读基线 /tmp/tmp.OeVjgUZsow/baseline.json
+[dirty-rate-sync] 基线：dlq_offset=14911 input_events=77700
+[dirty-rate-sync] ▶ 读 Kafka DLQ 总 offset
+[dirty-rate-sync] ▶ 读 Kafka 输入 topic 总 offset
+[dirty-rate-sync] 当前：dlq=14911 input=77736
+[dirty-rate-sync] ▶ 写入 ads_window_metric（dlq_total_offset / dlq_count_delta，anchor=2026-10-27）
+[dirty-rate-sync] 完成：Δ=0（dlq 14911→14911，input=77736）
+[dirty-rate-sync] 面板读法：dlq_count_delta / total_events = 0/77736
+   EXIT=0  stderr=0 字节
+── [2] 施工后（工作树）stdout
+[dirty-rate-sync] ▶ 读基线 /tmp/tmp.OeVjgUZsow/baseline.json
+[dirty-rate-sync] 基线：dlq_offset=14911 input_events=77700
+[dirty-rate-sync] ▶ 读 Kafka DLQ 总 offset
+[dirty-rate-sync] ▶ 读 Kafka 输入 topic 总 offset
+[dirty-rate-sync] 当前：dlq=14911 input=77736
+[dirty-rate-sync] ▶ 写入 ads_window_metric（dlq_total_offset / dlq_count_delta，anchor=2026-10-27）
+[dirty-rate-sync] 完成：Δ=0（dlq 14911→14911，input=77736）
+[dirty-rate-sync] 面板读法：dlq_count_delta / total_events = 0/77736
+   EXIT=0  stderr=0 字节
+
+── [3] 判据① stdout 逐字一致
+   ✓ stdout 逐字一致
+
+── [4] 判据② stderr 逐字一致
+   ✓ stderr 逐字一致
+
+── [5] 判据③ 退出码一致
+   ✓ 退出码一致：0
+
+── [6] 判据④ 面板三行（回读，旧脚本写一次、新脚本覆盖写一次，值应相同）
+dim_key	metric_value
+baseline_mirror	14911
+dlq_count_delta	0
+total_events	77736
+   ✓ 面板 baseline_mirror=14911（与脚本日志一致）
+   ✓ 面板 dlq_count_delta=0（与脚本日志一致）
+   ✓ 面板 total_events=77736（与脚本日志一致）
+
+── [7] 判据⑤ 范围纪律：Δ 计算与面板写入形态未动
+   逐字比有差异（4 行），逐行列出：
+     -[ "$delta" -lt 0 ] && fail "Δ 为负（dlq=${cur_dlq} < 基线 ${baseline_dlq}）——topic 被重建过，基线失效；删基线文件后重跑 make verify 立新基线（首跑 SKIP 重立）"
+     -[ "$cur_input" -eq 0 ] && fail "输入事件数为 0，脏率无定义"
+     +[ "${delta}" -lt 0 ] && fail "Δ 为负（dlq=${cur_dlq} < 基线 ${baseline_dlq}）——topic 被重建过，基线失效；删基线文件后重跑 make verify 立新基线（首跑 SKIP 重立）"
+     +[ "${cur_input}" -eq 0 ] && fail "输入事件数为 0，脏率无定义"
+   ✓ 差异**仅**为 ${VAR}→$VAR 花括号写法（bash 语义完全相同），Δ 计算与写入逻辑未动
+
+── [7b] 花括号之外的两处改动（判据⑤ 盲区，单独验）
+   ── (a) topic_total_offset()（Kafka 读取口径）
+   ✓ docker 命令 / awk 过滤 / bootstrap **逐字未动**（除 ${VAR} 花括号）
+   [登记] `--topic "$topic"` → `--topic "${topic}"`：bash 语义完全相同，取值不变；
+          但票面 ac 说「不改 Kafka 读取」⇒ 该措辞已在母票 Answer 里按事实收紧（不改的是**取值口径**，不是每个字符）
+
+   ── (b) require_offset 的判决（合法/非十进制各一组）
+   ✓ 合法 offset（4 个样本）两版判决完全一致
+   oops：old=FAIL new=FAIL（一致）
+   +5：old=PASS new=FAIL（★ 收窄：旧形态会放行，新形态拒绝）
+    5：old=PASS new=FAIL（★ 收窄：旧形态会放行，新形态拒绝）
+   -1：old=FAIL new=FAIL（一致）
+
+══ 收口门 B 结果：PASS=13 FAIL=0 ══

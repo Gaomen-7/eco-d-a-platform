@@ -1,0 +1,96 @@
+### impl-07 收口门 C：置备脚本「找不到」vs「真因不是找不到」（2026-10-27T14:09:04Z）
+### 工作目录：/mnt/f/Anaconda practice project/eco-a-d-platform
+### 被测脚本：docker/scripts/superset-provision.sh
+### 字面判据：stderr 里是否出现「找不到 kpi_current 的 dataset id」
+### 真栈：真 Superset / 真 dataset / 真 Doris；只劫持 dataset 列表那一个 URL
+
+── [1] 正常路径（真栈，不注入）—— 门必须先证明自己能绿
+   ✓ 退出码 0
+   ✓ 取到 kpi_current id=1（真接口、真 dataset）
+   ✓ 正常路径不报「找不到」
+   ✓ 后续步骤（chart_data）未变：仍出数
+
+── [2] 真·找不到（合法列表里确实没有 kpi_current）—— 唯一允许报「找不到」的一臂
+── [2] 合法列表，没有 kpi_current
+   stderr 末行：[superset-provision] ✗ 找不到 kpi_current 的 dataset id（接口返回了 1 个 dataset，其中没有 table_name=kpi_current 的那一行）——**接口是通的、响应是合法 JSON，是这个 dataset 确实不在接口返回的列表里**。下一步：①先确认置备跑过——重跑置备（bash docker/scripts/superset-provision.sh，或 make init 第三段增补）；kpi_current 的 dataset 由它创建；②确认看板连的是哪个 database（冻结的 ECOM_ADS_UUID 那一个）；③确认没有别的东西删掉了它（docker compose logs superset | grep -i dataset）。
+   EXIT=1  出现「找不到」=1
+   ✓ 报出了「找不到」（正确）
+   ✓ 退出码非 0（1）
+   ✓ 带可操作下一步
+
+── [3] 「真因不是找不到」的各臂：每一臂都**不得**出现「找不到 kpi_current 的 dataset id」
+── [3a] 响应是 HTML 登录页（不是 JSON）
+   stderr 末行：[superset-provision] ✗ 没能从 dataset 列表响应里解析出目标：响应体不是合法 JSON（Expecting value: line 1 column 1 (char 0)；HTTP 200）——**这不是『接口里没有这个 dataset』**，是这一步**根本没拿到可解析的内容**（空响应、返回了 HTML 登录页、或中间有代理改写）。下一步：先看接口到底回了什么：curl -s 'http://127.0.0.1:8088/api/v1/dataset/?q=(order_columns:table_name,order_direction:asc)' | head -c 300；回 HTML/空 ⇒ 查匿名访问与 403 授权（docker/scripts/superset-provision.py 的 Public 角色），然后重跑置备（bash docker/scripts/superset-provision.sh，或 make init 第三段增补）。
+   EXIT=1  出现「找不到」=0
+   ✓ 未报「找不到」（真因已分流到别的类）
+   ✓ 退出码非 0（1）
+   ✓ 带可操作下一步
+
+── [3b] 响应被截断（半截 JSON）
+   stderr 末行：[superset-provision] ✗ 没能从 dataset 列表响应里解析出目标：响应体不是合法 JSON（Unterminated string starting at: line 1 column 38 (char 37)；HTTP 200）——**这不是『接口里没有这个 dataset』**，是这一步**根本没拿到可解析的内容**（空响应、返回了 HTML 登录页、或中间有代理改写）。下一步：先看接口到底回了什么：curl -s 'http://127.0.0.1:8088/api/v1/dataset/?q=(order_columns:table_name,order_direction:asc)' | head -c 300；回 HTML/空 ⇒ 查匿名访问与 403 授权（docker/scripts/superset-provision.py 的 Public 角色），然后重跑置备（bash docker/scripts/superset-provision.sh，或 make init 第三段增补）。
+   EXIT=1  出现「找不到」=0
+   ✓ 未报「找不到」（真因已分流到别的类）
+   ✓ 退出码非 0（1）
+   ✓ 带可操作下一步
+
+── [3c] 结构变了（result 不是数组）
+   stderr 末行：[superset-provision] ✗ 没能从 dataset 列表响应里解析出目标：响应的**结构变了**——result 不是数组（是 dict）（HTTP 200）——接口通了、也是合法 JSON，但取值路径对不上，**这不是『接口里没有这个 dataset』**。下一步：先看真实形状：curl -s 'http://127.0.0.1:8088/api/v1/dataset/?q=(order_columns:table_name,order_direction:asc)' | head -c 300（Superset 6.1.0 应为 {"result": [{"id": …, "table_name": …}]}）；形状确有不同 ⇒ 按实际结构改本脚本「解析 kpi_current dataset id（不硬编码）」那一段的 heredoc；形状没变而这里报结构错 ⇒ 是脚本缺陷，把上面的行内键报错一并上报。
+   EXIT=1  出现「找不到」=0
+   ✓ 未报「找不到」（真因已分流到别的类）
+   ✓ 退出码非 0（1）
+   ✓ 带可操作下一步
+
+── [3d] 目标行没有 id 键
+   stderr 末行：[superset-provision] ✗ 没能从 dataset 列表响应里解析出目标：响应的**结构变了**——kpi_current 那一行没有 id 键（行内键：table_name,uid）（HTTP 200）——接口通了、也是合法 JSON，但取值路径对不上，**这不是『接口里没有这个 dataset』**。下一步：先看真实形状：curl -s 'http://127.0.0.1:8088/api/v1/dataset/?q=(order_columns:table_name,order_direction:asc)' | head -c 300（Superset 6.1.0 应为 {"result": [{"id": …, "table_name": …}]}）；形状确有不同 ⇒ 按实际结构改本脚本「解析 kpi_current dataset id（不硬编码）」那一段的 heredoc；形状没变而这里报结构错 ⇒ 是脚本缺陷，把上面的行内键报错一并上报。
+   EXIT=1  出现「找不到」=0
+   ✓ 未报「找不到」（真因已分流到别的类）
+   ✓ 退出码非 0（1）
+   ✓ 带可操作下一步
+
+── [3e] id 是 null（不可用）
+   stderr 末行：[superset-provision] ✗ 没能从 dataset 列表响应里解析出目标：响应的**结构变了**——kpi_current 的 id 不可用（None，类型 NoneType）（HTTP 200）——接口通了、也是合法 JSON，但取值路径对不上，**这不是『接口里没有这个 dataset』**。下一步：先看真实形状：curl -s 'http://127.0.0.1:8088/api/v1/dataset/?q=(order_columns:table_name,order_direction:asc)' | head -c 300（Superset 6.1.0 应为 {"result": [{"id": …, "table_name": …}]}）；形状确有不同 ⇒ 按实际结构改本脚本「解析 kpi_current dataset id（不硬编码）」那一段的 heredoc；形状没变而这里报结构错 ⇒ 是脚本缺陷，把上面的行内键报错一并上报。
+   EXIT=1  出现「找不到」=0
+   ✓ 未报「找不到」（真因已分流到别的类）
+   ✓ 退出码非 0（1）
+   ✓ 带可操作下一步
+
+── [3f] 接口回 error message
+   stderr 末行：[superset-provision] ✗ dataset 列表接口回了 error message：Forbidden（HTTP 200）——**这是接口在报错，不是 dataset 不存在**。下一步：按 message 处置（401/403 多半是匿名授权或会话失效 ⇒ 跑置备里的 Public 授权段；5xx 看 docker compose logs superset），然后重跑置备（bash docker/scripts/superset-provision.sh，或 make init 第三段增补）。
+   EXIT=1  出现「找不到」=0
+   ✓ 未报「找不到」（真因已分流到别的类）
+   ✓ 退出码非 0（1）
+   ✓ 带可操作下一步
+
+── [3g] 接口连不上（curl 退 7，HTTP 000）
+   stderr 末行：[superset-provision] ✗ 没能取回 dataset 列表响应：curl 退出码 7（HTTP 000）——**这不是『接口里没有这个 dataset』**，是 Superset 接口根本连不上。下一步：curl -sv 'http://127.0.0.1:8088/health' 看服务是否在跑（docker compose ps superset），不对就先 make init 把第三段拉起来。
+   EXIT=1  出现「找不到」=0
+   ✓ 未报「找不到」（真因已分流到别的类）
+   ✓ 退出码非 0（1）
+   ✓ 带可操作下一步
+
+── [4] 解析器不可用：真接口 + 真 dataset 存在，只把解释器换掉
+   ★ 这是母票说的最恶劣形态：施工前会报「找不到」，把排查引向看板
+   stderr 末行：[superset-provision] ✗ 解析器无法执行：'/nonexistent/pyimpl07/phantom-python3' 不在 PATH 上或不可执行（bash rc=127）——**这不是『接口里没有这个 dataset』**，是解析器根本没起来（impl-05 实测 WSL 宿主只有 python3，没有 python 这个命令）。下一步：装 python3（apt-get install -y python3），或用 export PYTHON=/path/to/python3 指定绝对路径后重跑置备（bash docker/scripts/superset-provision.sh，或 make init 第三段增补）。
+   EXIT=1  出现「找不到」=0
+   ✓ 解析器缺席未报「找不到」（正确：真因在执行面）
+   ✓ 退出码非 0（1）
+   ✓ 带可操作下一步
+
+── [4b] 解析器**存在但不可用**（空壳：退 49、零输出、零 stderr；真接口）
+   stderr 末行：[superset-provision] ✗ 没能从 dataset 列表响应里解析出目标：解析没有任何机读输出（rc=49；HTTP 200）——**这不是『接口里没有这个 dataset』**，也不是「列表里没有这张表」。解析器 stderr：<空>。下一步：先看解释器是否可用：'/tmp/tmp.uVAUvRuk8L/python3-shell-stub' -c 'print(1)' 应打印 1（**存在但不可用的空壳解释器**正是这种「退非 0、零输出、零 stderr」形态）；解析器可用则 stderr 里的 traceback 是解析段的缺陷，按它改本脚本的 heredoc；然后重跑置备（bash docker/scripts/superset-provision.sh，或 make init 第三段增补）。
+   EXIT=1  出现「找不到」=0
+   ✓ 空壳解释器未报「找不到」（正确）
+   ✓ 退出码非 0（1）
+   ✓ 带可操作下一步
+
+── [5] 施工前（fc1445f）对照：旧脚本在这两臂上报的是什么
+   ✓ 取到锚 fc1445f 上的旧脚本
+   ✓ 锚与工作树脚本确实不同（对照有意义）
+   [5-解释器缺席] 旧脚本 EXIT=1 出现「找不到」=1
+             末行：[superset-provision] ✗ 找不到 kpi_current 的 dataset id
+   ✓ 旧脚本把「解释器缺席」报成了「找不到」（**缺陷复现**：这就是本门要治的误诊）
+   [5-空壳解释器] 旧脚本 EXIT=1 出现「找不到」=1
+             末行：[superset-provision] ✗ 找不到 kpi_current 的 dataset id
+   ✓ 旧脚本把「空壳解释器」报成了「找不到」（**缺陷复现**：这就是本门要治的误诊）
+
+══ 收口门 C 结果：PASS=38 FAIL=0 ══

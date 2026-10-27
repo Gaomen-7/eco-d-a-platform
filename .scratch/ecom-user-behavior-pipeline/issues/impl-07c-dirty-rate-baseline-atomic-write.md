@@ -99,7 +99,7 @@ Blocked by: None（可立即开工）
 
 ### §2 正例凭证：与 HEAD 逐字一致（不是自证）
 
-[`evidence/impl-07c/01-format-identical-to-head.sh`](../../evidence/impl-07c/01-format-identical-to-head.sh)
+[`evidence/impl-07c/01-format-identical-to-head.sh`](../evidence/impl-07c/01-format-identical-to-head.sh)
 把 `git show HEAD:` 的**施工前那份函数**取出来、与工作树的新实现各跑同一组输入，然后比字节：
 
 ```
@@ -115,7 +115,7 @@ Blocked by: None（可立即开工）
 
 ### §3 反例凭证：真进程、真信号、真文件系统
 
-[`evidence/impl-07c/02-interrupt-during-write.sh`](../../evidence/impl-07c/02-interrupt-during-write.sh)
+[`evidence/impl-07c/02-interrupt-during-write.sh`](../evidence/impl-07c/02-interrupt-during-write.sh)
 让子进程各自在自己的**中断窗口内 `SIGSTOP` 自停**，父进程 `waitpid` 确认到达该点后
 `SIGKILL`。两臂对照：
 
@@ -141,9 +141,9 @@ Blocked by: None（可立即开工）
 
 | 发现 | 判定 | 处置 |
 | --- | --- | --- |
-| **S1（真缺陷）** 权限位漂移：`NamedTemporaryFile` 固定 **0600**，`os.replace` 连权限一起搬 ⇒ 首次落盘把基线从 **0644** 悄悄降成 0600，本来读得到它的读者（面板同步，可能另一个 uid）**丢掉读权限** | 违反「读者侧零改动」这条 AC | 替换前 `os.chmod` 到「旧文件原本的权限位」；首次落盘补回 `0o666 & ~umask`。守卫 `test_first_write_mode_matches_what_open_write_would_have_produced` / `test_overwrite_preserves_the_existing_mode`；实测凭证 [`04-permission-mode.out.txt`](../../evidence/impl-07c/04-permission-mode.out.txt)（`0644 / 0644 / 0640 沿用`） |
+| **S1（真缺陷）** 权限位漂移：`NamedTemporaryFile` 固定 **0600**，`os.replace` 连权限一起搬 ⇒ 首次落盘把基线从 **0644** 悄悄降成 0600，本来读得到它的读者（面板同步，可能另一个 uid）**丢掉读权限** | 违反「读者侧零改动」这条 AC | 替换前 `os.chmod` 到「旧文件原本的权限位」；首次落盘补回 `0o666 & ~umask`。守卫 `test_first_write_mode_matches_what_open_write_would_have_produced` / `test_overwrite_preserves_the_existing_mode`；实测凭证 [`04-permission-mode.out.txt`](../evidence/impl-07c/04-permission-mode.out.txt)（`0644 / 0644 / 0640 沿用`） |
 | **S2（真缺陷）** 硬杀残骸：`try/finally` **抓不住 SIGKILL**，而票面 AC 写的是「异常路径也不残留」。施工版 docstring 却声称「异常路径把临时文件清掉，不留残骸」——对**本票存在的那个场景**是假话 | 措辞与事实不符 | 加 `_sweep_stale_baseline_temps`：每次落盘前清**超龄**（`STALE_BASELINE_TEMP_GRACE_S = 60 s`，设计值）的同前缀临时文件；docstring 改成分三种死法如实陈述。反例保护 `test_fresh_temp_of_a_concurrent_writer_is_not_swept`（新鲜文件不得误删，否则会踩并发写者） |
-| **S3（真缺陷，守卫太弱）** 第一版守卫读函数源码做字符串黑名单，被**三处变异打穿**：① `with path.open("w")`（只查 `open(path`）② 截断挪进辅助函数 ③ `os.replace` 包进 `except OSError: pass`（黑名单不管异常语义） | 守卫做不了它声明要做的活 | 守卫下沉到**可观察行为**：钩住 `builtins.open` / `Path.open` / `write_text` / `write_bytes` / `os.open`，断言目标文件**从未**被写模式打开；POSIX 上再钉「覆盖落盘**换了 inode**」（原地重写不会）。凭证 [`03-guard-mutation-proof.out.txt`](../../evidence/impl-07c/03-guard-mutation-proof.out.txt) 逐条跑三处变异，**全部必红**，未变异时绿 |
+| **S3（真缺陷，守卫太弱）** 第一版守卫读函数源码做字符串黑名单，被**三处变异打穿**：① `with path.open("w")`（只查 `open(path`）② 截断挪进辅助函数 ③ `os.replace` 包进 `except OSError: pass`（黑名单不管异常语义） | 守卫做不了它声明要做的活 | 守卫下沉到**可观察行为**：钩住 `builtins.open` / `Path.open` / `write_text` / `write_bytes` / `os.open`，断言目标文件**从未**被写模式打开；POSIX 上再钉「覆盖落盘**换了 inode**」（原地重写不会）。凭证 [`03-guard-mutation-proof.out.txt`](../evidence/impl-07c/03-guard-mutation-proof.out.txt) 逐条跑三处变异，**全部必红**，未变异时绿 |
 | **S4（真缺陷，弱断言）** `assert "OSError" in body` 命中的是 docstring 里的散文 ⇒ 拿注释证明行为 | 同义反复 | 删掉；契约由 `pytest.raises(OSError)` 的两条行为测试钉住（它们真让 `OSError` 穿过写盘函数） |
 | **J1（判断项，Standards）** 票面 rationale 在函数 docstring 与测试文件头近逐字重复 | 保留 | 两处读者不同：函数 docstring 给改代码的人，测试头给改测试的人。删任何一处都会让另一处的读者失去上下文 |
 | **J2（已处置）** `tests:206` 直接赋 `json.dumps` + 手写 try/finally 还原；5 处 patch `verify_runner.os` 实际 patch 的是**进程全局** `os` | 已改 | 统一 `monkeypatch.setattr(json, "dumps", …)` / `monkeypatch.setattr(os, "replace", …)`（诚实指向真正的全局对象） |

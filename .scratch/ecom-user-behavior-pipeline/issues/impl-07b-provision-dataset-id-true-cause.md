@@ -96,7 +96,7 @@ dataset」和「我根本没拿到可解析的内容」——后者今天也被�
 
 ### §3 正例凭证：正常路径逐字零变化（真栈）
 
-[`evidence/impl-07b/01-normal-path.sh`](../../evidence/impl-07b/01-normal-path.sh) 把 `git HEAD:` 上的旧脚本取到
+[`evidence/impl-07b/01-normal-path.sh`](../evidence/impl-07b/01-normal-path.sh) 把 `git HEAD:` 上的旧脚本取到
 临时文件，与新脚本在**同一套真实栈**（真 Superset 容器、真 dataset、真 chart_data）上各跑一遍：
 
 - **id 一致**：旧解析形态取到 `1`，新脚本 `✓ kpi_current id=1`；
@@ -108,7 +108,7 @@ dataset」和「我根本没拿到可解析的内容」——后者今天也被�
 
 （导出 zip 指到临时目录：真脚本会刷新**已入库**的 `docker/superset/export/ecom-live.zip`，凭证不碰工作树里的入库产物。）
 
-### §4 反例凭证：故障注入（真栈，[`02-fault-injection.out.txt`](../../evidence/impl-07b/02-fault-injection.out.txt)）
+### §4 反例凭证：故障注入（真栈，[`02-fault-injection.out.txt`](../evidence/impl-07b/02-fault-injection.out.txt)）
 
 手法：把 `curl` 前置到 PATH，桩**只劫持 dataset 列表那一个 URL**、其余原样转发给真 curl ⇒
 pymysql 检查 / ORM 置备 / 匿名断言 / zip 往返 / 脏率同步全走真栈，注入面只剩解析段。

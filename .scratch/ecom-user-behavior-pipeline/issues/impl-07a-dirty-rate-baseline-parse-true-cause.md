@@ -94,7 +94,7 @@ stderr 零字节——只有真的执行才能分辨。取证件 `01-fault-injec
 
 ### §2 四类故障注入实机凭证
 
-凭证目录 [evidence/impl-07a/](../../evidence/impl-07a/)（脚本 + 输出同目录，可直接重跑）：
+凭证目录 [evidence/impl-07a/](../evidence/impl-07a/)（脚本 + 输出同目录，可直接重跑）：
 
 | 类 | 触发 | 报错（节选） | 退出码 |
 | --- | --- | --- | --- |
@@ -122,7 +122,7 @@ stderr 零字节——只有真的执行才能分辨。取证件 `01-fault-injec
 
 ### §4 正例凭证：正常路径逐字零变化
 
-[`02-diff-vs-head.sh`](../../evidence/impl-07a/02-diff-vs-head.sh) 把 `git HEAD:` 上的旧脚本取到临时文件，
+[`02-diff-vs-head.sh`](../evidence/impl-07a/02-diff-vs-head.sh) 把 `git HEAD:` 上的旧脚本取到临时文件，
 与新脚本用**同一份基线、同一套真实栈**（同一 Kafka offset、同一 Doris）各跑一遍：
 
 - `diff` stdout：**逐字一致**；
