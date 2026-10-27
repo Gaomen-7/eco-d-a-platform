@@ -78,7 +78,7 @@ ecomgen 生成器  →  Kafka  →  Flink  →  Paimon（五层）  →  Doris  
 
 | 组件 | 版本 | 在本项目里干什么 | 端口（只绑 127.0.0.1） |
 | --- | --- | --- | --- |
-| **Kafka** | 4.3.1 | 事件总线，接收生成器与 Flink 之间的数据 | `9092` |
+| **Kafka** | 4.3.1 | 事件总线，接收生成器与 Flink 之间的数据 | `9092`（网内）`29092`（宿主可达） |
 | **Flink** | 2.2.1（含 Paimon connector） | 实时流处理：清洗、分流 DLQ、写 Paimon | `8081`（Web UI） |
 | **Paimon** | 随 Flink 镜像 | 湖仓存储，承载离线五层 | —（文件系统） |
 | **Doris** | 4.1.5 | OLAP 查询库，唯一给看板供数的库 | `8030`(HTTP) `9030`(MySQL) |
@@ -513,6 +513,25 @@ bash scripts/deploy_surface_check.sh     # 退出码 0 = 11 条全 PASS
 
 ⚠️ **条数以脚本 `main()` 的调用清单为准**，头注声明可能滞后于演进。
 复核：`grep -n 'check_' scripts/deploy_surface_check.sh` 对照 `main()`。
+
+### 全部冻结端口（九个绑定，全部只绑 `127.0.0.1`）
+
+| 端口 | 协议面 | 用途 |
+| --- | --- | --- |
+| `8030` | HTTP | Doris FE（`/api/health`） |
+| `8040` | HTTP | Doris BE webserver（`/metrics`） |
+| `8081` | HTTP | Flink Web UI |
+| `8088` | HTTP | Superset 看板 |
+| `9010` | Doris 内部 | Doris FE edit_log |
+| `9030` | MySQL 协议 | Doris FE 查询入口 |
+| `9060` | brpc | Doris BE |
+| `9092` | Kafka 协议 | 网内 listener（advertised `kafka:9092`） |
+| `29092` | Kafka 协议 | **HOST** listener（advertised `127.0.0.1:29092`，宿主进程用这个） |
+
+复核：`grep -oE '127\.0\.0\.1:[0-9]+:[0-9]+' docker-compose.yml | sort -u`。
+
+⚠️ `8030/8040/8081/8088` 是 HTTP 面，可用 curl 判；`9010/9030/9060/9092/29092` 是
+MySQL / brpc / Kafka 协议，**不可**用 HTTP curl 判连通性（见 §8）。
 
 ### 运行产物落点
 
