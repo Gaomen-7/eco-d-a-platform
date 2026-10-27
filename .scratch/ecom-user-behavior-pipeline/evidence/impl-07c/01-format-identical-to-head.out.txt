@@ -1,0 +1,9 @@
+▶ 取施工前（HEAD）的写盘函数作对照组：/tmp/tmp.FZw619jNcQ/old_verify_runner.py
+施工前（HEAD）落盘字节：b'{\n  "dlq_offset": 14911,\n  "input_events": 77700\n}\n'
+施工后（原子）落盘字节：b'{\n  "dlq_offset": 14911,\n  "input_events": 77700\n}\n'
+字节数：old=51 new=51
+首次落盘 = 覆盖落盘 = HEAD 逐字：True
+new/ 目录内容：['dirty-rate-baseline.json']
+new_first/ 目录内容：['dirty-rate-baseline.json']
+读侧解析：DirtyRateSample(dlq_offset=14911, input_events=77700)
+✓ PASS：落盘方式变了，落盘内容与两条路径的产物都与 HEAD 逐字一致，且读侧零改动可用

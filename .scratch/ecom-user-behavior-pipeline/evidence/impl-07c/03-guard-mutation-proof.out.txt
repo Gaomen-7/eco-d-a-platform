@@ -1,0 +1,22 @@
+▶ 对照：未变异（守卫应为绿）
+  ✓ 未变异时守卫为绿
+
+▶ 变异 ① 用 with path.open("w") 落盘
+  FAILED tests/test_verify_baseline_atomic.py::test_target_file_is_never_opened_for_writing
+  FAILED tests/test_verify_baseline_atomic.py::test_writer_code_contains_no_truncating_write_of_the_target
+  5 failed, 16 passed in 10.37s
+  ✓ 守卫抓住了变异（必红成立）
+
+▶ 变异 ② 把截断挪进辅助函数
+  FAILED tests/test_verify_baseline_atomic.py::test_replace_failure_without_old_file_leaves_nothing_behind
+  FAILED tests/test_verify_baseline_atomic.py::test_target_file_is_never_opened_for_writing
+  4 failed, 17 passed in 10.44s
+  ✓ 守卫抓住了变异（必红成立）
+
+▶ 变异 ③ os.replace 包进 except OSError: pass
+  =========================== short test summary info ============================
+  FAILED tests/test_verify_baseline_atomic.py::test_replace_failure_without_old_file_leaves_nothing_behind
+  1 failed, 20 passed in 10.16s
+  ✓ 守卫抓住了变异（必红成立）
+
+✓ PASS：三处变异全部被守卫抓住，原实现对守卫为绿

@@ -1,0 +1,30 @@
+▶ 臂 A：施工前写法（HEAD，先截断再写）
+── [old] 已在中断窗口内被 SIGKILL（stat=T+）
+  目标文件内容：{
+  "dlq_offset": 15555,
+  目标文件字节数：25（完整应为 51）
+
+▶ 臂 B：施工后写法（临时文件 + os.replace）
+── [new] 已在中断窗口内被 SIGKILL（stat=T+）
+  目标文件内容：{
+  "dlq_offset": 14911,
+  "input_events": 77700
+}
+  目标文件字节数：51
+  目录内容（含硬杀必然留下的临时文件——SIGKILL 跑不了 finally）：
+    .dirty-rate-baseline.json.35167.mxsd0o0c.tmp arm.err dirty-rate-baseline.json 
+
+▶ 判定：读侧（未改动的 load_dirty_rate_baseline）在两条臂上各自看到什么
+[A 施工前] 原始内容 '{\n  "dlq_offset": 15555,\n'
+[A 施工前] 读侧解析 ⇒ None   ← 期望 None（半截 JSON，不可解析）
+[B 施工后] 原始内容 '{\n  "dlq_offset": 14911,\n  "input_events": 77700\n}\n'
+[B 施工后] 读侧解析 ⇒ DirtyRateSample(dlq_offset=14911, input_events=77700)   ← 期望 14911/77700（完整的旧版）
+
+✓ PASS：施工前写法在中断点留下半截（读侧 None），施工后写法目标是逐字未变的完整旧版
+        ⇒ 读者永不看到半截文件；被写坏的只有临时文件
+
+▶ 硬杀残骸收尾：超龄（mtime 拨到 90 s 前）后，下一次落盘前的清扫应把它带走
+  清扫前临时文件：['.dirty-rate-baseline.json.35167.mxsd0o0c.tmp']
+  清扫后目录内容（不计 arm.err）：['dirty-rate-baseline.json']
+  ✓ 硬杀残留的临时文件在下一次落盘前被清扫
+    ⇒ 『正常 / 异常 / 硬杀』三种死法都不残留，且目标始终是完整 JSON

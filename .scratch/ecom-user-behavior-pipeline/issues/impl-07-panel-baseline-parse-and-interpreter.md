@@ -57,9 +57,11 @@ impl-05 登记的「`JID` 硬编码为取证当时的旧作业」经复核**判�
 ## Acceptance criteria
 
 - [ ] 三张副票全部收口（[07a](impl-07a-dirty-rate-baseline-parse-true-cause.md) ✅ 2026-10-27、
-      [07b](impl-07b-provision-dataset-id-true-cause.md)、
-      [07c](impl-07c-dirty-rate-baseline-atomic-write.md)），票面状态与本票一致
-      ——07a 已 resolved（四类故障 + 四类附带全有实机凭证，正常路径逐字零变化）；07b/07c 仍 open
+      [07b](impl-07b-provision-dataset-id-true-cause.md) ✅ 2026-10-27、
+      [07c](impl-07c-dirty-rate-baseline-atomic-write.md) ✅ 2026-10-27），票面状态与本票一致
+      ——**三张副票已全部 resolved**（07a：四类故障 + 四类附带全有实机凭证，正常路径逐字零变化；
+      07b：六类分流 + 真栈正反例全 PASS；07c：原子替换 + 真进程 kill 两臂对照 + 21 条守卫）。
+      本票剩**收口门**（下面三条）待跑
 
 - [ ] **收口门（故障注入）**：对基线链注入四类故障，逐一确认报错指向**真因**——
       ①解释器缺席 ②解释器在 PATH 上但不可用（空壳） ③基线文件是坏 JSON

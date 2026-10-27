@@ -27,9 +27,12 @@ from __future__ import annotations
 
 import itertools
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -603,6 +606,51 @@ def _baseline_path(report_dir: str) -> Path:
     return Path(report_dir) / DIRTY_RATE_BASELINE
 
 
+# 硬杀（SIGKILL / 掉电）留下的临时文件，超过这个年龄才允许被清掉。
+# 同一个进程内的落盘是毫秒级的，故超龄窗口保证不会误删**当前**并发写者的新鲜临时文件。
+# **设计值**，非官方保证。
+STALE_BASELINE_TEMP_GRACE_S = 60.0  # 设计值
+
+
+def _sweep_stale_baseline_temps(directory: Path) -> None:
+    """清掉上一次**硬杀**（SIGKILL / 掉电）留下的临时文件。
+
+    `try/finally` 抓不住 SIGKILL —— 那种死法下临时文件**必然**残留（finally 根本没机会
+    执行）。故在每次落盘前顺手清一遍同前缀、且已超龄的临时文件：
+    「临时文件不残留」这条验收因此在**正常路径、异常路径、硬杀路径**三种死法下都成立。
+    """
+    now = time.time()
+    for candidate in directory.glob(f".{DIRTY_RATE_BASELINE}.*.tmp"):
+        try:
+            if now - candidate.stat().st_mtime < STALE_BASELINE_TEMP_GRACE_S:
+                continue
+            candidate.unlink()
+        except OSError:
+            # 清不掉（并发删、权限）不影响本次落盘：临时文件名本来就是唯一的。
+            continue
+
+
+def _current_umask() -> int:
+    """读当前 umask。`os.umask` 只有**破坏性**读取，故读完立刻还原（CLI 单线程场景）。"""
+    current = os.umask(0)
+    os.umask(current)
+    return current
+
+
+def _desired_baseline_mode(path: Path) -> int:
+    """目标文件应有的权限位，与施工前 `path.write_text` 的产物一致。
+
+    施工前走 `open(path, "w")` ⇒ 新建文件拿到 `0o666 & ~umask`（本仓实测 0644）。
+    而 `tempfile.NamedTemporaryFile` 固定建 **0600**，`os.replace` 会把 0600 一起搬过去
+    —— 于是读者（面板同步脚本、可能以另一个 uid 跑）会**丢掉**它原本有的读权限。
+    故覆盖落盘沿用旧文件的权限位，首次落盘补回 `open("w")` 的语义。
+    """
+    try:
+        return path.stat().st_mode & 0o777
+    except OSError:
+        return 0o666 & ~_current_umask()
+
+
 def load_dirty_rate_baseline(report_dir: str = REPORT_DIR) -> DirtyRateSample | None:
     """读上一次落盘的脏率基线。文件不存在/损坏 ⇒ None（⇒ 判据 SKIP）。"""
     path = _baseline_path(report_dir)
@@ -625,16 +673,82 @@ def load_dirty_rate_baseline(report_dir: str = REPORT_DIR) -> DirtyRateSample | 
 def save_dirty_rate_baseline(
     sample: DirtyRateSample, report_dir: str = REPORT_DIR
 ) -> Path:
-    """把脏率基线落盘（下一次运行与之比较）。写不了就抛 OSError，由调用方兜底。"""
+    """把脏率基线落盘（下一次运行与之比较）。写不了就抛 OSError，由调用方兜底。
+
+    <h2>为什么必须是**原子替换**，不是先截断再写（impl-07c）</h2>
+    这个文件是**闸门文件**：面板的基线行、以及脏率判据的读侧都依赖它。而基线是
+    **自我维护**的（首跑判据 SKIP 时落盘、每次 PASS 前推、`--corrupt` 收尾吸收）
+    ——写入频率是常规路径级别，不是「一年写一次」的风险。
+
+    施工前的形态（`path.write_text`）以 `"w"` 打开目标文件，**此刻目标已被清零**，
+    随后才往里写。若这段窗口里进程被 Ctrl-C / 被杀 / 掉电，文件就停在半截 JSON。
+    而读侧把解析错误一律报成「基线文件不可解析」⇒ **所有**后续面板同步与脏率判据
+    会一起指向一个误导性的方向（真因是写入被打断，不是文件「坏了」）。
+
+    ⇒ 改为**同目录写临时文件，再 `os.replace` 原子替换**：读者在任意时刻要么看到
+    完整的旧版、要么看到完整的新版，**永不**看到半截。
+
+    <h2>为什么这三件事都不能省</h2>
+    1. **临时文件与目标同目录**：`os.replace` 只在同一文件系统内保证原子，跨文件系统
+       会退化成「先删后拷」——那就把本票要消灭的窗口又造回来了。
+    2. **临时名带进程号 + 随机后缀**：固定名会在并发写时互相踩（同目录同时落盘虽
+       当前不存在，但可执行面不止一个入口：`make verify` 与 `--corrupt` 收尾）。
+    3. **先 `flush` + `fsync` 再替换**：否则「替换生效了而内容还没落盘」会留下一个
+       合法的空/半文件——那也是一种半截。（**边界如实说**：本函数不 fsync 父目录，
+       故这里保证的是**内容**先落盘，不是「整套替换在掉电后一定持久」；对 60 字节、
+       每次 verify 都重写一次的基线，这个强度足够，不值得为它再加一次目录 fsync。）
+
+    <h2>权限位（读者不改也得能读）</h2>
+    `tempfile.NamedTemporaryFile` 固定建 **0600**，`os.replace` 会连同权限一起搬过去。
+    而施工前的 `path.write_text` 走 `open(path, "w")` ⇒ 新建时是 `0o666 & ~umask`
+    （本仓实测 **0644**）。若不管，首次落盘就会把基线从 0644 悄悄变成 0600，让本来
+    读得到它的读者（面板同步脚本，可能以另一个 uid 跑）**丢掉读权限**——读者侧零改动
+    这条验收就破了。故：覆盖落盘沿用旧文件的权限位，首次落盘补回 `open("w")` 的语义。
+
+    写的内容与施工前**逐字一致**（同样的字段、同样的缩进、同样的换行）：本函数只改
+    「怎么落盘」，不改基线的格式。
+
+    <h2>残留</h2>
+    **异常**（Ctrl-C / `SystemExit`）由 `finally` 清掉；**硬杀**（SIGKILL / 掉电）根本没
+    机会跑 `finally`，故在下一次落盘前用 `_sweep_stale_baseline_temps` 清超龄残骸
+    ——三种死法都不留残骸。
+    """
     path = _baseline_path(report_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
+    _sweep_stale_baseline_temps(path.parent)
     payload = {
         "dlq_offset": sample.dlq_offset,
         "input_events": sample.input_events,
     }
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    mode = _desired_baseline_mode(path)
+
+    temp_path: Path | None = None
+    try:
+        # newline 保持默认 None，与施工前的写盘形态同义（换行转换行为逐字一致）。
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{DIRTY_RATE_BASELINE}.{os.getpid()}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temp_path = Path(handle.name)
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        # 先把权限位修正到「旧文件原本的样子」，再替换——替换后就不再有机会改了。
+        os.chmod(temp_path, mode)
+        os.replace(temp_path, path)
+        temp_path = None  # 已被替换消费掉，不再需要清理
+    finally:
+        if temp_path is not None:
+            # 失败/被打断时清掉临时文件（目标文件本身一个字节都没被碰过）。
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
     return path
 
 
