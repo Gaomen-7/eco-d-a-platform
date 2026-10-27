@@ -2,7 +2,7 @@
 
 Type: task
 Status: resolved
-Blocked by: impl-07a, impl-07b, impl-07c
+Blocked by: None（三张副票 impl-07a/07b/07c 已于 2026-10-27 全部收口）
 
 **What to build:** 让脏率基线链上的任何一步失败都报**真因**（解释器缺席 / 解释器是空壳存根 /
 JSON 损坏 / 字段缺失 / 接口结构变了），而不是一律报「基线文件不可解析」。今天这个误诊会把

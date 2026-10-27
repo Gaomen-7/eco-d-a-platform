@@ -4,7 +4,7 @@
 > 规格落点：spec §5.6「P2 部署硬约束（两条，HLD §5 未写过）」
 
 Type: task
-Status: done (2026-10-22)
+Status: resolved（2026-10-22）
 Blocked by: impl-02
 
 **What to build:** Flink 的 JM 与 TM 两个容器能通过**同一个容器内路径**读到同一份 Paimon warehouse，且两者都装上匹配的 Paimon bundled connector —— 不靠 `ADD JAR`、不靠共享 `/opt/flink/...`、不需要 JDK/Maven。这条通了，后面四张票（03b–03f）才有物理落点；不通则每一张都会以「表不存在 / 类找不到」的形式失败，白烧时间。

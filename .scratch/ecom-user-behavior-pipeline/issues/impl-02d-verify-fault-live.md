@@ -3,7 +3,7 @@
 > 父票：impl-02（本地票 `.scratch/ecom-user-behavior-pipeline/issues/impl-02-p1-realtime-closure.md`）
 
 Type: task
-Status: **done**（2026-10-22 最终轮：§17 的六处加固**已取得实机证据**——正例两连绿
+Status: resolved（2026-10-22 最终轮：§17 的六处加固**已取得实机证据**——正例两连绿
 （`054228Z` / `054701Z`，含跨轮第二轮）、反例按预期失败（`055228Z`），
 三条加固后新增的机读凭证全部成立。见文末 §19）
 Blocked by: impl-02b, impl-02c

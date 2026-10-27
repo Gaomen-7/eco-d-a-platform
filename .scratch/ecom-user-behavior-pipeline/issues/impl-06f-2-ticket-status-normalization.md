@@ -178,8 +178,18 @@ $ wsl -e bash -lc 'cd "/mnt/f/Anaconda practice project/eco-a-d-platform" && \
 
 ```bash
 cd .scratch/ecom-user-behavior-pipeline/issues
-grep -n '^Status:' *.md | grep -v 'resolved\|done\|ready-for-agent\|ready-for-human\|in-progress'   # 应空
+# 状态词只认「五角色（docs/agents/triage-labels.md）+ resolved」。`done` / `in-progress`
+# 不在任何一册的词表里 —— 2026-10-27 复核发现本票第一版判据把 `done` 列进了白名单，
+# 于是 impl-02d / impl-03a 两处非规范状态词被自己放过去了（见下方「判据自身的缺陷」）。
+grep -n '^Status:' *.md \
+  | grep -vE 'resolved|open|claimed|needs-triage|needs-info|ready-for-agent|ready-for-human|wontfix'   # 应空
 grep -n '\*\*Status:\*\*' *.md                        # 五处，全部与顶行同向
-grep -c '^\s*- \[ \]' *.md | grep -v ':0'             # 39 处，全在未结票 + impl-04 的 1 处留空
-grep -n '^## Comments' *.md                           # 空
+grep -c '^\s*- \[ \]' *.md | grep -v ':0'             # 仅 impl-04 的 1 处留空（GIF，留评审者）
+grep -n '^## Comments' *.md                          # 空
 ```
+
+**判据自身的缺陷（2026-10-27 归正）**：第一版那条 `grep -v 'resolved\|done\|…'` 把 `done`
+写进了白名单，而 `done` **既不在** `docs/agents/triage-labels.md` 的五角色里，**也不在**
+`map.md` 的 `open`/`claimed`/`resolved` 里 —— 白名单替它做了背书，两处非规范状态词
+（`impl-02d` 的 `**done**（…`、`impl-03a` 的 `done (…)`）因此躲过了本票。今日已改：
+两处顶行归一为 `resolved`（原文的收口说明与证据保留），判据改为**只认词表内**的状态词。
