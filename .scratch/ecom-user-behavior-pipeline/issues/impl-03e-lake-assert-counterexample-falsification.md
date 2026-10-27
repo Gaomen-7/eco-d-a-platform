@@ -4,7 +4,7 @@
 > 规格落点：spec §5.5（断言执行面）、impl-03 母票验收第 5 条
 
 Type: task
-Status: ready-for-human（2026-10-24 全部反例跑完待人复核；F1–F6 + 5 附加组全证伪，总账见文末 Progress §9 与 `evidence/impl-03e/falsification_summary.md`）
+Status: resolved（2026-10-24 全部反例跑完，F1–F6 + 5 附加组全证伪；2026-10-27 经 impl-03g 人工复核签字收口——总账实 13 行逐行四段齐全、两特例判读成立、抽查 4 组证据零偏差，复核结论见文末 Answer 节；总账见文末 Progress §9 与 `evidence/impl-03e/falsification_summary.md`）
 Blocked by: impl-03d
 
 **What to build:** 逐条**人为破坏**离线断言，让 `lake_assert.sh` 每次都退非 0，并留下「破了哪条、判定是否如预期」的逐条证据。这张票**不产出新功能**，只产出**证伪**。
@@ -48,6 +48,70 @@ F5 与 F6 是**判定面本身**的反例，比 F1–F4 更要紧：它们证明
 - 若 A1 因「全局粒度」在本仓数据上碰巧恒真（如拒绝表恰好为空导致两侧同时成立），**不得**靠放宽断言蒙过去 —— 登记并说明，或补一条能真正区分的判据。
 - 本票与 impl-05（终验）无冲突：终验不重复逐条证伪，只做容量/冷启/附录结清。
 - 反例夹具若造成数据污染，须与 impl-02d 的做法一致：**结束时回到正例状态**并用一次正例重跑证明（对照 impl-02e 的棘轮教训）。
+
+## Answer（2026-10-27 人工复核签字，impl-03g 执行）
+
+复核范围：`evidence/impl-03e/falsification_summary.md` 总账**实有 13 个数据行，全部复核**
+（03g 票面口径「12 行」与实账差 1 行——票面自举的清单展开后也是 11+2=13 项；属措辞
+口径偏差，不够缺口级别，不开新票，登记给 impl-03h 措辞归正时顺带处理）。
+复核方式：纯文件复核，零代码、不重跑反例、不改证据文件（03g Notes 纪律）。
+
+### 逐行四段核对（破坏 → 期望红 → 实际 → 回滚绿）
+
+| 行 | 破坏动作 | 期望 | 实际 | 回滚 | 结论 |
+| --- | --- | --- | --- | --- | --- |
+| F1 | 复制一条非迟到 DWD 行（`dwd_distinct` +1 不闭合） | 退非 0 | RC=1，`✗ [A1_split_complete]=ok=false`，8 绿 | DELETE 破坏行，RC=0，指纹回 `…001` | ✅ 四段齐全 |
+| F2a | 翻转 A3 一侧 1 行 | 退非 0 | RC=1，`✗ [A3_late_bucket_split]`，8 绿 | `back_to_zero rows=1`，RC=0 | ✅ |
+| F2b | A3 一侧加 2 行 | 退非 0 | RC=1，`✗ [A3_late_bucket_split]`，8 绿 | 非空源静态分区 OVERWRITE，`residual=0`，RC=0 | ✅ |
+| F3a | `retain_max` 调到 100（出区间） | 退非 0 | RC=1，`✗ [OPT_snapshot_retention]`，8 绿 | max 回 20，RC=0 | ✅ |
+| F3b | 快照数做到 34（越 [5,20] 上界） | 退非 0 | RC=1，SNAP_within+OPT 双红（与票面预期吻合），7 绿 | snaps 34→20，RC=0 | ✅ |
+| SNAP_empty | reject 表插 1 行（rows=1/snaps=1） | 退非 0 | RC=1，红在 **A1**（reject 污染由 A1 兜底）；`SNAP_empty_table_zero` 走第二分支仍绿——§6 已解释形态 | 0 行 0 快照，RC=0 | ✅ |
+| ZIP_interval | 拉链版本不自同步（versions=2） | 退非 0 | RC=1，`✗ [ZIP_interval_self_sync]`，8 绿 | versions 回 1，RC=0 | ✅ |
+| ZIP_audit | 审计日志造 rows=1/ge2=0 | 退非 0 | RC=1，`✗ [ZIP_audit_log_shows_change]`，8 绿 | 容器内重跑 replay_30（0 ERROR，dim 105430），RC=0；无独立回滚夹具，§6 已注明 | ✅ |
+| fp_clear | 清空 DWD | 退非 0（票面预期 4 红） | RC=1，A1/A3_bucket/A3_flag/fp_ready 4 红 **+ SNAP_within 连带红**（偏差④已订正：快照 21>20 真超界，判据行为正确） | compare RC=0 逐字节回基线 | ✅ |
+| F5 | 派生 SQL 末尾注入 `SELECT * FROM no_such_table_f5` | 有错仍全绿也判失败 | RC=1，`✗ SQL 层错误标记 1 条` + 9 哨兵全绿 | N/A（派生文件不动集群） | ✅ |
+| F6 | 派生 SQL 整块删除 A1 语句 | 缺行也判失败 | RC=1，`✗ 哨兵 [A1_split_complete] **没有出现**` + 8 绿 | N/A（同上） | ✅ |
+| A2 负向 | ODS 造重复（src_seq=4000000000） | 特例，见下 | RC=0，9 哨兵全绿 | metric 回 0，RC=0 | ✅ 特例判读成立 |
+| F4 | 迟到行 lag 2941473→2941474 | 特例，见下 | **RC=3**，9 哨兵全绿 | lag 回 2941473，compare RC=0 | ✅ 特例判读成立 |
+
+### 两个特例的判读（为什么不是漏判）
+
+- **特例 1：A2 负向 RC=0** —— spec §5.4 逐字「恒真，不作断言」：A2 设计上只入日志、
+  不参与判定。本行的复核要点是双向的：造重复后 9 哨兵全绿、RC=0（断言面**不误报**），
+  且 `metric.a2_dup_overshoot = 1` 确实出现在日志（记账层**有记录**）。若 A2 参与判红
+  反而违反 spec。**这是设计如此，不是漏判。**
+- **特例 2：F4 RC=3** —— 幂等判定走 `--compare` 指纹路径，退出码语义与哨兵面（RC=1）
+  不同：RC=3 是 impl-03d 定义的「指纹不等」专用码。破坏只改一行 lag（行数/桶分布不变），
+  故 9 哨兵全绿**恰是预期**；而 `✗ 幂等破：DWD 指纹与上一遍不同` + 指纹 `…001 → …000`
+  证明 compare 路径抓到了破坏。**不同语义层的正确判定，不是漏判。**
+
+### 交叉核对记录（要求 ≥2 组，实查 4 组，均零偏差）
+
+1. **F1**：`f1_break.sql`（INSERT 复制行 + `fx.f1.inserted rows=` 探针）/ `f1_rollback.sql`
+   （按 `(dt,event_id)` DELETE + `fx.f1.residual rows=` 探针）⇒ 与总账
+   `fx.f1.inserted rows=1` → `residual rows=0`、红哨兵 A1 逐字一致。
+2. **F4**：`f4_break.sql`（lag 2941473→2941474，目标行 `000004a7…` 与 §1 探针
+   `probe.f4_source` 逐字一致；头注「9 哨兵应全绿；fp.hash/dlag 变 ⇒ --compare RC=3」）
+   ⇒ 与总账 `RC=3（9 哨兵全绿）`、`…001/…000` 一致。
+3. **A2**：`a2_dup_break.sql`（ODS 同 event_id 造重复，头注预期 RC=0 + overshoot=1）/
+   `a2_dup_rollback.sql`（**非空源**静态分区 OVERWRITE——与 §8③「空源 OVERWRITE 是
+   no-op」的实测事实自洽）⇒ 与总账 `metric.a2_dup_overshoot = 1 → 0` 一致。
+4. **F5**：`f5_judge.out.txt` 逐字 = 总账行 + §3 摘录（1 条错误标记 + 9 哨兵 ✓ +
+   `不通过（--judge 注入模式）`）。
+
+### 「A1 判定改坏能不能被抓到」
+
+**能，三个方向都有实证**：F1 证明 A1 判 `ok=false` 会红；F6 证明 A1 行**整条缺席**也红
+（缺席不等于通过）；SNAP_empty 证明 reject 污染由 A1 兜底捕捉。03e 的结论不打折。
+
+### 签字
+
+13 行全部四段齐全（F5/F6 的回滚段 N/A 属派生形态固有，不动集群无需回滚）；两特例判读
+成立；抽查 4 组证据文件与总账零偏差；未发现任何一行证据不成立（故按 03g Notes 无需开
+缺口票）。唯一附带发现：票面「总账 12 行」与实账 13 行差 1，措辞口径，移交 impl-03h。
+
+**复核签字：2026-10-27，agent（kimi-k3）受用户指令执行复核 —— impl-03e 由
+`ready-for-human` 收 `resolved`，「反例全部证伪」结论维持不变。**
 
 ---
 

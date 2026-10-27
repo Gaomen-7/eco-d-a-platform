@@ -3,7 +3,7 @@
 > **母票**。2026-10-22 拆为六张副票施工，正文保留为**决策档案**（不删改）。开工看副票，收口回这里核对 10 条验收。
 
 Type: task
-Status: resolved（2026-10-24 22:00 经 impl-03f 收口：六张副票全结，10 条验收全勾）
+Status: resolved（2026-10-24 22:00 经 impl-03f 收口；2026-10-27 经 impl-03h 终核：六张副票全结〔含 03e 人工签字，见 impl-03g〕、10 条验收逐条对账今日仍成立，见文末 Answer）
 Blocked by: impl-02
 
 ## 副票（2026-10-22 拆）
@@ -49,7 +49,7 @@ ODS `ods_behavior_event`（append，`dt`=落地日，`payload` 原文零解析�
 
 **Blocked by:** impl-02
 
-**Status:** 已由 [impl-03f](impl-03f-paimon-doris-reconciliation-and-verify.md) 收口（2026-10-24 22:00，六张副票全结、10 条验收全勾）；状态陈述以文件顶行为准
+**Status:** 已由 [impl-03f](impl-03f-paimon-doris-reconciliation-and-verify.md) 收口（2026-10-24 22:00），2026-10-27 经 [impl-03h](impl-03h-mother-ticket-final-reconcile.md) 终核：六张副票全结（**含 03e 人工签字**，见 [impl-03g](impl-03g-falsification-signoff.md)）、10 条验收逐条对账仍成立；状态陈述以文件顶行为准
 
 ## Acceptance criteria
 
@@ -72,3 +72,48 @@ ODS `ods_behavior_event`（append，`dt`=落地日，`payload` 原文零解析�
 - **强序入口**：impl-02 通过才开本票。Paimon catalog 下承载五层表的是 **`ecom_lake` database**（2026-10-21 签，附录 A·M；原文「单一 catalog（库名 `ecom_lake`）」一词混说两层）。
 - **不实现清单**（spec §8.2）：排序 compaction（官方仅支持 `bucket=-1`＋batch，本仓主键表是固定 bucket）· lookup join / zipper / SCD（Paimon 全站无官方能力）· `sequence.field` · 「离线重算覆盖实时行」（记 COULD 留档）· `minio`/`spark` profile（属未签字意图类 #36，见 impl-05）。
 - **幂等不进每次 `verify`**：它是重操作，由本票的离线幂等断言 + impl-02 的 `verify-fault` 恢复重放共同覆盖。
+
+---
+
+## Answer（2026-10-27 impl-03h 终核收口）
+
+> 终核性质：**对账票，零代码改动**；既有正文与 03f 收口节未改写。
+> 复核人：agent（kimi-k3），受用户指令执行。判定标准按 03h Notes：能重跑则重跑，
+> 否则指向未被覆盖的取证文件；不写空口「已验证」。
+
+### 10 条验收逐条对账（证据位置 ｜ 今日是否仍成立）
+
+| # | 验收（主责票） | 证据位置 | 2026-10-27 是否仍成立 |
+| --- | --- | --- | --- |
+| 1 | `make replay` 五层退 0；`LAYER=dws` 分段停住（03b/03c） | 03b/03c 票面实录；verify 五层探针 | ✅ **部分复跑**：今日 `make verify` 第三项实测五层行数 `ods=3145728 dwd=1048576 dim=105430 dws=1550285 ads=90348` 全 PASS，与 03c 收口数字逐字相同；`LAYER=dws` 分段未复跑（重放会改写表层，非对账票范围），依据 03b/03c 票面（未被覆盖） |
+| 2 | 七表形状逐项一致；主键表 `upsert-materialize=NONE` 且未设 `sequence.field`（03b） | `sql/replay_*.sql` DDL + 03b 逐项核对表 | ✅ DDL 即形状：git 最后改动 2026-10-23（03b 收口 `89c40a6`）至今**零漂移**；五层行数今日复证（见 #1） |
+| 3 | 拒绝表 `dt`=摄入日；`reject_reason` 恰三值无 `duplicate`（03b） | DDL + 03b 票面 + A1 哨兵 | ✅ DDL 零漂移同上；今日 `lake_assert.sh --compare` 的 `A1_split_complete`（reject 侧参与闭合）绿 |
+| 4 | 幂等：两遍 DWD 行数+校验和一致（03d） | 03d 票面两遍指纹；03e 收尾 final_cmp 回基线；`artifacts/lake_assert/fp.txt` | ✅ **今日复跑**：`lake_assert.sh --compare` ⇒ `✓ 幂等：DWD 指纹与上一遍逐字相同（1048576 1126399221523001 1048576 131267）`，RC=0 |
+| 5 | 人为破坏一条断言 ⇒ `lake_assert.sh` 判失败退非 0（03e） | `evidence/impl-03e/` 总账 + 23 份夹具 + judge 输出（入库，未被覆盖） | ✅ 2026-10-27 经 impl-03g **逐行复核签字**（13 行四段齐全、抽查 4 组零偏差）；判定面正向今日复跑全绿；`scripts/lake_assert.sh` 自 03d 收口 `d65bc00` 起零漂移 ⇒ 被证伪的判定面与今日所跑是同一份代码 |
+| 6 | 快照 [5,20]；拉链区间自洽 + `$audit_log`（03d） | 03d 票面；五条相关哨兵 | ✅ 今日 --compare 输出 `SNAP_within_upper_bound` / `SNAP_empty_table_zero` / `ZIP_interval_self_sync` / `ZIP_audit_log_shows_change` / `OPT_snapshot_retention` 五哨兵全绿 |
+| 7 | Paimon↔Doris 对账逐值严格相等 + 篡改反例（03f） | 03f §3.1/§3.2；verify 附加断言 `recon-offline-mirror-doris` | ✅ 正向**今日复跑**：`rows=3 探针键集逐值全等` PASS（报告 `verify-report-20261027T075308Z.json`）；篡改反例（UPDATE+1000 ⇒ FAIL 差 1 行）未复跑（须改 Doris 数据，非对账票范围），依据 03f §3.2 实录 |
+| 8 | verify 第三项 SKIP→真断言，五项全真退 0（03f） | 03f §3.4 + `artifacts/verify/` 报告链 | ✅ **今日复跑**：`make verify` PASS=10 FAIL=0 SKIP=0 退 0，第三项 `paimon-five-layers` 以真断言形态 PASS；`verify_runner.py` 自 03f 收口 `ae8552c` 起零漂移 |
+| 9 | 门槛批落 `data/` 且被 gitignore 覆盖（03a/03b） | 03f 实录 | ✅ **今日复跑**：`git check-ignore -v data/threshold/raw.jsonl` ⇒ `.gitignore:10:**/data/`（与 03f 实录逐字一致）；`git status --porcelain data/` 干净 |
+| 10 | 官方未给出的按 spec §8.3 登记（03d/03f） | spec §8.3 + HLD §7/§8 | ✅ 依据文件未被覆盖：03f 追加五条（JDBC 工厂缺失 / 分区导出序 / 水位 MIN 语义 / `rows` 保留字 / slot 争用不重启）今日逐条核在 spec.md:514-518 |
+
+### 部署面口径复核（impl-06e 变更后，03h AC 第 2 条）
+
+- 正文 ③ 的「Paimon jar 构建期 COPY 进两端 `/opt/flink/lib`」＝ 06e 下移后的判据 **4d**，
+  语义未丢、钉死值未变（06e 实机读数 2026-10-26 PASS：`57697871 / 43a6416a…107dd1`）。
+  06e 改的是**作业 jar** 判据（`/opt/flink/usrlib/` 两端同一字节 + lib 零副本），与正文 ③ 不冲突。
+- 10 条验收中**无逐字引用旧判据 ④ 的条目**；须依赖部署面才能成立的条目（#1、#8）今日
+  已在现行部署面上实跑复绿。
+- 部署面自身现状：impl-06i 结案（2026-10-27）全门 **11/11 PASS 退 0**；impl-03a §F/§G
+  已登记两次口径变更（06e usrlib、06i 判据⑤ 白名单），无措辞断层。
+
+### 结论
+
+- **10/10 仍成立**：#4/#5/#6/#7正/#8/#9 今日实跑复证；#1 部分复跑、#2/#3 以 DDL 零漂移
+  ＋哨兵复绿成立、#7 篡改反例与 #10 以未被覆盖的入库证据成立——均符合 03h Notes 的
+  判定标准（未复跑项均已注明依据文件，无一写空口「已验证」）。
+- **未发现失效证据** ⇒ AC 第 5 条无触发，不登记缺口票。
+- **签字链接入**：03e 于 2026-10-27 经 [impl-03g](impl-03g-falsification-signoff.md)
+  人工复核签字收 `resolved`，「六张副票全结」自此名实相符（2026-10-24 03f 收口时
+  03e 名义未结的口径矛盾已消）。
+- **03g 登记的口径差归正**：证伪总账实 **13** 个数据行（以 03e Answer 核对表为准）；
+  03g 票面「12 行」是开票时口径，已结案票正文不改，以本节与 impl-dag 为准。

@@ -24,8 +24,8 @@
 | **impl-03d** | [impl-03d-lake-assert-sentinels-and-idempotency.md](impl-03d-lake-assert-sentinels-and-idempotency.md) | impl-03c | 哨兵断言面 ＋ A1/A2/A3 ＋ 幂等 ＋ 快照区间 ＋ 维护段 |
 | **impl-03e** | [impl-03e-lake-assert-counterexample-falsification.md](impl-03e-lake-assert-counterexample-falsification.md) | impl-03d | 反例证伪 F1–F6（含哨兵面自身的 F5/F6） |
 | **impl-03f** | [impl-03f-paimon-doris-reconciliation-and-verify.md](impl-03f-paimon-doris-reconciliation-and-verify.md) | impl-03e | 对账 ＋ `verify` 第三项转真断言 ＋ 母票收口 |
-| **impl-03g** | [impl-03g-falsification-signoff.md](impl-03g-falsification-signoff.md) | — | 03e 人工复核签字（`ready-for-human` → `resolved`；零代码，只签总账 12 行） |
-| **impl-03h** | [impl-03h-mother-ticket-final-reconcile.md](impl-03h-mother-ticket-final-reconcile.md) | impl-03g | 母票 10 条验收终核 + 签字链接入 + DAG 措辞归正 |
+| **impl-03g** | [impl-03g-falsification-signoff.md](impl-03g-falsification-signoff.md) | — | 03e 人工复核签字（`ready-for-human` → `resolved`；零代码，只签总账 12 行）｜**✅ 2026-10-27 已结案（resolved）**：总账实 13 行逐行四段齐全、两特例（A2 RC=0 / F4 RC=3）判读成立、抽查 4 组证据文件零偏差；「12 行」口径差已在 03h 归正（总账实 13 行，以 03e Answer 核对表为准） |
+| **impl-03h** | [impl-03h-mother-ticket-final-reconcile.md](impl-03h-mother-ticket-final-reconcile.md) | impl-03g | 母票 10 条验收终核 + 签字链接入 + DAG 措辞归正｜**✅ 2026-10-27 已结案（resolved）**：10 条逐条对账今日仍成立（`make verify` 10P0S0F 退 0、`lake_assert.sh --compare` 指纹逐字回基线 `…001`、`git check-ignore` 复跑命中）；母票 Answer 落终核节，「全结」措辞与 03e 状态归一 |
 
 **拆分的两处刻意取舍**：
 
@@ -99,7 +99,7 @@
   chart_data/`?standalone=1`）；三态全谱实机取证（暂定→落定→修订 rev=1/2）；
   重复写入反例（DLQ +0）；zip 清实例重导入（0 broken charts）；code-review 两轴
   13 项发现已处置（最重要：WindowSumProcess 修订路径死代码 → 两阶段发射重写）。
-- ✅ **impl-03 已结清**（六张副票 03a–03f 全部完成，母票 10 条验收全勾）。
+- ✅ **impl-03 已结清**（六张副票 03a–03f 全部完成，母票 10 条验收全勾；2026-10-27 签字链 03g→03h 走完：03e 人工签字收 resolved、03h 终核 10 条今日仍成立，「全结」名实相符）。
   03f 收口实录（票面 §3）：探针对账经三轮水位归因后实机首绿（24 事件
   `rows=3 逐值全等`，关键修法＝**逐分区踢水位**——operator watermark 取
   各 subtask MIN，单分区 tick 推不动）；篡改反例（UPDATE+1000 ⇒ FAIL
@@ -108,7 +108,7 @@
   形态 PASS）；dlq-rate 增量归因为 fixture 段重放（环境冲击）后基线重立。
 - ✅ **impl-06e 已结清**（2026-10-26）：部署面判据 ④ 从「Paimon jar 在两容器 lib + sha256」改为「作业 jar 在 `/opt/flink/usrlib/`（两端同一字节）+ `lib/` 零副本」，原断言语义下移为 4d。反例 A（lib 混入副本）/ B（半部署）/ C（usrlib 多版本）**各自 FAIL、还原后 PASS**，每轮各 1 条 FAIL（无重复计数）。⚠️ ③⑤⑥⑧ 本轮未复跑。
 - **impl-02 已结清**（P1 实时闭环，含五张副票全部完成）；spec §4.3 的 P1 闸门**已开**
-- **当前前沿（2026-10-27 impl-06i 收口后）**：判据 ⑤ 排除集裁决 [impl-06i](impl-06i-deploy-check-5-exclusion-defect.md) **已结案**（用户裁决 C 白名单 + `.mimosa/` 入 gitignore；反例两腿必红、不设 override 全门 **11/11 PASS 退 0**）——部署面 11 条判据首次全绿。同日早前 [impl-06g](impl-06g-spike-live-rate-proof.md) 已结案（实测 1011.8 events/s，尖峰判据首次有一手证据，**功能面条目全部结清**）、[impl-06h](impl-06h-dirty-rate-baseline-doc-divergence.md) 已结案（用户裁决 A 实现为准改文档）。剩余 **2 张待办**：impl-03 签字链 [impl-03g](impl-03g-falsification-signoff.md) → [impl-03h](impl-03h-mother-ticket-final-reconcile.md)。**收尾门结论（2026-10-26）**：不设 override 全判据 10/11 PASS（唯一 FAIL 归因为判据 ⑤ 自身缺陷并立 06i，已修）；`make init`→`make verify` 一绿（127 s + 404 s，10P0S0F 退 0）；**impl-03a §C 冻结端口遗留项已销项**（八端口 HTTP 4×200 + TCP 4×OPEN，排除段已漂走）——原「本机 WinNAT 下冻结端口仅 8081 通」的外部卡点随排除段漂移解除，README「已知环境限制」已补当日实证记录。
+- **当前前沿（2026-10-27 impl-06i 收口后）**：判据 ⑤ 排除集裁决 [impl-06i](impl-06i-deploy-check-5-exclusion-defect.md) **已结案**（用户裁决 C 白名单 + `.mimosa/` 入 gitignore；反例两腿必红、不设 override 全门 **11/11 PASS 退 0**）——部署面 11 条判据首次全绿。同日早前 [impl-06g](impl-06g-spike-live-rate-proof.md) 已结案（实测 1011.8 events/s，尖峰判据首次有一手证据，**功能面条目全部结清**）、[impl-06h](impl-06h-dirty-rate-baseline-doc-divergence.md) 已结案（用户裁决 A 实现为准改文档）。impl-03 签字链 [impl-03g](impl-03g-falsification-signoff.md) → [impl-03h](impl-03h-mother-ticket-final-reconcile.md) **全部结案**（2026-10-27：03e 经人工复核签字收 `resolved`；03h 终核 10 条验收逐条对账今日仍成立——`make verify` 10P0S0F 退 0、`lake_assert.sh --compare` 指纹逐字回基线、`git check-ignore` 复跑命中——DAG 措辞归正含「总账 12 行 → 实 13 行」口径差）；**impl-03 系列无剩余待办**。**收尾门结论（2026-10-26）**：不设 override 全判据 10/11 PASS（唯一 FAIL 归因为判据 ⑤ 自身缺陷并立 06i，已修）；`make init`→`make verify` 一绿（127 s + 404 s，10P0S0F 退 0）；**impl-03a §C 冻结端口遗留项已销项**（八端口 HTTP 4×200 + TCP 4×OPEN，排除段已漂走）——原「本机 WinNAT 下冻结端口仅 8081 通」的外部卡点随排除段漂移解除，README「已知环境限制」已补当日实证记录。
 - ✅ **impl-06f-4 已结清**（2026-10-26）：收尾门实跑全记录见[票面 Answer](impl-06f-4-closeout-gate-deploy-proof.md)；附带收获——③ down/up 后 usrlib 目录整体消失（作业 jar 走 docker cp 路线的固有运维事实）、作业重提后消费组 5 s 追平 lag=0（06d 案 2 续读位点生效，DLQ 不翻倍）、脏率 0.271960 ≤ 基线 0.272138。静态面 lint/typecheck/pytest 314 全过。
 
 ### impl-03 内部的 Frontier（2026-10-24 22:00 收口）
@@ -119,9 +119,11 @@
                                                   （F1–F6 已证）            （P2 全结清）
 ```
 
-- **六张副票全部完成**；impl-03 母票 10 条验收 2026-10-24 22:00 全勾收口。
+- **六张副票全部完成**；impl-03 母票 10 条验收 2026-10-24 22:00 全勾收口；2026-10-27 经 impl-03h 终核：10 条逐条对账今日仍成立（逐项证据见母票 Answer 终核表），签字链 03g（03e 人工签字）→ 03h（终核）走完。
 - ✅ **impl-03e 已结清**（2026-10-24）：F1–F6 六类反例全部证伪（判据面无一
-  恒真；含哨兵面自身的 F5/F6——垃圾行假绿与层缺席假绿）。
+  恒真；含哨兵面自身的 F5/F6——垃圾行假绿与层缺席假绿）。2026-10-27 经
+  impl-03g 人工复核签字（`ready-for-human` → `resolved`，复核结论见 03e 票
+  面 Answer 节），母票与副票状态口径归一。
 - ✅ **impl-03d 已结清**（2026-10-24）：`make replay` exit 0（含维护段）、
   `make assert` 9/9 哨兵 ok、`make replay-idempotent` 两遍 DWD 指纹逐字相同
   （`1048576 / 1126399221523001 / 1048576 / 131267`）、人为破坏退 1。
