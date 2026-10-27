@@ -1,0 +1,99 @@
+### impl-07b 正例凭证（2026-10-27T10:32:52Z）
+### 工作目录：/mnt/f/Anaconda practice project/eco-a-d-platform
+### 脚本：docker/scripts/superset-provision.sh（对照：git HEAD 版本）
+### 导出 zip 落点：/tmp/tmp.kbuMAit3WQ/ecom-live.zip（临时，不碰入库产物）
+
+── [1] 真接口上的 dataset 列表（原始响应前 300 字节）
+{"count":8,"description_columns":{},"ids":[1,2,3,4,5,6,7,8],"label_columns":{"catalog":"Catalog","changed_by.first_name":"Changed By First Name","changed_by.id":"Changed By Id","changed_by.last_name":"Changed By Last Name","changed_by_name":"Changed By Name","changed_on_delta_humanized":"Changed On 
+
+── [2] 旧解析形态取的 id（施工前：管道 + python -c）
+旧形态 id=1
+
+── [3] 真栈：施工前（HEAD）脚本跑一遍
+[superset-provision] ▶ 检查 PyMySQL 驱动（docker-bootstrap.sh requirements-local 装载）
+[superset-provision] ✓ pymysql 在位
+[superset-provision] ▶ 运行 superset-provision.py（固定 database_uuid + dataset + 图表 + dashboard + Public 授权）
+Loaded your LOCAL configuration at [/app/pythonpath/superset_config.py]
+[superset-provision] dataset 授权 Public：本次新授 0 个（共 8 个）
+[superset-provision] 完成：dashboard=ecom-live charts=12 datasets=8 database_uuid=0f4d8a52-9b3e-4c71-a6d8-3f2b1c9e7a04
+[superset-provision] ▶ 匿名 GET /superset/dashboard/ecom-live/（期望 200，不重定向 login）
+[superset-provision] ✓ 匿名页面 200
+[superset-provision] ▶ 匿名 GET 评审 URL（?standalone=1，票面 ①——演示干净形态，CSP 同源放行）
+[superset-provision] ✓ ?standalone=1 评审 URL 200
+[superset-provision] ▶ 匿名 GET /api/v1/dashboard/ecom-live（期望 200 + json）
+[superset-provision] ✓ 匿名 dashboard API 200
+[superset-provision] ▶ 解析 kpi_current dataset id（不硬编码）
+[superset-provision] ✓ kpi_current id=1
+[superset-provision] ▶ 匿名 chart_data 出数（kpi_current 的 UV，期望 status=success）
+[superset-provision] ✓ 匿名 chart_data 出数（链路活着）
+[superset-provision] ▶ export-dashboards（刷新 /tmp/tmp.kbuMAit3WQ/ecom-live.zip）
+Loaded your LOCAL configuration at [/app/pythonpath/superset_config.py]
+[superset-provision] ✓ zip 已导出（/tmp/tmp.kbuMAit3WQ/ecom-live.zip）
+[superset-provision] ▶ import-dashboards（zip 回读校验；6.1.0 CLI 必带 -u）
+Loaded your LOCAL configuration at [/app/pythonpath/superset_config.py]
+[superset-provision] ✓ zip 导入回读成功
+[superset-provision] ▶ 脏率基线同步（docker/scripts/superset-dirty-rate-sync.sh）
+[dirty-rate-sync] ▶ 读基线 artifacts/verify/dirty-rate-baseline.json
+[dirty-rate-sync] 基线：dlq_offset=14911 input_events=77700
+[dirty-rate-sync] ▶ 读 Kafka DLQ 总 offset
+[dirty-rate-sync] ▶ 读 Kafka 输入 topic 总 offset
+[dirty-rate-sync] 当前：dlq=14911 input=77736
+[dirty-rate-sync] ▶ 写入 ads_window_metric（dlq_total_offset / dlq_count_delta，anchor=2026-10-27）
+[dirty-rate-sync] 完成：Δ=0（dlq 14911→14911，input=77736）
+[dirty-rate-sync] 面板读法：dlq_count_delta / total_events = 0/77736
+[superset-provision] ✓ 脏率基线已同步
+[superset-provision] ▶ 完成
+EXIT=0  stderr=3185 字节
+
+── [4] 真栈：施工后（工作树）脚本跑一遍
+[superset-provision] ▶ 检查 PyMySQL 驱动（docker-bootstrap.sh requirements-local 装载）
+[superset-provision] ✓ pymysql 在位
+[superset-provision] ▶ 运行 superset-provision.py（固定 database_uuid + dataset + 图表 + dashboard + Public 授权）
+Loaded your LOCAL configuration at [/app/pythonpath/superset_config.py]
+[superset-provision] dataset 授权 Public：本次新授 0 个（共 8 个）
+[superset-provision] 完成：dashboard=ecom-live charts=12 datasets=8 database_uuid=0f4d8a52-9b3e-4c71-a6d8-3f2b1c9e7a04
+[superset-provision] ▶ 匿名 GET /superset/dashboard/ecom-live/（期望 200，不重定向 login）
+[superset-provision] ✓ 匿名页面 200
+[superset-provision] ▶ 匿名 GET 评审 URL（?standalone=1，票面 ①——演示干净形态，CSP 同源放行）
+[superset-provision] ✓ ?standalone=1 评审 URL 200
+[superset-provision] ▶ 匿名 GET /api/v1/dashboard/ecom-live（期望 200 + json）
+[superset-provision] ✓ 匿名 dashboard API 200
+[superset-provision] ▶ 解析 kpi_current dataset id（不硬编码）
+[superset-provision] ✓ kpi_current id=1
+[superset-provision] ▶ 匿名 chart_data 出数（kpi_current 的 UV，期望 status=success）
+[superset-provision] ✓ 匿名 chart_data 出数（链路活着）
+[superset-provision] ▶ export-dashboards（刷新 /tmp/tmp.kbuMAit3WQ/ecom-live.zip）
+Loaded your LOCAL configuration at [/app/pythonpath/superset_config.py]
+[superset-provision] ✓ zip 已导出（/tmp/tmp.kbuMAit3WQ/ecom-live.zip）
+[superset-provision] ▶ import-dashboards（zip 回读校验；6.1.0 CLI 必带 -u）
+Loaded your LOCAL configuration at [/app/pythonpath/superset_config.py]
+[superset-provision] ✓ zip 导入回读成功
+[superset-provision] ▶ 脏率基线同步（docker/scripts/superset-dirty-rate-sync.sh）
+[dirty-rate-sync] ▶ 读基线 artifacts/verify/dirty-rate-baseline.json
+[dirty-rate-sync] 基线：dlq_offset=14911 input_events=77700
+[dirty-rate-sync] ▶ 读 Kafka DLQ 总 offset
+[dirty-rate-sync] ▶ 读 Kafka 输入 topic 总 offset
+[dirty-rate-sync] 当前：dlq=14911 input=77736
+[dirty-rate-sync] ▶ 写入 ads_window_metric（dlq_total_offset / dlq_count_delta，anchor=2026-10-27）
+[dirty-rate-sync] 完成：Δ=0（dlq 14911→14911，input=77736）
+[dirty-rate-sync] 面板读法：dlq_count_delta / total_events = 0/77736
+[superset-provision] ✓ 脏率基线已同步
+[superset-provision] ▶ 完成
+EXIT=0  stderr=3185 字节
+
+── [5] 判据：同 id / 同退出码 / 输出逐字一致
+旧形态 id=1  新脚本 id=1
+id 一致（PASS）：1
+══ diff（stdout）══
+逐字一致（PASS）
+── 脚本自有 stderr 行数：old=0 new=0
+══ diff（stderr·脚本自有行）══
+逐字一致（PASS）
+══ diff（stderr·去掉容器时戳后全量）══
+去掉时戳后逐字一致（PASS）
+══ 退出码 ══
+一致：0（PASS）
+
+── [6] 用这个 id 打 chart_data（后续步骤未变）
+{"result": [{"cache_key": "b502cf98da3c07e118eea2b65ef0bdd0bdcd691fffda1a38b8b7f31d0fa1c404", "cached_dttm": null, "queried_dttm": "2026-10-27T10:33:36+00:00", "cache_timeout": 86400, "applied_templat
+chart_data status=success（PASS）

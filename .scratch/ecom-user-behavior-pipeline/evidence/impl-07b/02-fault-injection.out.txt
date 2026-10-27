@@ -1,0 +1,68 @@
+### impl-07b 故障注入取证件（2026-10-27T10:27:35Z）
+### 工作目录：/mnt/f/Anaconda practice project/eco-a-d-platform
+### 脚本：docker/scripts/superset-provision.sh
+### 导出 zip 落点：/tmp/tmp.0TKrFzp19H/ecom-live.zip（临时，不碰入库产物）
+
+── [1] 反例① 响应体是 HTML 登录页（不是 JSON）
+   stdout 末尾：[superset-provision] ▶ 解析 kpi_current dataset id（不硬编码）
+   stderr：[superset-provision] ✗ 没能从 dataset 列表响应里解析出目标：响应体不是合法 JSON（Expecting value: line 1 column 1 (char 0)；HTTP 200）——**这不是『接口里没有这个 dataset』**，是这一步**根本没拿到可解析的内容**（空响应、返回了 HTML 登录页、或中间有代理改写）。下一步：先看接口到底回了什么：curl -s 'http://127.0.0.1:8088/api/v1/dataset/?q=(order_columns:table_name,order_direction:asc)' | head -c 300；回 HTML/空 ⇒ 查匿名访问与 403 授权（docker/scripts/superset-provision.py 的 Public 角色），然后重跑置备（bash docker/scripts/superset-provision.sh，或 make init 第三段增补）。
+   EXIT=1
+   → 判定：报「没能解析出目标」（PASS）
+
+── [2] 反例② 响应被截断（半截 JSON）
+   stdout 末尾：[superset-provision] ▶ 解析 kpi_current dataset id（不硬编码）
+   stderr：[superset-provision] ✗ 没能从 dataset 列表响应里解析出目标：响应体不是合法 JSON（Unterminated string starting at: line 1 column 38 (char 37)；HTTP 200）——**这不是『接口里没有这个 dataset』**，是这一步**根本没拿到可解析的内容**（空响应、返回了 HTML 登录页、或中间有代理改写）。下一步：先看接口到底回了什么：curl -s 'http://127.0.0.1:8088/api/v1/dataset/?q=(order_columns:table_name,order_direction:asc)' | head -c 300；回 HTML/空 ⇒ 查匿名访问与 403 授权（docker/scripts/superset-provision.py 的 Public 角色），然后重跑置备（bash docker/scripts/superset-provision.sh，或 make init 第三段增补）。
+   EXIT=1
+   → 判定：报「没能解析出目标」（PASS）
+
+── [3] 反例③ 结构变了（result 不是数组）
+   stdout 末尾：[superset-provision] ▶ 解析 kpi_current dataset id（不硬编码）
+   stderr：[superset-provision] ✗ 没能从 dataset 列表响应里解析出目标：响应的**结构变了**——result 不是数组（是 dict）（HTTP 200）——接口通了、也是合法 JSON，但取值路径对不上，**这不是『接口里没有这个 dataset』**。下一步：先看真实形状：curl -s 'http://127.0.0.1:8088/api/v1/dataset/?q=(order_columns:table_name,order_direction:asc)' | head -c 300（Superset 6.1.0 应为 {"result": [{"id": …, "table_name": …}]}）；形状确有不同 ⇒ 按实际结构改本脚本「解析 kpi_current dataset id（不硬编码）」那一段的 heredoc；形状没变而这里报结构错 ⇒ 是脚本缺陷，把上面的行内键报错一并上报。
+   EXIT=1
+   → 判定：报「没能解析出目标」（PASS）
+
+── [4] 反例④ 目标行没有 id 键
+   stdout 末尾：[superset-provision] ▶ 解析 kpi_current dataset id（不硬编码）
+   stderr：[superset-provision] ✗ 没能从 dataset 列表响应里解析出目标：响应的**结构变了**——kpi_current 那一行没有 id 键（行内键：table_name,uid）（HTTP 200）——接口通了、也是合法 JSON，但取值路径对不上，**这不是『接口里没有这个 dataset』**。下一步：先看真实形状：curl -s 'http://127.0.0.1:8088/api/v1/dataset/?q=(order_columns:table_name,order_direction:asc)' | head -c 300（Superset 6.1.0 应为 {"result": [{"id": …, "table_name": …}]}）；形状确有不同 ⇒ 按实际结构改本脚本「解析 kpi_current dataset id（不硬编码）」那一段的 heredoc；形状没变而这里报结构错 ⇒ 是脚本缺陷，把上面的行内键报错一并上报。
+   EXIT=1
+   → 判定：报「没能解析出目标」（PASS）
+
+── [5] 反例⑤ id 是 null
+   stdout 末尾：[superset-provision] ▶ 解析 kpi_current dataset id（不硬编码）
+   stderr：[superset-provision] ✗ 没能从 dataset 列表响应里解析出目标：响应的**结构变了**——kpi_current 的 id 不可用（None，类型 NoneType）（HTTP 200）——接口通了、也是合法 JSON，但取值路径对不上，**这不是『接口里没有这个 dataset』**。下一步：先看真实形状：curl -s 'http://127.0.0.1:8088/api/v1/dataset/?q=(order_columns:table_name,order_direction:asc)' | head -c 300（Superset 6.1.0 应为 {"result": [{"id": …, "table_name": …}]}）；形状确有不同 ⇒ 按实际结构改本脚本「解析 kpi_current dataset id（不硬编码）」那一段的 heredoc；形状没变而这里报结构错 ⇒ 是脚本缺陷，把上面的行内键报错一并上报。
+   EXIT=1
+   → 判定：报「没能解析出目标」（PASS）
+
+── [6] 反例⑥ 接口回 error message
+   stdout 末尾：[superset-provision] ▶ 解析 kpi_current dataset id（不硬编码）
+   stderr：[superset-provision] ✗ dataset 列表接口回了 error message：Forbidden（HTTP 200）——**这是接口在报错，不是 dataset 不存在**。下一步：按 message 处置（401/403 多半是匿名授权或会话失效 ⇒ 跑置备里的 Public 授权段；5xx 看 docker compose logs superset），然后重跑置备（bash docker/scripts/superset-provision.sh，或 make init 第三段增补）。
+   EXIT=1
+   → 判定：报「接口在报错」（PASS）
+
+── [7] 反例⑦ 连不上接口（curl 退出码 7，HTTP 000）
+   stdout 末尾：[superset-provision] ▶ 解析 kpi_current dataset id（不硬编码）
+   stderr：[superset-provision] ✗ 没能取回 dataset 列表响应：curl 退出码 7（HTTP 000）——**这不是『接口里没有这个 dataset』**，是 Superset 接口根本连不上。下一步：curl -sv 'http://127.0.0.1:8088/health' 看服务是否在跑（docker compose ps superset），不对就先 make init 把第三段拉起来。
+   EXIT=1
+   → 判定：报「没能取回响应」（PASS）
+
+── [8] 真·找不到（合法列表，没有 kpi_current）
+   stdout 末尾：[superset-provision] ▶ 解析 kpi_current dataset id（不硬编码）
+   stderr：[superset-provision] ✗ 找不到 kpi_current 的 dataset id（接口返回了 1 个 dataset，其中没有 table_name=kpi_current 的那一行）——**接口是通的、响应是合法 JSON，是这个 dataset 确实不在接口返回的列表里**。下一步：①先确认置备跑过——重跑置备（bash docker/scripts/superset-provision.sh，或 make init 第三段增补）；kpi_current 的 dataset 由它创建；②确认看板连的是哪个 database（冻结的 ECOM_ADS_UUID 那一个）；③确认没有别的东西删掉了它（docker compose logs superset | grep -i dataset）。
+   EXIT=1
+   → 判定：报「找不到」（仅 NOT_FOUND 这一类允许）
+
+── [9] 反例⑧ 解析器不可用（真接口 + PYTHON 指向不存在的路径；不换 curl）
+   stdout 末尾：[superset-provision] ▶ 解析 kpi_current dataset id（不硬编码）
+   stderr：[superset-provision] ✗ 解析器无法执行：'/nonexistent/pyimpl07b/phantom-python3' 不在 PATH 上或不可执行（bash rc=127）——**这不是『接口里没有这个 dataset』**，是解析器根本没起来（impl-05 实测 WSL 宿主只有 python3，没有 python 这个命令）。下一步：装 python3（apt-get install -y python3），或用 export PYTHON=/path/to/python3 指定绝对路径后重跑置备（bash docker/scripts/superset-provision.sh，或 make init 第三段增补）。
+   EXIT=1
+
+── [9b] 反例⑨b 解释器**存在但不可用**（空壳：退 49、零输出、零 stderr；真接口）
+   stdout 末尾：[superset-provision] ▶ 解析 kpi_current dataset id（不硬编码）
+   stderr：[superset-provision] ✗ 没能从 dataset 列表响应里解析出目标：解析没有任何机读输出（rc=49；HTTP 200）——**这不是『接口里没有这个 dataset』**，也不是「列表里没有这张表」。解析器 stderr：<空>。下一步：先看解释器是否可用：'/tmp/tmp.0TKrFzp19H/python3-shell-stub' -c 'print(1)' 应打印 1（**存在但不可用的空壳解释器**正是这种「退非 0、零输出、零 stderr」形态）；解析器可用则 stderr 里的 traceback 是解析段的缺陷，按它改本脚本的 heredoc；然后重跑置备（bash docker/scripts/superset-provision.sh，或 make init 第三段增补）。
+   EXIT=1
+
+── [10] 语法自检：bash -n
+SYNTAX OK
+
+── [11] 静态：解析段不得回到「管道 + except StopIteration」（只看非注释行）
+零命中（PASS）
