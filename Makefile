@@ -31,12 +31,14 @@ DORIS_FE   := 8030
 DORIS_MYSQL:= 9030
 SUPERSET   := 8088
 
-.PHONY: help up down init replay verify spike verify-fault verify-fault-corrupt logs lint typecheck client smoke config-check build-flink-image assert replay-idempotent r7i-falsify
+.PHONY: help up down init replay verify spike verify-fault verify-fault-corrupt logs lint typecheck client smoke config-check build-flink-image build-doris-image deploy-job assert replay-idempotent r7i-falsify
 
 help:
 	@echo "冻结目标：up down init replay verify spike verify-fault logs"
-	@echo "新增目标（设计面）：verify-fault-corrupt lint typecheck client config-check build-flink-image assert replay-idempotent"
+	@echo "新增目标（设计面）：verify-fault-corrupt lint typecheck client config-check build-flink-image build-doris-image deploy-job assert replay-idempotent"
 	@echo "  build-flink-image：预取 Paimon jar 并构建本地 Flink 镜像（up 之前必须先跑一次）"
+	@echo "  build-doris-image：构建本地 Doris 镜像（官方无版本化镜像，必须自建；init 之前必须先跑一次）"
+	@echo "  deploy-job：构建并提交 Flink 作业（init 之后必须跑一次，否则 verify 第2项必 FAIL）"
 	@echo "  assert：离线断言集（A1/A3/快照/拉链，impl-03d）—— replay 之后跑"
 	@echo "  replay-idempotent：同批重放两遍 + 指纹比对（幂等离线版，impl-03d）"
 	@echo "  r7i-falsify：R7-i 三案机读判据（live 跨度 / committed offsets / 水位不劫持，impl-06d）"
@@ -62,6 +64,34 @@ build-flink-image:
 up: build-flink-image
 	$(COMPOSE) up -d
 	@echo "[up] 已拉起；用 'make logs' 看启动，用 'make verify' 判链路是否活"
+
+# Doris 镜像：**官方没有**可直接拉取的 4.1.5 版本化镜像
+# （apache/doris:4.1.5 / all-in-one-4.1.5 / base-4.1.5 全部 denied，
+#   只有 base-latest 是构建基座、不含可运行的 FE/BE）⇒ 必须本地构建。
+# 与 build-flink-image 同构：把「先构建」固化成目标，否则干净检出直接
+# `make init` 会在第二段报 image not found。
+#
+# ⚠️ 为什么**不**给 compose 加 build: 段（与 flink-jm 不同）：
+#   compose v2 的 `up` 会在镜像缺失时**自动构建** ⇒ Doris 那 35 min 会并进
+#   `make init` ⇒ 打破 reproducibility-boundary.md §1 的 L0/L1 分档
+#   （L0「制品态」≤15 min、L1「零状态冷启」豁免 30 min，**豁免理由正是
+#   「构建不是拉镜像」**）。⇒ 构建保持为**独立目标**，与 init 解耦。
+#
+# ⚠️ 构建 ≈35 min（4.32 GB tarball 下载+解压），耗时是正常的，别中断。
+build-doris-image:
+	@echo "[build-doris-image] 构建本地 Doris 镜像（DORIS_IMAGE=${DORIS_IMAGE:-eco/doris:4.1.5}）"
+	@echo "[build-doris-image] 注：官方无版本化镜像，此步不可跳过（约 35 min）"
+	docker build -f docker/doris/Dockerfile -t $${DORIS_IMAGE:-eco/doris:4.1.5} docker/doris
+	@echo "[build-doris-image] 完成：$${DORIS_IMAGE:-eco/doris:4.1.5}"
+
+# 构建并提交 Flink 作业（P1 实时作业）。
+# ★ 为什么它是独立目标而不是 init 的一段：**init 的四段是冻结的**
+#   （spec §3.3，顺序不可换），而「编译 Java + 提交作业」需要 JDK 17 + Maven
+#   ——按 reproducibility-boundary.md §6，工具链自举**不在**一条命令的承诺里。
+#   ⇒ 作业部署独立成目标：它需要额外的工具链，但**不做它 verify 第 2 项必 FAIL**。
+# 判据逻辑在 scripts/deploy-job.sh（⚠️ 必须 `bash …` 调，本仓不跟踪 exec 位）。
+deploy-job:
+	@bash scripts/deploy-job.sh
 
 down:
 	$(COMPOSE) down
