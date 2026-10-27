@@ -1,0 +1,39 @@
+### 对照脚本来源：git HEAD:docker/scripts/superset-dirty-rate-sync.sh
+### HEAD 版本与新版本只有错误分支/解析次数不同（见 git diff）
+
+── 施工前（HEAD）stdout：
+[dirty-rate-sync] ▶ 读基线 /tmp/tmp.pEJol08uff/baseline.json
+[dirty-rate-sync] 基线：dlq_offset=14911 input_events=77700
+[dirty-rate-sync] ▶ 读 Kafka DLQ 总 offset
+[dirty-rate-sync] ▶ 读 Kafka 输入 topic 总 offset
+[dirty-rate-sync] 当前：dlq=14911 input=77736
+[dirty-rate-sync] ▶ 写入 ads_window_metric（dlq_total_offset / dlq_count_delta，anchor=2026-10-27）
+[dirty-rate-sync] 完成：Δ=0（dlq 14911→14911，input=77736）
+[dirty-rate-sync] 面板读法：dlq_count_delta / total_events = 0/77736
+EXIT=0
+── 施工前（HEAD）stderr：0 字节
+
+── 施工后（工作树）stdout：
+[dirty-rate-sync] ▶ 读基线 /tmp/tmp.pEJol08uff/baseline.json
+[dirty-rate-sync] 基线：dlq_offset=14911 input_events=77700
+[dirty-rate-sync] ▶ 读 Kafka DLQ 总 offset
+[dirty-rate-sync] ▶ 读 Kafka 输入 topic 总 offset
+[dirty-rate-sync] 当前：dlq=14911 input=77736
+[dirty-rate-sync] ▶ 写入 ads_window_metric（dlq_total_offset / dlq_count_delta，anchor=2026-10-27）
+[dirty-rate-sync] 完成：Δ=0（dlq 14911→14911，input=77736）
+[dirty-rate-sync] 面板读法：dlq_count_delta / total_events = 0/77736
+EXIT=0
+── 施工后（工作树）stderr：0 字节
+
+══ diff（stdout）══
+逐字一致（PASS）
+══ diff（stderr）══
+逐字一致（PASS）
+══ 退出码 ══
+一致：0（PASS）
+
+══ 面板今日三行回读（旧脚本写一次、新脚本覆盖写一次，值应相同）══
+dim_key	metric_value	revision
+baseline_mirror	14911	0
+dlq_count_delta	0	0
+total_events	77736	0
